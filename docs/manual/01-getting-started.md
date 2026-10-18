@@ -14,17 +14,19 @@ only when you run an AI command.
 
 ## Install the extension
 
-From a `.vsix` file:
+From the Visual Studio Marketplace:
 
 1. Open the **Extensions** view (Cmd+Shift+X).
-2. Click **…** (Views and More Actions) at the top of the view and choose **Install from VSIX…**.
-3. Select `md-planner-<version>.vsix`.
+2. Search for `Markdown Project Planner` (publisher ACRO) and click **Install**.
 
 Or from a terminal:
 
 ```sh
-code --install-extension md-planner-1.0.0.vsix
+code --install-extension acro.md-planner
 ```
+
+To install a downloaded `md-planner-<version>.vsix` file instead, click **…** (Views and More
+Actions) at the top of the Extensions view and choose **Install from VSIX…**.
 
 After installing you see a new **Planner** icon in the activity bar on the left.
 

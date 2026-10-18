@@ -227,11 +227,15 @@ light, dark and high-contrast themes (`npm run a11y`).
 
 ## Installation
 
-From a `.vsix` file: **Extensions → … → Install from VSIX…**, or
+Install **Markdown Project Planner** from the Visual Studio Marketplace: open the Extensions view
+(Ctrl+Shift+X, Cmd+Shift+X on macOS), search for `Markdown Project Planner` and click **Install**,
+or run
 
 ```sh
-code --install-extension md-planner-1.0.0.vsix
+code --install-extension acro.md-planner
 ```
+
+To install a downloaded `.vsix` file instead: **Extensions → … → Install from VSIX…**.
 
 Requires VS Code 1.95 or later. PDF export needs Microsoft Edge or Google Chrome.
 
@@ -252,4 +256,5 @@ The sample project in `examples/customer-portal` is used by the tests and the sc
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). The open-source packages bundled with the extension and their licenses are listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

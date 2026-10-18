@@ -1,11 +1,14 @@
 **
 !dist/**
 !templates/**
-!media/**
+!media/icon.png
+!media/planner.svg
+!media/walkthrough/**
 !package.json
 !README.md
 !CHANGELOG.md
 !LICENSE
+!THIRD-PARTY-NOTICES.md
 !docs/settings.md
 !docs/manual/**
 dist/**/*.map
