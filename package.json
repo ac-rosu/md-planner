@@ -58,31 +58,37 @@
         {
           "id": "planner.milestones",
           "name": "Milestones",
+          "icon": "$(milestone)",
           "contextualTitle": "Planner"
         },
         {
           "id": "planner.team",
           "name": "My Work / Team",
+          "icon": "$(organization)",
           "contextualTitle": "Planner"
         },
         {
           "id": "planner.inbox",
           "name": "Inbox",
+          "icon": "$(inbox)",
           "contextualTitle": "Planner"
         },
         {
           "id": "planner.punch",
           "name": "Punch List",
+          "icon": "$(checklist)",
           "contextualTitle": "Planner"
         },
         {
           "id": "planner.tests",
           "name": "Tests",
+          "icon": "$(beaker)",
           "contextualTitle": "Planner"
         },
         {
           "id": "planner.todos",
           "name": "TODOs in Code",
+          "icon": "$(comment)",
           "contextualTitle": "Planner"
         }
       ]
