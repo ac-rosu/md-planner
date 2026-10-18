@@ -1,0 +1,338 @@
+{
+  "name": "kickoff",
+  "date": "2026-10-07",
+  "project": "Customer Portal 2.0",
+  "tasks": {
+    "T001": {
+      "title": "Kick-off with stakeholders",
+      "start": "2026-10-01",
+      "finish": "2026-10-01",
+      "hours": 4
+    },
+    "T002": {
+      "title": "Review support tickets and analytics",
+      "start": "2026-10-02",
+      "finish": "2026-10-06",
+      "hours": 12
+    },
+    "T003": {
+      "title": "Audit of current hosting",
+      "start": "2026-10-05",
+      "finish": "2026-10-06",
+      "hours": 8
+    },
+    "T004": {
+      "title": "Integration inventory (APIs, SSO, CRM)",
+      "start": "2026-10-07",
+      "finish": "2026-10-13",
+      "hours": 16
+    },
+    "T005": {
+      "title": "Domain model",
+      "start": "2026-10-08",
+      "finish": "2026-10-08",
+      "hours": 12
+    },
+    "T006": {
+      "title": "Specification chapters",
+      "start": "2026-10-07",
+      "finish": "2026-10-09",
+      "hours": 34
+    },
+    "T007": {
+      "title": "User stories and acceptance criteria",
+      "start": "2026-10-07",
+      "finish": "2026-10-09",
+      "hours": 8
+    },
+    "T008": {
+      "title": "Architecture and API design",
+      "start": "2026-10-07",
+      "finish": "2026-10-09",
+      "hours": 12
+    },
+    "T009": {
+      "title": "Notification guidelines",
+      "start": "2026-10-08",
+      "finish": "2026-10-08",
+      "hours": 6
+    },
+    "T010": {
+      "title": "UX concept and screen flow",
+      "start": "2026-10-07",
+      "finish": "2026-10-07",
+      "hours": 8
+    },
+    "T011": {
+      "title": "Internal review of the specification",
+      "start": "2026-10-12",
+      "finish": "2026-10-12",
+      "hours": 4
+    },
+    "T012": {
+      "title": "Stakeholder sign-off",
+      "start": "2026-10-13",
+      "finish": "2026-10-13",
+      "hours": 4
+    },
+    "T120": {
+      "title": "Repository, CI pipeline and project setup",
+      "start": "2026-10-05",
+      "finish": "2026-10-06",
+      "hours": 8
+    },
+    "T121": {
+      "title": "Shared API library (auth, validation, logging)",
+      "start": "2026-10-14",
+      "finish": "2026-10-16",
+      "hours": 24
+    },
+    "T122": {
+      "title": "Notifications and e-mail service",
+      "start": "2026-10-23",
+      "finish": "2026-10-30",
+      "hours": 12
+    },
+    "T101": {
+      "title": "Data model & API contract",
+      "start": "2026-10-09",
+      "finish": "2026-10-09",
+      "hours": 4
+    },
+    "T102": {
+      "title": "Order state machine",
+      "start": "2026-10-12",
+      "finish": "2026-10-29",
+      "hours": 12
+    },
+    "T103": {
+      "title": "State transitions",
+      "start": "2026-10-12",
+      "finish": "2026-10-13",
+      "hours": 6
+    },
+    "T104": {
+      "title": "Order events schema",
+      "start": "2026-10-29",
+      "finish": "2026-10-29",
+      "hours": 6
+    },
+    "T105": {
+      "title": "Payment provider integration",
+      "start": "2026-11-10",
+      "finish": "2026-11-11",
+      "hours": 16
+    },
+    "T106": {
+      "title": "Payment form",
+      "start": "2026-10-14",
+      "finish": "2026-10-14",
+      "hours": 6
+    },
+    "T107": {
+      "title": "Checkout flow (cart, pay, confirm)",
+      "start": "2026-11-12",
+      "finish": "2026-11-20",
+      "hours": 40
+    },
+    "T108": {
+      "title": "Checkout integration tests",
+      "start": "2026-11-23",
+      "finish": "2026-11-24",
+      "hours": 8
+    },
+    "T110": {
+      "title": "Account and profile services",
+      "start": "2026-10-19",
+      "finish": "2026-10-23",
+      "hours": 32
+    },
+    "T111": {
+      "title": "Login and single sign-on",
+      "start": "2026-10-26",
+      "finish": "2026-10-29",
+      "hours": 24
+    },
+    "T112": {
+      "title": "Password reset and e-mail verification",
+      "start": "2026-10-30",
+      "finish": "2026-11-02",
+      "hours": 12
+    },
+    "T113": {
+      "title": "Invoice generation (draft, issue, credit note, PDF)",
+      "start": "2026-10-19",
+      "finish": "2026-10-26",
+      "hours": 40
+    },
+    "T114": {
+      "title": "Payment retries and dunning",
+      "start": "2026-10-27",
+      "finish": "2026-10-28",
+      "hours": 16
+    },
+    "T201": {
+      "title": "Design system and navigation",
+      "start": "2026-10-14",
+      "finish": "2026-10-19",
+      "hours": 16
+    },
+    "T202": {
+      "title": "Roles and audit log",
+      "start": "2026-10-16",
+      "finish": "2026-10-16",
+      "hours": 8
+    },
+    "T203": {
+      "title": "Component library (forms, tables, dialogs)",
+      "start": "2026-10-19",
+      "finish": "2026-10-23",
+      "hours": 24
+    },
+    "T204": {
+      "title": "Dashboard page",
+      "start": "2026-10-22",
+      "finish": "2026-11-03",
+      "hours": 12
+    },
+    "T205": {
+      "title": "Checkout pages",
+      "start": "2026-10-23",
+      "finish": "2026-10-30",
+      "hours": 24
+    },
+    "T206": {
+      "title": "Account pages",
+      "start": "2026-10-30",
+      "finish": "2026-11-04",
+      "hours": 24
+    },
+    "T207": {
+      "title": "Billing pages",
+      "start": "2026-10-27",
+      "finish": "2026-10-29",
+      "hours": 16
+    },
+    "T208": {
+      "title": "Notification centre",
+      "start": "2026-11-02",
+      "finish": "2026-11-02",
+      "hours": 8
+    },
+    "T209": {
+      "title": "Usage charts",
+      "start": "2026-10-14",
+      "finish": "2026-10-15",
+      "hours": 12
+    },
+    "T301": {
+      "title": "Acceptance test plan and test cases",
+      "start": "2026-10-07",
+      "finish": "2026-10-15",
+      "hours": 24
+    },
+    "T302": {
+      "title": "Staging environment with test data",
+      "start": "2026-11-23",
+      "finish": "2026-11-26",
+      "hours": 32
+    },
+    "T303": {
+      "title": "Internal test round",
+      "start": "2026-11-30",
+      "finish": "2026-12-08",
+      "hours": 24
+    },
+    "T304": {
+      "title": "Acceptance test with key users",
+      "start": "2027-02-01",
+      "finish": "2027-02-04",
+      "hours": 24
+    },
+    "T305": {
+      "title": "Fix acceptance test bugs (A and B)",
+      "start": "2027-02-05",
+      "finish": "2027-02-08",
+      "hours": 16
+    },
+    "T401": {
+      "title": "Production environment setup",
+      "start": "2027-02-09",
+      "finish": "2027-02-12",
+      "hours": 24
+    },
+    "T402": {
+      "title": "Integration and load tests",
+      "start": "2027-02-12",
+      "finish": "2027-02-22",
+      "hours": 40
+    },
+    "T403": {
+      "title": "Data migration dry run",
+      "start": "2027-02-23",
+      "finish": "2027-03-03",
+      "hours": 40
+    },
+    "T404": {
+      "title": "Pilot go-live",
+      "start": "2027-03-04",
+      "finish": "2027-03-10",
+      "hours": 40
+    },
+    "T405": {
+      "title": "Support team training",
+      "start": "2027-03-04",
+      "finish": "2027-03-05",
+      "hours": 16
+    },
+    "T406": {
+      "title": "Go-live acceptance",
+      "start": "2027-03-11",
+      "finish": "2027-03-22",
+      "hours": 24
+    },
+    "T407": {
+      "title": "Release notes and runbook",
+      "start": "2027-03-23",
+      "finish": "2027-03-31",
+      "hours": 24
+    }
+  },
+  "milestones": {
+    "M1": {
+      "title": "M1 – Discovery & Design",
+      "target": "2026-10-30",
+      "start": "2026-10-01",
+      "forecast": "2026-10-13",
+      "hours": 94
+    },
+    "M2": {
+      "title": "M2 – Backend",
+      "target": "2026-12-15",
+      "start": "2026-10-05",
+      "forecast": "2026-11-24",
+      "hours": 254
+    },
+    "M3": {
+      "title": "M3 – Frontend",
+      "target": "2027-01-22",
+      "start": "2026-10-14",
+      "forecast": "2026-11-04",
+      "hours": 144
+    },
+    "M4": {
+      "title": "M4 – Acceptance Test",
+      "target": "2027-02-12",
+      "start": "2026-10-07",
+      "forecast": "2027-02-08",
+      "hours": 120
+    },
+    "M5": {
+      "title": "M5 – Launch",
+      "target": "2027-03-26",
+      "start": "2027-02-09",
+      "forecast": "2027-03-31",
+      "hours": 208
+    }
+  }
+}

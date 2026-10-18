@@ -1,0 +1,10 @@
+{
+  "planner.me": "alex",
+  "planner.kanban.wipLimits": { "doing": 2, "review": 2 },
+  "planner.ai.redact": ["Customer Portal 2.0", "/45\\d{8}/"],
+  "planner.export.branding": {
+    "company": "Example Corp",
+    "accentColor": "#0f766e",
+    "logo": "docs/logo.svg"
+  }
+}

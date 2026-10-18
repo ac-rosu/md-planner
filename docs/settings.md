@@ -1,0 +1,213 @@
+# Settings
+
+All settings of Markdown Project Planner are under `planner.*` (Settings → Extensions →
+Markdown Project Planner). Workspace settings (`.vscode/settings.json`) are the usual place,
+so the whole team shares them.
+
+<!-- Generated from package.json by `node scripts/docs/settings.mjs`. Do not edit. -->
+
+## General
+
+### `planner.planFolder`
+
+Folder with the plan files, relative to the workspace folder (or absolute).
+
+Type: string · default: `"plan"`
+
+### `planner.me`
+
+Your person id from `team.md`. Shown first in **My Work / Team**. Empty = the first person in `team.md`.
+
+Type: string · default: `""`
+
+### `planner.autoAssignIds`
+
+Add missing task ids (`^T…`) when a milestone file or the punch list is saved.
+
+Type: boolean · default: `true`
+
+### `planner.autoAssignIdsOnAutoSave`
+
+Also add missing ids when VS Code auto-saves after a delay (off, so ids do not appear while you type).
+
+Type: boolean · default: `false`
+
+### `planner.autoSave`
+
+Save the plan files after an edit made from a view (tree, Gantt, Kanban …). Edits stay undoable either way.
+
+Type: boolean · default: `true`
+
+### `planner.templatesFolder`
+
+Folder with your own project templates (one sub-folder per template, Markdown files with `{{name}}`, `{{start}}`, `{{end}}`, `{{date:0.5}}` … placeholders). Relative to the first workspace folder or absolute.
+
+Type: string · default: `""`
+
+## Editor
+
+### `planner.editor.toggleOnClick`
+
+Clicking inside a task's checkbox `[ ]` in the editor cycles its status (to do → in progress → review → done) and writes `@started`/`@done`.
+
+Type: boolean · default: `true`
+
+### `planner.codeLens.enabled`
+
+Show CodeLens above milestone headings.
+
+Type: boolean · default: `true`
+
+### `planner.codeLens.tasks`
+
+Show the scheduled dates and slack above each task.
+
+Type: boolean · default: `true`
+
+### `planner.codeLens.actions`
+
+Show clickable actions next to the CodeLens: owner and **Edit** on tasks, **Add task**, **Add section** and **Edit milestone** on milestones, **Add person**, **Edit person**, **Add time off**, **Plan overtime** and **Add working day** in `team.md`, **Edit project settings** in `project.md`, **Capture to inbox** and **Plan into milestone…** in `inbox.md`, **Add punch item** in `punchlist.md`, **Open in test runner** in test plans. The schedule CodeLens stays.
+
+Type: boolean · default: `true`
+
+## Scheduling and diagnostics
+
+### `planner.scheduling.unassignedCapacity`
+
+Capacity in hours per week of the virtual **Unassigned** pool that runs tasks without `@owner`.
+
+Type: number · default: `40` · minimum: 0
+
+### `planner.diagnostics.overbooked`
+
+Show an info diagnostic on tasks in weeks where their owner's demand (ASAP, ignoring capacity) exceeds capacity.
+
+Type: boolean · default: `true`
+
+## Kanban
+
+### `planner.kanban.wipLimits`
+
+Work-in-progress limit per Kanban column, e.g. `{ "doing": 4, "review": 3 }`. Columns over their limit are shown in red.
+
+Type: object · default: `{}`
+
+## Time tracking
+
+### `planner.time.roundingMinutes`
+
+Timer time is rounded up to this many minutes before it is added to `@act`.
+
+Type: number · default: `15` · minimum: 1
+
+## TODOs in code
+
+### `planner.todos.keywords`
+
+Comment keywords collected in **TODOs in Code** (upper case, whole words, followed by `:`, `(…)` or a space).
+
+Type: array · default: `["TODO","FIXME","HACK"]`
+
+### `planner.todos.include`
+
+Glob of files scanned for TODO comments (the plan folder is always skipped).
+
+Type: string · default: `"**/*.{ts,tsx,js,jsx,mjs,cjs,vue,svelte,py,java,kt,cs,go,rs,rb,php,swift,c,h,cpp,hpp,sql,sh,md,scl,st}"`
+
+### `planner.todos.exclude`
+
+Glob of files never scanned for TODO comments.
+
+Type: string · default: `"**/{node_modules,.git,dist,out,build,target,coverage,vendor,.venv,.vscode-test}/**"`
+
+### `planner.todos.maxFiles`
+
+Maximum number of files scanned for TODO comments.
+
+Type: number · default: `2000` · minimum: 1
+
+## Export
+
+### `planner.export.branding`
+
+Branding of exported reports: `{ "company": "Example Corp", "accentColor": "#0f766e", "logo": "docs/logo.png" }` (logo relative to the workspace folder; PNG, JPEG, GIF, SVG or WebP, embedded in the report).
+
+Type: object · default: `{}`
+
+### `planner.export.periodDays`
+
+Length of the reporting period in days ("done this period" and "planned next period").
+
+Type: number · default: `7` · minimum: 1
+
+### `planner.export.ganttWeeks`
+
+Weeks shown in the report's Gantt and team load sections.
+
+Type: number · default: `12` · minimum: 1
+
+### `planner.export.author`
+
+Author shown in reports. Empty = the name of `planner.me`.
+
+Type: string · default: `""`
+
+### `planner.export.browserPath`
+
+Path to Microsoft Edge or Google Chrome for PDF export. Empty = detect automatically; without a browser the HTML report is written instead.
+
+Type: string · default: `""`
+
+### `planner.export.csvDelimiter`
+
+Field delimiter of the CSV export (`;` suits Excel in many European locales).
+
+Type: string · default: `","`
+
+- `","`
+- `";"`
+- `"\t"`
+
+### `planner.export.openAfterExport`
+
+Open the exported file after `Planner: Export…`.
+
+Type: boolean · default: `true`
+
+## AI
+
+### `planner.ai.provider`
+
+AI provider for the `Planner AI` commands. AI only proposes changes: every change is shown as a diff to accept or reject, and the scheduler (not the AI) computes all dates.
+
+Type: string · default: `"vscode-lm"`
+
+- `"vscode-lm"`: VS Code Language Model API: any installed model provider, e.g. GitHub Copilot.
+- `"anthropic"`: Claude API directly; the key is stored with "Planner: Set API key".
+- `"none"`: No AI: AI commands are hidden; everything else works.
+
+### `planner.ai.vscodeModel`
+
+Model family for the `vscode-lm` provider (for example `gpt-4o` or `claude-sonnet-4`). Empty = the first available model.
+
+Type: string · default: `""`
+
+### `planner.ai.model`
+
+Claude model id for the `anthropic` provider.
+
+Type: string · default: `"claude-sonnet-5-5"`
+
+### `planner.ai.redact`
+
+Terms removed from prompts before they are sent (customer names …). Literal, case-insensitive terms, or `/regex/flags`.
+
+Type: array · default: `[]`
+
+## MCP server
+
+### `planner.mcp.configureOnNewProject`
+
+**New project** also writes `.mcp.json` with the md-planner MCP server, so Claude Code and other agents can build and update the plan right away (same as **Planner: Configure MCP for Claude Code**).
+
+Type: boolean · default: `true`

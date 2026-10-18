@@ -1,0 +1,329 @@
+/* Dashboard. Colours come from VS Code theme variables only. */
+
+.dashboard {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 16px 24px;
+}
+
+.dashboard h2 {
+  font-size: 1.05em;
+  margin: 16px 0 8px;
+}
+
+.dashboard h3 {
+  font-size: 1em;
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.small {
+  font-size: 0.88em;
+}
+
+.bad {
+  color: var(--planner-late-text);
+}
+
+.good {
+  color: var(--planner-ok-text);
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.kpi {
+  padding: 8px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--planner-border);
+  background: var(--vscode-editorWidget-background, transparent);
+}
+
+.kpi-label {
+  color: var(--planner-muted);
+  font-size: 0.85em;
+}
+
+.kpi-value {
+  font-size: 1.5em;
+  font-weight: 600;
+  margin: 2px 0;
+}
+
+.kpi.bad .kpi-value {
+  color: var(--planner-late-text);
+}
+
+.kpi-detail {
+  font-size: 0.82em;
+}
+
+.milestones {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.ms-card {
+  padding: 8px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--planner-border);
+  border-top: 3px solid var(--vscode-charts-blue);
+  background: var(--vscode-editorWidget-background, transparent);
+}
+
+.ms-card.late {
+  border-top-color: var(--planner-late);
+}
+
+.ms-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.ms-head b {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.9em;
+  margin-top: 3px;
+}
+
+.badge {
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 8px;
+  font-size: 0.85em;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--vscode-progressBar-background, var(--vscode-charts-blue));
+  background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--vscode-charts-green);
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.panel {
+  padding: 8px 12px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--planner-border);
+}
+
+.panel h2 {
+  margin-top: 4px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.burnup {
+  width: 100%;
+  height: auto;
+}
+
+.burnup .grid {
+  stroke: var(--planner-border);
+}
+
+.burnup .axis {
+  fill: var(--planner-muted);
+  font-size: 11px;
+}
+
+.burnup .line {
+  fill: none;
+  stroke-width: 2;
+}
+
+.burnup .scope {
+  stroke: var(--planner-muted);
+  stroke-dasharray: 6 4;
+}
+
+.burnup .done {
+  stroke: var(--vscode-charts-green);
+  stroke-width: 2.5;
+}
+
+.burnup .forecast {
+  stroke: var(--vscode-charts-blue);
+  stroke-dasharray: 4 3;
+}
+
+.burnup .today {
+  stroke: var(--vscode-charts-red);
+  stroke-width: 1.5;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--planner-muted);
+  font-size: 0.88em;
+}
+
+.chart-legend .key {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  border-top: 2px solid;
+  margin-left: 6px;
+}
+
+.key.scope {
+  border-top-style: dashed !important;
+  border-color: var(--planner-muted);
+}
+.key.done {
+  border-color: var(--vscode-charts-green);
+}
+.key.forecast {
+  border-top-style: dashed !important;
+  border-color: var(--vscode-charts-blue);
+}
+.key.today {
+  border-color: var(--vscode-charts-red);
+}
+
+.accuracy {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.accuracy caption {
+  text-align: left;
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+.accuracy th,
+.accuracy td {
+  padding: 2px 6px;
+  text-align: right;
+  border-bottom: 1px solid var(--planner-border);
+}
+
+.accuracy th:first-child,
+.accuracy td:first-child {
+  text-align: left;
+}
+
+.lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.list ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.list li {
+  margin-bottom: 4px;
+}
+
+.list a {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+}
+
+.list a:hover {
+  text-decoration: underline;
+}
+
+.list .count {
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 0.85em;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.list.bad .count {
+  background: var(--planner-late);
+  color: var(--vscode-editor-background);
+}
+
+.test-row {
+  margin-bottom: 8px;
+}
+
+.stack-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
+}
+
+.seg.pass {
+  background: var(--vscode-charts-green);
+}
+.seg.fail {
+  background: var(--vscode-charts-red);
+}
+.seg.na {
+  background: var(--vscode-charts-purple);
+}
+.seg.open {
+  background: color-mix(in srgb, var(--vscode-foreground) 25%, transparent);
+}
+.seg.sevA {
+  background: var(--vscode-charts-red);
+}
+.seg.sevB {
+  background: var(--vscode-charts-orange);
+}
+.seg.sevC {
+  background: var(--vscode-charts-yellow);
+}
+
+.stack-label {
+  margin-top: 2px;
+  color: var(--planner-muted);
+}
+
+body.vscode-high-contrast .kpi,
+body.vscode-high-contrast .ms-card,
+body.vscode-high-contrast .panel {
+  border-color: var(--vscode-contrastBorder);
+}

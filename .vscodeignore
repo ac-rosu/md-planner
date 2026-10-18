@@ -1,0 +1,11 @@
+**
+!dist/**
+!templates/**
+!media/**
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE
+!docs/settings.md
+!docs/manual/**
+dist/**/*.map

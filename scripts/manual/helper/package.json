@@ -1,0 +1,15 @@
+{
+  "name": "md-planner-manual-helper",
+  "displayName": "md-planner manual screenshots helper",
+  "description": "Used only by scripts/manual/capture.mjs: pins today and answers AI requests with recorded replies so the user manual screenshots are reproducible.",
+  "version": "0.0.0",
+  "publisher": "acro",
+  "private": true,
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ]
+}

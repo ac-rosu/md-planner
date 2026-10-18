@@ -1,0 +1,970 @@
+{
+  "today": "2026-10-14",
+  "mode": "capacity",
+  "start": "2026-10-14",
+  "finish": "2027-03-31",
+  "reference": "2027-03-26",
+  "criticalPath": [
+    "T304",
+    "T305",
+    "T401",
+    "T402",
+    "T403",
+    "T404",
+    "T406",
+    "T407"
+  ],
+  "milestones": [
+    {
+      "id": "M1",
+      "title": "M1 – Discovery & Design",
+      "target": "2026-10-30",
+      "start": "2026-10-01",
+      "forecast": "2026-10-20",
+      "late": false,
+      "variance": -8,
+      "progress": 0.62
+    },
+    {
+      "id": "M2",
+      "title": "M2 – Backend",
+      "target": "2026-12-15",
+      "start": "2026-10-05",
+      "forecast": "2026-11-24",
+      "late": false,
+      "variance": -15,
+      "progress": 0.07
+    },
+    {
+      "id": "M3",
+      "title": "M3 – Frontend",
+      "target": "2027-01-22",
+      "start": "2026-10-21",
+      "forecast": "2026-11-11",
+      "late": false,
+      "variance": -50,
+      "progress": 0
+    },
+    {
+      "id": "M4",
+      "title": "M4 – Acceptance Test",
+      "target": "2027-02-12",
+      "start": "2026-10-14",
+      "forecast": "2027-02-08",
+      "late": false,
+      "variance": -4,
+      "progress": 0
+    },
+    {
+      "id": "M5",
+      "title": "M5 – Launch",
+      "target": "2027-03-26",
+      "start": "2027-02-09",
+      "forecast": "2027-03-31",
+      "late": true,
+      "variance": 3,
+      "progress": 0
+    }
+  ],
+  "tasks": [
+    {
+      "id": "T001",
+      "title": "Kick-off with stakeholders",
+      "milestone": "M1",
+      "owner": "alex",
+      "status": "done",
+      "start": "2026-10-01",
+      "finish": "2026-10-01",
+      "hours": 0,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-10-30"
+    },
+    {
+      "id": "T002",
+      "title": "Review support tickets and analytics",
+      "milestone": "M1",
+      "owner": "alex",
+      "status": "done",
+      "start": "2026-10-02",
+      "finish": "2026-10-06",
+      "hours": 0,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-10-30"
+    },
+    {
+      "id": "T003",
+      "title": "Audit of current hosting",
+      "milestone": "M1",
+      "owner": "jordan",
+      "status": "done",
+      "start": "2026-10-05",
+      "finish": "2026-10-06",
+      "hours": 0,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-10-30"
+    },
+    {
+      "id": "T004",
+      "title": "Integration inventory (APIs, SSO, CRM)",
+      "milestone": "M1",
+      "owner": "jordan",
+      "status": "done",
+      "start": "2026-10-07",
+      "finish": "2026-10-13",
+      "hours": 0,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-10-30"
+    },
+    {
+      "id": "T005",
+      "title": "Domain model",
+      "milestone": "M1",
+      "owner": "alex",
+      "status": "review",
+      "start": "2026-10-08",
+      "finish": "2026-10-15",
+      "hours": 6,
+      "slack": 11,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-10-30"
+    },
+    {
+      "id": "T007",
+      "title": "User stories and acceptance criteria",
+      "milestone": "M1",
+      "owner": "alex",
+      "status": "done",
+      "start": "2026-10-07",
+      "finish": "2026-10-09",
+      "hours": 0,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-10-30"
+    },
+    {
+      "id": "T008",
+      "title": "Architecture and API design",
+      "milestone": "M1",
+      "owner": "alex",
+      "status": "doing",
+      "start": "2026-10-12",
+      "finish": "2026-10-16",
+      "hours": 8,
+      "slack": 8,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-10-30"
+    },
+    {
+      "id": "T009",
+      "title": "Notification guidelines",
+      "milestone": "M1",
+      "owner": "priya",
+      "status": "todo",
+      "start": "2026-10-15",
+      "finish": "2026-10-15",
+      "hours": 6,
+      "slack": 9,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-10-30"
+    },
+    {
+      "id": "T010",
+      "title": "UX concept and screen flow",
+      "milestone": "M1",
+      "owner": "priya",
+      "status": "todo",
+      "start": "2026-10-14",
+      "finish": "2026-10-14",
+      "hours": 8,
+      "slack": 10,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-10-30"
+    },
+    {
+      "id": "T011",
+      "title": "Internal review of the specification",
+      "milestone": "M1",
+      "owner": "sam",
+      "status": "todo",
+      "start": "2026-10-19",
+      "finish": "2026-10-19",
+      "hours": 4,
+      "slack": 8,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-10-30"
+    },
+    {
+      "id": "T012",
+      "title": "Stakeholder sign-off",
+      "milestone": "M1",
+      "owner": "alex",
+      "status": "todo",
+      "start": "2026-10-20",
+      "finish": "2026-10-20",
+      "hours": 4,
+      "slack": 8,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-10-30"
+    },
+    {
+      "id": "T120",
+      "title": "Repository, CI pipeline and project setup",
+      "milestone": "M2",
+      "owner": "sam",
+      "status": "done",
+      "start": "2026-10-05",
+      "finish": "2026-10-06",
+      "hours": 0,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-12-15"
+    },
+    {
+      "id": "T121",
+      "title": "Shared API library (auth, validation, logging)",
+      "milestone": "M2",
+      "owner": "sam",
+      "status": "todo",
+      "start": "2026-10-21",
+      "finish": "2026-10-23",
+      "hours": 24,
+      "slack": 21,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-12-15"
+    },
+    {
+      "id": "T122",
+      "title": "Notifications and e-mail service",
+      "milestone": "M2",
+      "owner": "sam",
+      "status": "todo",
+      "start": "2026-10-30",
+      "finish": "2026-11-05",
+      "hours": 12,
+      "slack": 28,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-12-15"
+    },
+    {
+      "id": "T101",
+      "title": "Data model & API contract",
+      "milestone": "M2",
+      "owner": "alex",
+      "status": "done",
+      "start": "2026-10-09",
+      "finish": "2026-10-09",
+      "hours": 0,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-12-15"
+    },
+    {
+      "id": "T103",
+      "title": "State transitions",
+      "milestone": "M2",
+      "owner": "sam",
+      "status": "done",
+      "start": "2026-10-12",
+      "finish": "2026-10-13",
+      "hours": 0,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-12-15"
+    },
+    {
+      "id": "T104",
+      "title": "Order events schema",
+      "milestone": "M2",
+      "owner": "sam",
+      "status": "todo",
+      "start": "2026-11-04",
+      "finish": "2026-11-04",
+      "hours": 6,
+      "slack": 20,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-12-15"
+    },
+    {
+      "id": "T105",
+      "title": "Payment provider integration",
+      "milestone": "M2",
+      "owner": "sam",
+      "status": "todo",
+      "start": "2026-11-10",
+      "finish": "2026-11-11",
+      "hours": 16,
+      "slack": 15,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-12-15",
+      "overtime": 1.6
+    },
+    {
+      "id": "T106",
+      "title": "Payment form",
+      "milestone": "M2",
+      "owner": "priya",
+      "status": "blocked",
+      "start": "2026-10-21",
+      "finish": "2026-10-21",
+      "hours": 6,
+      "slack": 39,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-12-15"
+    },
+    {
+      "id": "T107",
+      "title": "Checkout flow (cart, pay, confirm)",
+      "milestone": "M2",
+      "owner": "alex",
+      "status": "todo",
+      "start": "2026-11-12",
+      "finish": "2026-11-20",
+      "hours": 40,
+      "slack": 15,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-12-15"
+    },
+    {
+      "id": "T108",
+      "title": "Checkout integration tests",
+      "milestone": "M2",
+      "owner": "maria",
+      "status": "todo",
+      "start": "2026-11-23",
+      "finish": "2026-11-24",
+      "hours": 8,
+      "slack": 15,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-12-15"
+    },
+    {
+      "id": "T110",
+      "title": "Account and profile services",
+      "milestone": "M2",
+      "owner": "alex",
+      "status": "todo",
+      "start": "2026-10-26",
+      "finish": "2026-10-30",
+      "hours": 32,
+      "slack": 21,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-12-15"
+    },
+    {
+      "id": "T111",
+      "title": "Login and single sign-on",
+      "milestone": "M2",
+      "owner": "alex",
+      "status": "todo",
+      "start": "2026-11-02",
+      "finish": "2026-11-05",
+      "hours": 24,
+      "slack": 21,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-12-04"
+    },
+    {
+      "id": "T112",
+      "title": "Password reset and e-mail verification",
+      "milestone": "M2",
+      "owner": "unassigned",
+      "status": "todo",
+      "start": "2026-11-06",
+      "finish": "2026-11-09",
+      "hours": 12,
+      "slack": 26,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-12-15",
+      "flags": [
+        "unassigned"
+      ]
+    },
+    {
+      "id": "T113",
+      "title": "Invoice generation (draft, issue, credit note, PDF)",
+      "milestone": "M2",
+      "owner": "sam",
+      "status": "todo",
+      "start": "2026-10-26",
+      "finish": "2026-11-02",
+      "hours": 40,
+      "slack": 28,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-12-15"
+    },
+    {
+      "id": "T114",
+      "title": "Payment retries and dunning",
+      "milestone": "M2",
+      "owner": "sam",
+      "status": "todo",
+      "start": "2026-11-02",
+      "finish": "2026-11-05",
+      "hours": 16,
+      "slack": 28,
+      "critical": false,
+      "late": false,
+      "deadline": "2026-12-15",
+      "overtime": 4.8
+    },
+    {
+      "id": "T201",
+      "title": "Design system and navigation",
+      "milestone": "M3",
+      "owner": "priya",
+      "status": "todo",
+      "start": "2026-10-21",
+      "finish": "2026-10-26",
+      "hours": 16,
+      "slack": 45,
+      "critical": false,
+      "late": false,
+      "deadline": "2027-01-22"
+    },
+    {
+      "id": "T202",
+      "title": "Roles and audit log",
+      "milestone": "M3",
+      "owner": "priya",
+      "status": "todo",
+      "start": "2026-10-23",
+      "finish": "2026-10-23",
+      "hours": 8,
+      "slack": 63,
+      "critical": false,
+      "late": false,
+      "deadline": "2027-01-22"
+    },
+    {
+      "id": "T203",
+      "title": "Component library (forms, tables, dialogs)",
+      "milestone": "M3",
+      "owner": "priya",
+      "status": "todo",
+      "start": "2026-10-26",
+      "finish": "2026-10-30",
+      "hours": 24,
+      "slack": 45,
+      "critical": false,
+      "late": false,
+      "deadline": "2027-01-22"
+    },
+    {
+      "id": "T204",
+      "title": "Dashboard page",
+      "milestone": "M3",
+      "owner": "priya",
+      "status": "todo",
+      "start": "2026-10-29",
+      "finish": "2026-11-10",
+      "hours": 12,
+      "slack": 51,
+      "critical": false,
+      "late": false,
+      "deadline": "2027-01-22"
+    },
+    {
+      "id": "T205",
+      "title": "Checkout pages",
+      "milestone": "M3",
+      "owner": "priya",
+      "status": "todo",
+      "start": "2026-10-30",
+      "finish": "2026-11-09",
+      "hours": 24,
+      "slack": 45,
+      "critical": false,
+      "late": false,
+      "deadline": "2027-01-22"
+    },
+    {
+      "id": "T206",
+      "title": "Account pages",
+      "milestone": "M3",
+      "owner": "sam",
+      "status": "todo",
+      "start": "2026-11-05",
+      "finish": "2026-11-11",
+      "hours": 24,
+      "slack": 50,
+      "critical": false,
+      "late": false,
+      "deadline": "2027-01-22",
+      "overtime": 4.8
+    },
+    {
+      "id": "T207",
+      "title": "Billing pages",
+      "milestone": "M3",
+      "owner": "priya",
+      "status": "todo",
+      "start": "2026-11-03",
+      "finish": "2026-11-05",
+      "hours": 16,
+      "slack": 54,
+      "critical": false,
+      "late": false,
+      "deadline": "2027-01-22"
+    },
+    {
+      "id": "T208",
+      "title": "Notification centre",
+      "milestone": "M3",
+      "owner": "priya",
+      "status": "todo",
+      "start": "2026-11-06",
+      "finish": "2026-11-06",
+      "hours": 8,
+      "slack": 53,
+      "critical": false,
+      "late": false,
+      "deadline": "2027-01-22"
+    },
+    {
+      "id": "T209",
+      "title": "Usage charts",
+      "milestone": "M3",
+      "owner": "unassigned",
+      "status": "todo",
+      "start": "2026-10-21",
+      "finish": "2026-10-22",
+      "hours": 12,
+      "slack": 64,
+      "critical": false,
+      "late": false,
+      "deadline": "2027-01-22",
+      "flags": [
+        "unassigned"
+      ]
+    },
+    {
+      "id": "T301",
+      "title": "Acceptance test plan and test cases",
+      "milestone": "M4",
+      "owner": "maria",
+      "status": "todo",
+      "start": "2026-10-14",
+      "finish": "2026-10-22",
+      "hours": 24,
+      "slack": 57,
+      "critical": false,
+      "late": false,
+      "deadline": "2027-02-12"
+    },
+    {
+      "id": "T302",
+      "title": "Staging environment with test data",
+      "milestone": "M4",
+      "owner": "sam",
+      "status": "todo",
+      "start": "2026-11-23",
+      "finish": "2026-11-26",
+      "hours": 32,
+      "slack": 32,
+      "critical": false,
+      "late": false,
+      "deadline": "2027-02-12"
+    },
+    {
+      "id": "T303",
+      "title": "Internal test round",
+      "milestone": "M4",
+      "owner": "maria",
+      "status": "todo",
+      "start": "2026-11-27",
+      "finish": "2026-12-07",
+      "hours": 24,
+      "slack": 32,
+      "critical": false,
+      "late": false,
+      "deadline": "2027-02-12",
+      "overtime": 4
+    },
+    {
+      "id": "T304",
+      "title": "Acceptance test with key users",
+      "milestone": "M4",
+      "owner": "alex",
+      "status": "todo",
+      "start": "2027-02-01",
+      "finish": "2027-02-04",
+      "hours": 24,
+      "slack": -3,
+      "critical": true,
+      "late": false,
+      "deadline": "2027-02-12"
+    },
+    {
+      "id": "T305",
+      "title": "Fix acceptance test bugs (A and B)",
+      "milestone": "M4",
+      "owner": "sam",
+      "status": "todo",
+      "start": "2027-02-05",
+      "finish": "2027-02-08",
+      "hours": 16,
+      "slack": -3,
+      "critical": true,
+      "late": false,
+      "deadline": "2027-02-12"
+    },
+    {
+      "id": "T401",
+      "title": "Production environment setup",
+      "milestone": "M5",
+      "owner": "jordan",
+      "status": "todo",
+      "start": "2027-02-09",
+      "finish": "2027-02-12",
+      "hours": 24,
+      "slack": -3,
+      "critical": true,
+      "late": false,
+      "deadline": "2027-03-26"
+    },
+    {
+      "id": "T402",
+      "title": "Integration and load tests",
+      "milestone": "M5",
+      "owner": "jordan",
+      "status": "todo",
+      "start": "2027-02-12",
+      "finish": "2027-02-22",
+      "hours": 40,
+      "slack": -3,
+      "critical": true,
+      "late": false,
+      "deadline": "2027-03-26"
+    },
+    {
+      "id": "T403",
+      "title": "Data migration dry run",
+      "milestone": "M5",
+      "owner": "alex",
+      "status": "todo",
+      "start": "2027-02-23",
+      "finish": "2027-03-03",
+      "hours": 40,
+      "slack": -3,
+      "critical": true,
+      "late": false,
+      "deadline": "2027-03-26"
+    },
+    {
+      "id": "T404",
+      "title": "Pilot go-live",
+      "milestone": "M5",
+      "owner": "sam",
+      "status": "todo",
+      "start": "2027-03-04",
+      "finish": "2027-03-10",
+      "hours": 40,
+      "slack": -3,
+      "critical": true,
+      "late": false,
+      "deadline": "2027-03-26"
+    },
+    {
+      "id": "T405",
+      "title": "Support team training",
+      "milestone": "M5",
+      "owner": "priya",
+      "status": "todo",
+      "start": "2027-03-04",
+      "finish": "2027-03-05",
+      "hours": 16,
+      "slack": 15,
+      "critical": false,
+      "late": false,
+      "deadline": "2027-03-26"
+    },
+    {
+      "id": "T406",
+      "title": "Go-live acceptance",
+      "milestone": "M5",
+      "owner": "maria",
+      "status": "todo",
+      "start": "2027-03-11",
+      "finish": "2027-03-22",
+      "hours": 24,
+      "slack": -3,
+      "critical": true,
+      "late": false,
+      "deadline": "2027-03-26"
+    },
+    {
+      "id": "T407",
+      "title": "Release notes and runbook",
+      "milestone": "M5",
+      "owner": "maria",
+      "status": "todo",
+      "start": "2027-03-23",
+      "finish": "2027-03-31",
+      "hours": 24,
+      "slack": -3,
+      "critical": true,
+      "late": true,
+      "deadline": "2027-03-26"
+    }
+  ],
+  "load": [
+    {
+      "person": "alex",
+      "week": "2026-W42",
+      "hours": 14,
+      "capacity": 32
+    },
+    {
+      "person": "alex",
+      "week": "2026-W43",
+      "hours": 4,
+      "capacity": 32
+    },
+    {
+      "person": "alex",
+      "week": "2026-W44",
+      "hours": 32,
+      "capacity": 32
+    },
+    {
+      "person": "alex",
+      "week": "2026-W45",
+      "hours": 24,
+      "capacity": 32
+    },
+    {
+      "person": "alex",
+      "week": "2026-W46",
+      "hours": 12.8,
+      "capacity": 32
+    },
+    {
+      "person": "alex",
+      "week": "2026-W47",
+      "hours": 27.2,
+      "capacity": 32
+    },
+    {
+      "person": "alex",
+      "week": "2027-W05",
+      "hours": 24,
+      "capacity": 32
+    },
+    {
+      "person": "alex",
+      "week": "2027-W08",
+      "hours": 25.6,
+      "capacity": 32
+    },
+    {
+      "person": "alex",
+      "week": "2027-W09",
+      "hours": 14.4,
+      "capacity": 32
+    },
+    {
+      "person": "sam",
+      "week": "2026-W43",
+      "hours": 28,
+      "capacity": 40
+    },
+    {
+      "person": "sam",
+      "week": "2026-W44",
+      "hours": 40,
+      "capacity": 40
+    },
+    {
+      "person": "sam",
+      "week": "2026-W45",
+      "hours": 48,
+      "capacity": 48,
+      "overtime": 8
+    },
+    {
+      "person": "sam",
+      "week": "2026-W46",
+      "hours": 26,
+      "capacity": 48,
+      "overtime": 3.2
+    },
+    {
+      "person": "sam",
+      "week": "2026-W48",
+      "hours": 32,
+      "capacity": 40
+    },
+    {
+      "person": "sam",
+      "week": "2027-W05",
+      "hours": 8,
+      "capacity": 40
+    },
+    {
+      "person": "sam",
+      "week": "2027-W06",
+      "hours": 8,
+      "capacity": 32
+    },
+    {
+      "person": "sam",
+      "week": "2027-W09",
+      "hours": 16,
+      "capacity": 40
+    },
+    {
+      "person": "sam",
+      "week": "2027-W10",
+      "hours": 24,
+      "capacity": 40
+    },
+    {
+      "person": "priya",
+      "week": "2026-W42",
+      "hours": 14,
+      "capacity": 40
+    },
+    {
+      "person": "priya",
+      "week": "2026-W43",
+      "hours": 24,
+      "capacity": 40
+    },
+    {
+      "person": "priya",
+      "week": "2026-W44",
+      "hours": 40,
+      "capacity": 40
+    },
+    {
+      "person": "priya",
+      "week": "2026-W45",
+      "hours": 40,
+      "capacity": 40
+    },
+    {
+      "person": "priya",
+      "week": "2026-W46",
+      "hours": 10,
+      "capacity": 40
+    },
+    {
+      "person": "priya",
+      "week": "2027-W09",
+      "hours": 16,
+      "capacity": 40
+    },
+    {
+      "person": "jordan",
+      "week": "2027-W06",
+      "hours": 25.6,
+      "capacity": 32
+    },
+    {
+      "person": "jordan",
+      "week": "2027-W07",
+      "hours": 32,
+      "capacity": 32
+    },
+    {
+      "person": "jordan",
+      "week": "2027-W08",
+      "hours": 6.4,
+      "capacity": 32
+    },
+    {
+      "person": "maria",
+      "week": "2026-W42",
+      "hours": 8,
+      "capacity": 16
+    },
+    {
+      "person": "maria",
+      "week": "2026-W43",
+      "hours": 16,
+      "capacity": 16
+    },
+    {
+      "person": "maria",
+      "week": "2026-W48",
+      "hours": 12,
+      "capacity": 20,
+      "overtime": 4
+    },
+    {
+      "person": "maria",
+      "week": "2026-W49",
+      "hours": 16,
+      "capacity": 16
+    },
+    {
+      "person": "maria",
+      "week": "2026-W50",
+      "hours": 4,
+      "capacity": 16
+    },
+    {
+      "person": "maria",
+      "week": "2027-W10",
+      "hours": 4,
+      "capacity": 16
+    },
+    {
+      "person": "maria",
+      "week": "2027-W11",
+      "hours": 16,
+      "capacity": 16
+    },
+    {
+      "person": "maria",
+      "week": "2027-W12",
+      "hours": 16,
+      "capacity": 16
+    },
+    {
+      "person": "maria",
+      "week": "2027-W13",
+      "hours": 12,
+      "capacity": 16
+    },
+    {
+      "person": "unassigned",
+      "week": "2026-W43",
+      "hours": 12,
+      "capacity": 40
+    },
+    {
+      "person": "unassigned",
+      "week": "2026-W45",
+      "hours": 8,
+      "capacity": 40
+    },
+    {
+      "person": "unassigned",
+      "week": "2026-W46",
+      "hours": 4,
+      "capacity": 40
+    }
+  ]
+}

@@ -1,0 +1,1730 @@
+{
+  "name": "md-planner",
+  "displayName": "Markdown Project Planner",
+  "description": "Plan projects in Markdown: milestones, tasks, Gantt, Kanban, team capacity, test plans, AI estimates, MCP agents and manager-ready exports.",
+  "version": "1.0.0",
+  "publisher": "acro",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1e3a8a",
+    "theme": "dark"
+  },
+  "pricing": "Free",
+  "author": "ACRO",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ac-rosu/md-planner"
+  },
+  "bugs": {
+    "url": "https://github.com/ac-rosu/md-planner/issues"
+  },
+  "homepage": "https://github.com/ac-rosu/md-planner#readme",
+  "engines": {
+    "vscode": "^1.95.0",
+    "node": ">=20"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "markdown",
+    "project planning",
+    "gantt",
+    "kanban",
+    "scheduling",
+    "resource planning",
+    "test plans",
+    "mcp"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:plan/project.md",
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "planner",
+          "title": "Planner",
+          "icon": "media/planner.svg"
+        }
+      ]
+    },
+    "views": {
+      "planner": [
+        {
+          "id": "planner.milestones",
+          "name": "Milestones",
+          "contextualTitle": "Planner"
+        },
+        {
+          "id": "planner.team",
+          "name": "My Work / Team",
+          "contextualTitle": "Planner"
+        },
+        {
+          "id": "planner.inbox",
+          "name": "Inbox",
+          "contextualTitle": "Planner"
+        },
+        {
+          "id": "planner.punch",
+          "name": "Punch List",
+          "contextualTitle": "Planner"
+        },
+        {
+          "id": "planner.tests",
+          "name": "Tests",
+          "contextualTitle": "Planner"
+        },
+        {
+          "id": "planner.todos",
+          "name": "TODOs in Code",
+          "contextualTitle": "Planner"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "planner.milestones",
+        "contents": "No plan folder found in this workspace.\n[New project](command:planner.newProject)\nOr let an AI agent build the whole plan from a description: connect it to the planner's MCP server, then ask it to plan your project.\n[Configure MCP for Claude Code](command:planner.configureMcp)\nA plan is a folder of Markdown files (`plan/` by default, setting `planner.planFolder`).\n[Open the user manual](command:planner.openManual)",
+        "when": "!planner.hasPlan"
+      },
+      {
+        "view": "planner.milestones",
+        "contents": "There are no milestones yet. A milestone is a phase or deliverable with a target date; its tasks are scheduled automatically.\n[Add milestone](command:planner.addMilestone)",
+        "when": "planner.hasPlan"
+      },
+      {
+        "view": "planner.team",
+        "contents": "There is nobody in the team yet. People get tasks (owner), a capacity and time off, which the schedule respects.\n[Add person](command:planner.addPerson)",
+        "when": "planner.hasPlan"
+      },
+      {
+        "view": "planner.inbox",
+        "contents": "The inbox is empty. Capture ideas, requests and reminders here, and plan them into a milestone later.\n[Capture to inbox](command:planner.captureInbox)",
+        "when": "planner.hasPlan"
+      },
+      {
+        "view": "planner.punch",
+        "contents": "No punch items. Punch items are defects and open points, usually raised from failed test steps.\n[Add punch item](command:planner.addPunchItem)",
+        "when": "planner.hasPlan"
+      },
+      {
+        "view": "planner.tests",
+        "contents": "No test plans yet. A test plan is a Markdown file in the plan's tests/ folder with test cases and steps.\n[Read how in the user manual](command:planner.openManual)",
+        "when": "planner.hasPlan"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "gettingStarted",
+        "title": "Get started with Markdown Project Planner",
+        "description": "Plan projects in Markdown files: schedule, Gantt, Kanban, team load, tests and reports.",
+        "steps": [
+          {
+            "id": "plan",
+            "title": "Create or open a plan",
+            "description": "A plan is a `plan/` folder of Markdown files in your workspace. Start from a template, or open a folder that already has `plan/project.md`. The user manual explains every feature with annotated screenshots.\n[Create a project](command:planner.newProject)\n[Open the user manual](command:planner.openManual)",
+            "media": {
+              "markdown": "media/walkthrough/plan-folder.md"
+            },
+            "completionEvents": [
+              "onContext:planner.hasPlan",
+              "onCommand:planner.newProject"
+            ]
+          },
+          {
+            "id": "tasks",
+            "title": "Add milestones, tasks and people",
+            "description": "Use the + buttons in the Planner views (or the links above each line in a plan file) to add milestones, tasks, people and time off; right-click any task to edit it, change its status or owner, move or delete it. Everything is written as plain Markdown that you can also type yourself.\n[Open the Planner sidebar](command:workbench.view.extension.planner)\n[Add a task](command:planner.addTask)",
+            "media": {
+              "markdown": "media/walkthrough/task-syntax.md"
+            },
+            "completionEvents": [
+              "onView:planner.milestones"
+            ]
+          },
+          {
+            "id": "gantt",
+            "title": "Schedule on the Gantt",
+            "description": "Dates come from estimates, dependencies, capacity and time off. Drag a bar to set its start, resize it to change the estimate, link bars to add dependencies. Every change is a small, undoable edit of the Markdown.\n[Open the Gantt](command:planner.openGantt)",
+            "media": {
+              "image": "media/walkthrough/gantt.jpg",
+              "altText": "Gantt chart with milestones, task bars, dependencies and the critical path"
+            },
+            "completionEvents": [
+              "onCommand:planner.openGantt"
+            ]
+          },
+          {
+            "id": "kanban",
+            "title": "Work on the Kanban board",
+            "description": "Move cards between columns to change status (start and done dates are written for you), with swimlanes per owner or milestone, WIP limits and a punch-list board.\n[Open Kanban](command:planner.openKanban)",
+            "media": {
+              "image": "media/walkthrough/kanban.jpg",
+              "altText": "Kanban board with To do, Doing, Review, Blocked and Done columns"
+            },
+            "completionEvents": [
+              "onCommand:planner.openKanban"
+            ]
+          },
+          {
+            "id": "team",
+            "title": "Balance the team load",
+            "description": "Scheduled hours against capacity per person and ISO week, with time off. Switch to demand mode to see where work piles up.\n[Open team load](command:planner.openResources)",
+            "media": {
+              "image": "media/walkthrough/resources.jpg",
+              "altText": "Heatmap of hours per person and week, coloured by load"
+            },
+            "completionEvents": [
+              "onCommand:planner.openResources"
+            ]
+          },
+          {
+            "id": "dashboard",
+            "title": "Track progress",
+            "description": "Milestone forecasts against targets, burn-up, estimate accuracy, blocked and overdue work. Save a baseline to see slips later.\n[Open the dashboard](command:planner.openDashboard)\n[Save a baseline](command:planner.saveBaseline)",
+            "media": {
+              "image": "media/walkthrough/dashboard.jpg",
+              "altText": "Dashboard with KPIs, milestone cards and burn-up charts"
+            },
+            "completionEvents": [
+              "onCommand:planner.openDashboard"
+            ]
+          },
+          {
+            "id": "tests",
+            "title": "Run acceptance tests",
+            "description": "Step through test cases, record pass, fail or n.a. with notes (keys P, F, N), raise punch items from failed steps and export the signed report.\n[Open the test runner](command:planner.openTestRunner)",
+            "media": {
+              "image": "media/walkthrough/testRunner.jpg",
+              "altText": "Test runner with cases, steps and pass/fail buttons"
+            },
+            "completionEvents": [
+              "onCommand:planner.openTestRunner"
+            ]
+          },
+          {
+            "id": "export",
+            "title": "Share a status report",
+            "description": "Export an HTML or PDF status report, Excel, MS Project XML or CSV into `plan/reports/`.\n[Export…](command:planner.export)",
+            "media": {
+              "markdown": "media/walkthrough/export.md"
+            },
+            "completionEvents": [
+              "onCommand:planner.export"
+            ]
+          },
+          {
+            "id": "ai",
+            "title": "Optional: AI agents and MCP",
+            "description": "Let Claude Code or Copilot agent mode build and run the plan: describe the project in plain text and the agent creates the team, milestones, tasks and dependencies through the planner's MCP server (New project sets it up). The built-in AI commands propose changes as a diff that you accept or reject.\n[Configure MCP for Claude Code](command:planner.configureMcp)\n[Choose the AI provider](command:workbench.action.openSettings?%5B%22planner.ai%22%5D)",
+            "media": {
+              "markdown": "media/walkthrough/ai.md"
+            },
+            "completionEvents": [
+              "onSettingChanged:planner.ai.provider",
+              "onCommand:planner.configureMcp"
+            ]
+          }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "planner.newProject",
+        "title": "New project…",
+        "category": "Planner",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "planner.refresh",
+        "title": "Refresh",
+        "category": "Planner",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "planner.revealTask",
+        "title": "Reveal in editor",
+        "category": "Planner",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "planner.revealMilestone",
+        "title": "Open milestone file",
+        "category": "Planner",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "planner.revealInTree",
+        "title": "Reveal in Milestones view",
+        "category": "Planner",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "planner.setStatus",
+        "title": "Set status…",
+        "category": "Planner",
+        "icon": "$(circle-large-outline)"
+      },
+      {
+        "command": "planner.status.todo",
+        "title": "To do",
+        "category": "Planner"
+      },
+      {
+        "command": "planner.status.doing",
+        "title": "In progress",
+        "category": "Planner"
+      },
+      {
+        "command": "planner.status.review",
+        "title": "Review / test",
+        "category": "Planner"
+      },
+      {
+        "command": "planner.status.blocked",
+        "title": "Blocked…",
+        "category": "Planner"
+      },
+      {
+        "command": "planner.status.done",
+        "title": "Done",
+        "category": "Planner"
+      },
+      {
+        "command": "planner.status.cancelled",
+        "title": "Cancelled",
+        "category": "Planner"
+      },
+      {
+        "command": "planner.cycleStatus",
+        "title": "Cycle status",
+        "category": "Planner",
+        "icon": "$(debug-step-over)"
+      },
+      {
+        "command": "planner.assignOwner",
+        "title": "Assign owner…",
+        "category": "Planner",
+        "icon": "$(person)"
+      },
+      {
+        "command": "planner.addEstimate",
+        "title": "Set estimate…",
+        "category": "Planner",
+        "icon": "$(watch)"
+      },
+      {
+        "command": "planner.assignIds",
+        "title": "Assign IDs",
+        "category": "Planner",
+        "icon": "$(symbol-number)"
+      },
+      {
+        "command": "planner.showAttention",
+        "title": "Show overdue and blocked tasks",
+        "category": "Planner",
+        "icon": "$(warning)"
+      },
+      {
+        "command": "planner.planIntoMilestone",
+        "title": "Plan into milestone…",
+        "category": "Planner",
+        "icon": "$(arrow-right)"
+      },
+      {
+        "command": "planner.milestones.filter",
+        "title": "Filter…",
+        "category": "Planner",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "planner.milestones.clearFilter",
+        "title": "Clear filter",
+        "category": "Planner",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "planner.team.filter",
+        "title": "Filter…",
+        "category": "Planner",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "planner.team.clearFilter",
+        "title": "Clear filter",
+        "category": "Planner",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "planner.inbox.filter",
+        "title": "Filter…",
+        "category": "Planner",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "planner.inbox.clearFilter",
+        "title": "Clear filter",
+        "category": "Planner",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "planner.openGantt",
+        "title": "Open Gantt",
+        "category": "Planner",
+        "icon": "$(graph-line)"
+      },
+      {
+        "command": "planner.openKanban",
+        "title": "Open Kanban",
+        "category": "Planner",
+        "icon": "$(project)"
+      },
+      {
+        "command": "planner.openPunchBoard",
+        "title": "Open punch-list board",
+        "category": "Planner",
+        "icon": "$(bug)"
+      },
+      {
+        "command": "planner.punch.filter",
+        "title": "Filter…",
+        "category": "Planner",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "planner.punch.clearFilter",
+        "title": "Clear filter",
+        "category": "Planner",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "planner.openResources",
+        "title": "Open team load",
+        "category": "Planner",
+        "icon": "$(organization)"
+      },
+      {
+        "command": "planner.openDashboard",
+        "title": "Open dashboard",
+        "category": "Planner",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "planner.saveBaseline",
+        "title": "Save baseline…",
+        "category": "Planner",
+        "icon": "$(save)"
+      },
+      {
+        "command": "planner.startTimer",
+        "title": "Start timer",
+        "category": "Planner",
+        "icon": "$(play)"
+      },
+      {
+        "command": "planner.stopTimer",
+        "title": "Stop timer",
+        "category": "Planner",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "planner.logTime",
+        "title": "Log time…",
+        "category": "Planner",
+        "icon": "$(history)"
+      },
+      {
+        "command": "planner.openTestRunner",
+        "title": "Open test runner",
+        "category": "Planner",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "planner.todos.refresh",
+        "title": "Rescan TODOs",
+        "category": "Planner",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "planner.promoteTodo",
+        "title": "Promote to task…",
+        "category": "Planner",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "planner.export",
+        "title": "Export…",
+        "category": "Planner",
+        "icon": "$(export)"
+      },
+      {
+        "command": "planner.ai.breakDown",
+        "title": "AI: Break down task",
+        "category": "Planner",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "planner.ai.estimate",
+        "title": "AI: Estimate",
+        "category": "Planner",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "planner.ai.calibrate",
+        "title": "AI: Calibrate estimates",
+        "category": "Planner",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "planner.ai.suggestOwners",
+        "title": "AI: Suggest owners",
+        "category": "Planner",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "planner.ai.planFromText",
+        "title": "AI: Plan from text…",
+        "category": "Planner",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "planner.ai.statusSummary",
+        "title": "AI: Status summary",
+        "category": "Planner",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "planner.ai.scheduleReview",
+        "title": "AI: Schedule review",
+        "category": "Planner",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "planner.ai.setApiKey",
+        "title": "Set API key (Claude)",
+        "category": "Planner",
+        "icon": "$(key)"
+      },
+      {
+        "command": "planner.proposal.accept",
+        "title": "Accept AI proposal",
+        "category": "Planner",
+        "icon": "$(check)"
+      },
+      {
+        "command": "planner.proposal.reject",
+        "title": "Reject AI proposal",
+        "category": "Planner",
+        "icon": "$(close)"
+      },
+      {
+        "command": "planner.configureMcp",
+        "title": "Configure MCP for Claude Code",
+        "category": "Planner",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "planner.openManual",
+        "title": "Open user manual",
+        "category": "Planner",
+        "icon": "$(book)"
+      },
+      {
+        "command": "planner.addTask",
+        "title": "Add task…",
+        "category": "Planner",
+        "icon": "$(add)"
+      },
+      {
+        "command": "planner.addSubtask",
+        "title": "Add subtask…",
+        "category": "Planner",
+        "icon": "$(add)"
+      },
+      {
+        "command": "planner.editTask",
+        "title": "Edit task…",
+        "category": "Planner",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "planner.moveTask",
+        "title": "Move task to…",
+        "category": "Planner",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "planner.deleteTask",
+        "title": "Delete task…",
+        "category": "Planner",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "planner.addSection",
+        "title": "Add section…",
+        "category": "Planner",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "planner.addMilestone",
+        "title": "Add milestone…",
+        "category": "Planner",
+        "icon": "$(milestone)"
+      },
+      {
+        "command": "planner.editMilestone",
+        "title": "Edit milestone…",
+        "category": "Planner",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "planner.deleteMilestone",
+        "title": "Delete milestone…",
+        "category": "Planner",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "planner.captureInbox",
+        "title": "Capture to inbox…",
+        "category": "Planner",
+        "icon": "$(add)"
+      },
+      {
+        "command": "planner.addPunchItem",
+        "title": "Add punch item…",
+        "category": "Planner",
+        "icon": "$(add)"
+      },
+      {
+        "command": "planner.addPerson",
+        "title": "Add person…",
+        "category": "Planner",
+        "icon": "$(person-add)"
+      },
+      {
+        "command": "planner.editPerson",
+        "title": "Edit person…",
+        "category": "Planner",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "planner.removePerson",
+        "title": "Remove from team…",
+        "category": "Planner",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "planner.addTimeOff",
+        "title": "Add time off…",
+        "category": "Planner",
+        "icon": "$(calendar)"
+      },
+      {
+        "command": "planner.addOvertime",
+        "title": "Plan overtime…",
+        "category": "Planner",
+        "icon": "$(watch)"
+      },
+      {
+        "command": "planner.addWorkday",
+        "title": "Add a working day…",
+        "category": "Planner",
+        "icon": "$(calendar)"
+      },
+      {
+        "command": "planner.editProject",
+        "title": "Edit project settings…",
+        "category": "Planner",
+        "icon": "$(settings-gear)"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "planner.statusMenu",
+        "label": "Set status"
+      },
+      {
+        "id": "planner.aiMenu",
+        "label": "Planner AI"
+      }
+    ],
+    "menus": {
+      "planner.statusMenu": [
+        {
+          "command": "planner.status.todo",
+          "group": "1@0"
+        },
+        {
+          "command": "planner.status.doing",
+          "group": "1@1"
+        },
+        {
+          "command": "planner.status.review",
+          "group": "1@2"
+        },
+        {
+          "command": "planner.status.blocked",
+          "group": "1@3"
+        },
+        {
+          "command": "planner.status.done",
+          "group": "1@4"
+        },
+        {
+          "command": "planner.status.cancelled",
+          "group": "1@5"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "planner.addTask",
+          "when": "view == planner.milestones && planner.hasPlan",
+          "group": "navigation@0"
+        },
+        {
+          "command": "planner.addMilestone",
+          "when": "view == planner.milestones && planner.hasPlan",
+          "group": "navigation@1"
+        },
+        {
+          "command": "planner.editProject",
+          "when": "view == planner.milestones && planner.hasPlan",
+          "group": "9_project@1"
+        },
+        {
+          "command": "planner.addPerson",
+          "when": "view == planner.team && planner.hasPlan",
+          "group": "navigation@0"
+        },
+        {
+          "command": "planner.editProject",
+          "when": "view == planner.team && planner.hasPlan",
+          "group": "9_project@1"
+        },
+        {
+          "command": "planner.captureInbox",
+          "when": "view == planner.inbox && planner.hasPlan",
+          "group": "navigation@0"
+        },
+        {
+          "command": "planner.addPunchItem",
+          "when": "view == planner.punch && planner.hasPlan",
+          "group": "navigation@0"
+        },
+        {
+          "command": "planner.milestones.filter",
+          "when": "view == planner.milestones",
+          "group": "navigation@2"
+        },
+        {
+          "command": "planner.milestones.clearFilter",
+          "when": "view == planner.milestones && planner.filtered.milestones",
+          "group": "navigation@3"
+        },
+        {
+          "command": "planner.team.filter",
+          "when": "view == planner.team",
+          "group": "navigation@1"
+        },
+        {
+          "command": "planner.team.clearFilter",
+          "when": "view == planner.team && planner.filtered.team",
+          "group": "navigation@2"
+        },
+        {
+          "command": "planner.inbox.filter",
+          "when": "view == planner.inbox",
+          "group": "navigation@1"
+        },
+        {
+          "command": "planner.inbox.clearFilter",
+          "when": "view == planner.inbox && planner.filtered.inbox",
+          "group": "navigation@2"
+        },
+        {
+          "command": "planner.refresh",
+          "when": "view == planner.milestones",
+          "group": "9_project@2"
+        },
+        {
+          "command": "planner.newProject",
+          "when": "view == planner.milestones && !planner.hasPlan",
+          "group": "navigation@0"
+        },
+        {
+          "command": "planner.openGantt",
+          "when": "view == planner.milestones && planner.hasPlan",
+          "group": "navigation@4"
+        },
+        {
+          "command": "planner.punch.filter",
+          "when": "view == planner.punch",
+          "group": "navigation@1"
+        },
+        {
+          "command": "planner.punch.clearFilter",
+          "when": "view == planner.punch && planner.filtered.punch",
+          "group": "navigation@2"
+        },
+        {
+          "command": "planner.openPunchBoard",
+          "when": "view == planner.punch",
+          "group": "navigation@3"
+        },
+        {
+          "command": "planner.openKanban",
+          "when": "view == planner.milestones && planner.hasPlan",
+          "group": "navigation@5"
+        },
+        {
+          "command": "planner.openDashboard",
+          "when": "view == planner.milestones && planner.hasPlan",
+          "group": "navigation@6"
+        },
+        {
+          "command": "planner.openResources",
+          "when": "view == planner.team && planner.hasPlan",
+          "group": "navigation@3"
+        },
+        {
+          "command": "planner.openTestRunner",
+          "when": "view == planner.tests",
+          "group": "navigation@1"
+        },
+        {
+          "command": "planner.todos.refresh",
+          "when": "view == planner.todos",
+          "group": "navigation@1"
+        },
+        {
+          "command": "planner.export",
+          "when": "view == planner.milestones && planner.hasPlan",
+          "group": "navigation@7"
+        },
+        {
+          "command": "planner.openManual",
+          "when": "view == planner.milestones",
+          "group": "9_help@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "planner.editTask",
+          "when": "view =~ /^planner\\.(milestones|team|punch)$/ && viewItem =~ /^(task|punch)/",
+          "group": "inline@1"
+        },
+        {
+          "command": "planner.assignOwner",
+          "when": "view =~ /^planner\\.(milestones|team|punch)$/ && viewItem =~ /^(task|punch)/",
+          "group": "inline@2"
+        },
+        {
+          "command": "planner.editTask",
+          "when": "view =~ /^planner\\.(milestones|team|punch)$/ && viewItem =~ /^(task|punch)/",
+          "group": "0_edit@1"
+        },
+        {
+          "command": "planner.addSubtask",
+          "when": "view =~ /^planner\\.(milestones|team)$/ && viewItem =~ /^task/",
+          "group": "0_edit@2"
+        },
+        {
+          "command": "planner.moveTask",
+          "when": "view =~ /^planner\\.(milestones|team)$/ && viewItem =~ /^task/",
+          "group": "4_move@1"
+        },
+        {
+          "command": "planner.deleteTask",
+          "when": "view =~ /^planner\\.(milestones|team|punch)$/ && viewItem =~ /^(task|punch)/",
+          "group": "9_delete@1"
+        },
+        {
+          "command": "planner.deleteTask",
+          "when": "view == planner.inbox && viewItem == inbox",
+          "group": "9_delete@1"
+        },
+        {
+          "command": "planner.addTask",
+          "when": "view == planner.milestones && viewItem == milestone",
+          "group": "inline@1"
+        },
+        {
+          "command": "planner.editMilestone",
+          "when": "view == planner.milestones && viewItem == milestone",
+          "group": "inline@2"
+        },
+        {
+          "command": "planner.addTask",
+          "when": "view == planner.milestones && viewItem == milestone",
+          "group": "0_add@1"
+        },
+        {
+          "command": "planner.addSection",
+          "when": "view == planner.milestones && viewItem == milestone",
+          "group": "0_add@2"
+        },
+        {
+          "command": "planner.editMilestone",
+          "when": "view == planner.milestones && viewItem == milestone",
+          "group": "1_edit@1"
+        },
+        {
+          "command": "planner.revealMilestone",
+          "when": "view == planner.milestones && viewItem == milestone",
+          "group": "9_navigation@1"
+        },
+        {
+          "command": "planner.deleteMilestone",
+          "when": "view == planner.milestones && viewItem == milestone",
+          "group": "9_delete@1"
+        },
+        {
+          "command": "planner.addTask",
+          "when": "view == planner.milestones && viewItem == section",
+          "group": "inline@1"
+        },
+        {
+          "command": "planner.addTask",
+          "when": "view == planner.milestones && viewItem == section",
+          "group": "0_add@1"
+        },
+        {
+          "command": "planner.addTimeOff",
+          "when": "view == planner.team && viewItem == person",
+          "group": "inline@1"
+        },
+        {
+          "command": "planner.editPerson",
+          "when": "view == planner.team && viewItem == person",
+          "group": "inline@2"
+        },
+        {
+          "command": "planner.editPerson",
+          "when": "view == planner.team && viewItem == person",
+          "group": "0_edit@1"
+        },
+        {
+          "command": "planner.addTimeOff",
+          "when": "view == planner.team && viewItem == person",
+          "group": "0_edit@2"
+        },
+        {
+          "command": "planner.addOvertime",
+          "when": "view == planner.team && viewItem == person",
+          "group": "0_edit@3"
+        },
+        {
+          "command": "planner.addWorkday",
+          "when": "view == planner.team && viewItem == person",
+          "group": "0_edit@4"
+        },
+        {
+          "command": "planner.removePerson",
+          "when": "view == planner.team && viewItem == person",
+          "group": "9_delete@1"
+        },
+        {
+          "submenu": "planner.statusMenu",
+          "when": "view =~ /^planner\\.(milestones|team|punch)$/ && viewItem =~ /^(task|punch)/",
+          "group": "1_status@1"
+        },
+        {
+          "command": "planner.assignOwner",
+          "when": "view =~ /^planner\\.(milestones|team|punch)$/ && viewItem =~ /^(task|punch)/",
+          "group": "1_status@2"
+        },
+        {
+          "command": "planner.addEstimate",
+          "when": "view =~ /^planner\\.(milestones|team)$/ && viewItem =~ /^task/",
+          "group": "1_status@3"
+        },
+        {
+          "command": "planner.revealTask",
+          "when": "view =~ /^planner\\.(milestones|team|punch)$/ && viewItem =~ /^(task|punch)/",
+          "group": "9_navigation@1"
+        },
+        {
+          "command": "planner.cycleStatus",
+          "when": "view =~ /^planner\\.(milestones|team)$/ && viewItem =~ /^task/",
+          "group": "inline@3"
+        },
+        {
+          "command": "planner.planIntoMilestone",
+          "when": "view == planner.inbox && viewItem == inbox",
+          "group": "inline@1"
+        },
+        {
+          "command": "planner.planIntoMilestone",
+          "when": "view == planner.inbox && viewItem == inbox",
+          "group": "1_plan@1"
+        },
+        {
+          "command": "planner.revealTask",
+          "when": "view == planner.inbox && viewItem == inbox",
+          "group": "9_navigation@1"
+        },
+        {
+          "command": "planner.openGantt",
+          "when": "view =~ /^planner\\.(milestones|team)$/ && viewItem =~ /^task/",
+          "group": "8_open@1"
+        },
+        {
+          "command": "planner.openKanban",
+          "when": "view =~ /^planner\\.(milestones|team|punch)$/ && viewItem =~ /^(task|punch)/",
+          "group": "8_open@2"
+        },
+        {
+          "command": "planner.startTimer",
+          "when": "view =~ /^planner\\.(milestones|team|punch)$/ && viewItem =~ /^(task|punch)/",
+          "group": "2_time@1"
+        },
+        {
+          "command": "planner.logTime",
+          "when": "view =~ /^planner\\.(milestones|team|punch)$/ && viewItem =~ /^(task|punch)/",
+          "group": "2_time@2"
+        },
+        {
+          "command": "planner.openTestRunner",
+          "when": "view == planner.tests && viewItem == testPlan",
+          "group": "inline@1"
+        },
+        {
+          "command": "planner.openTestRunner",
+          "when": "view == planner.tests && viewItem == testPlan",
+          "group": "1_open@1"
+        },
+        {
+          "command": "planner.promoteTodo",
+          "when": "view == planner.todos && viewItem == todo",
+          "group": "inline@1"
+        },
+        {
+          "command": "planner.promoteTodo",
+          "when": "view == planner.todos && viewItem == todo",
+          "group": "1_todo@1"
+        },
+        {
+          "submenu": "planner.aiMenu",
+          "when": "planner.aiEnabled && view =~ /^planner\\.(milestones|team)$/ && viewItem =~ /^task/",
+          "group": "3_ai@1"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "planner.editTask",
+          "when": "planner.isPlanFile",
+          "group": "planner@0"
+        },
+        {
+          "command": "planner.addSubtask",
+          "when": "planner.isPlanFile",
+          "group": "planner@6"
+        },
+        {
+          "command": "planner.moveTask",
+          "when": "planner.isPlanFile",
+          "group": "planner@7"
+        },
+        {
+          "command": "planner.deleteTask",
+          "when": "planner.isPlanFile",
+          "group": "planner@8"
+        },
+        {
+          "submenu": "planner.statusMenu",
+          "when": "planner.isPlanFile",
+          "group": "planner@1"
+        },
+        {
+          "command": "planner.assignOwner",
+          "when": "planner.isPlanFile",
+          "group": "planner@2"
+        },
+        {
+          "command": "planner.addEstimate",
+          "when": "planner.isPlanFile",
+          "group": "planner@3"
+        },
+        {
+          "command": "planner.startTimer",
+          "when": "planner.isPlanFile",
+          "group": "planner@4"
+        },
+        {
+          "command": "planner.logTime",
+          "when": "planner.isPlanFile",
+          "group": "planner@5"
+        },
+        {
+          "command": "planner.promoteTodo",
+          "when": "planner.hasPlan && !planner.isPlanFile",
+          "group": "planner@1"
+        },
+        {
+          "submenu": "planner.aiMenu",
+          "when": "planner.aiEnabled && planner.isPlanFile",
+          "group": "planner@9"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "planner.revealTask",
+          "when": "false"
+        },
+        {
+          "command": "planner.revealMilestone",
+          "when": "false"
+        },
+        {
+          "command": "planner.revealInTree",
+          "when": "false"
+        },
+        {
+          "command": "planner.planIntoMilestone",
+          "when": "false"
+        },
+        {
+          "command": "planner.status.todo",
+          "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.status.doing",
+          "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.status.review",
+          "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.status.blocked",
+          "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.status.done",
+          "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.status.cancelled",
+          "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.setStatus",
+          "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.cycleStatus",
+          "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.assignOwner",
+          "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.addEstimate",
+          "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.assignIds",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.showAttention",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.refresh",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.milestones.filter",
+          "when": "false"
+        },
+        {
+          "command": "planner.milestones.clearFilter",
+          "when": "false"
+        },
+        {
+          "command": "planner.team.filter",
+          "when": "false"
+        },
+        {
+          "command": "planner.team.clearFilter",
+          "when": "false"
+        },
+        {
+          "command": "planner.inbox.filter",
+          "when": "false"
+        },
+        {
+          "command": "planner.inbox.clearFilter",
+          "when": "false"
+        },
+        {
+          "command": "planner.openGantt",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.openKanban",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.openPunchBoard",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.punch.filter",
+          "when": "false"
+        },
+        {
+          "command": "planner.punch.clearFilter",
+          "when": "false"
+        },
+        {
+          "command": "planner.openResources",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.openDashboard",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.saveBaseline",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.startTimer",
+          "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.stopTimer",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.logTime",
+          "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.openTestRunner",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.todos.refresh",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.promoteTodo",
+          "when": "planner.hasPlan && editorIsOpen"
+        },
+        {
+          "command": "planner.export",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.ai.breakDown",
+          "when": "planner.isPlanFile && planner.aiEnabled"
+        },
+        {
+          "command": "planner.ai.estimate",
+          "when": "planner.isPlanFile && planner.aiEnabled"
+        },
+        {
+          "command": "planner.ai.suggestOwners",
+          "when": "planner.isPlanFile && planner.aiEnabled"
+        },
+        {
+          "command": "planner.ai.calibrate",
+          "when": "planner.hasPlan && planner.aiEnabled"
+        },
+        {
+          "command": "planner.ai.planFromText",
+          "when": "planner.hasPlan && planner.aiEnabled"
+        },
+        {
+          "command": "planner.ai.statusSummary",
+          "when": "planner.hasPlan && planner.aiEnabled"
+        },
+        {
+          "command": "planner.ai.scheduleReview",
+          "when": "planner.hasPlan && planner.aiEnabled"
+        },
+        {
+          "command": "planner.ai.setApiKey",
+          "when": "config.planner.ai.provider == anthropic"
+        },
+        {
+          "command": "planner.proposal.accept",
+          "when": "planner.hasProposal"
+        },
+        {
+          "command": "planner.proposal.reject",
+          "when": "planner.hasProposal"
+        },
+        {
+          "command": "planner.configureMcp",
+          "when": "workbenchState != empty"
+        },
+        {
+          "command": "planner.addTask",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.addSection",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.addMilestone",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.editMilestone",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.deleteMilestone",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.captureInbox",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.addPunchItem",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.addPerson",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.editPerson",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.removePerson",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.addTimeOff",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.addOvertime",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.addWorkday",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.editProject",
+          "when": "planner.hasPlan"
+        },
+        {
+          "command": "planner.addSubtask",
+          "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.editTask",
+          "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.moveTask",
+          "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.deleteTask",
+          "when": "planner.isPlanFile"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "planner.openGantt",
+          "when": "planner.isPlanFile",
+          "group": "navigation@1"
+        },
+        {
+          "command": "planner.proposal.accept",
+          "when": "resourceScheme == planner-proposal",
+          "group": "navigation@1"
+        },
+        {
+          "command": "planner.proposal.reject",
+          "when": "resourceScheme == planner-proposal",
+          "group": "navigation@2"
+        }
+      ],
+      "planner.aiMenu": [
+        {
+          "command": "planner.ai.breakDown",
+          "group": "1@1"
+        },
+        {
+          "command": "planner.ai.estimate",
+          "group": "1@2"
+        },
+        {
+          "command": "planner.ai.suggestOwners",
+          "group": "1@3"
+        }
+      ],
+      "webview/context": [
+        {
+          "command": "planner.editTask",
+          "when": "(webviewId == 'planner.kanban' || webviewId == 'planner.gantt') && webviewSection =~ /^(task|punch)$/",
+          "group": "0_edit@1"
+        },
+        {
+          "command": "planner.addSubtask",
+          "when": "(webviewId == 'planner.kanban' || webviewId == 'planner.gantt') && webviewSection == 'task'",
+          "group": "0_edit@2"
+        },
+        {
+          "submenu": "planner.statusMenu",
+          "when": "(webviewId == 'planner.kanban' || webviewId == 'planner.gantt') && webviewSection =~ /^(task|punch)$/",
+          "group": "1_status@1"
+        },
+        {
+          "command": "planner.assignOwner",
+          "when": "(webviewId == 'planner.kanban' || webviewId == 'planner.gantt') && webviewSection =~ /^(task|punch)$/",
+          "group": "1_status@2"
+        },
+        {
+          "command": "planner.addEstimate",
+          "when": "(webviewId == 'planner.kanban' || webviewId == 'planner.gantt') && webviewSection == 'task'",
+          "group": "1_status@3"
+        },
+        {
+          "command": "planner.startTimer",
+          "when": "(webviewId == 'planner.kanban' || webviewId == 'planner.gantt') && webviewSection =~ /^(task|punch)$/",
+          "group": "2_time@1"
+        },
+        {
+          "command": "planner.logTime",
+          "when": "(webviewId == 'planner.kanban' || webviewId == 'planner.gantt') && webviewSection =~ /^(task|punch)$/",
+          "group": "2_time@2"
+        },
+        {
+          "submenu": "planner.aiMenu",
+          "when": "planner.aiEnabled && (webviewId == 'planner.kanban' || webviewId == 'planner.gantt') && webviewSection == 'task'",
+          "group": "3_ai@1"
+        },
+        {
+          "command": "planner.moveTask",
+          "when": "(webviewId == 'planner.kanban' || webviewId == 'planner.gantt') && webviewSection == 'task'",
+          "group": "4_move@1"
+        },
+        {
+          "command": "planner.revealTask",
+          "when": "(webviewId == 'planner.kanban' || webviewId == 'planner.gantt') && webviewSection =~ /^(task|punch)$/",
+          "group": "9_navigation@1"
+        },
+        {
+          "command": "planner.deleteTask",
+          "when": "(webviewId == 'planner.kanban' || webviewId == 'planner.gantt') && webviewSection =~ /^(task|punch)$/",
+          "group": "9_delete@1"
+        },
+        {
+          "command": "planner.addTask",
+          "when": "webviewId == 'planner.gantt' && webviewSection =~ /^(milestone|section)$/",
+          "group": "0_add@1"
+        },
+        {
+          "command": "planner.addSection",
+          "when": "webviewId == 'planner.gantt' && webviewSection == 'milestone'",
+          "group": "0_add@2"
+        },
+        {
+          "command": "planner.editMilestone",
+          "when": "webviewId == 'planner.gantt' && webviewSection == 'milestone'",
+          "group": "1_edit@1"
+        },
+        {
+          "command": "planner.deleteMilestone",
+          "when": "webviewId == 'planner.gantt' && webviewSection == 'milestone'",
+          "group": "9_delete@1"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "planner.cycleStatus",
+        "key": "ctrl+alt+x",
+        "mac": "cmd+alt+x",
+        "when": "editorTextFocus && planner.isPlanFile"
+      }
+    ],
+    "configuration": {
+      "title": "Markdown Project Planner",
+      "properties": {
+        "planner.planFolder": {
+          "type": "string",
+          "default": "plan",
+          "markdownDescription": "Folder with the plan files, relative to the workspace folder (or absolute)."
+        },
+        "planner.me": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Your person id from `team.md`. Shown first in **My Work / Team**. Empty = the first person in `team.md`."
+        },
+        "planner.autoAssignIds": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Add missing task ids (`^T…`) when a milestone file or the punch list is saved."
+        },
+        "planner.autoAssignIdsOnAutoSave": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Also add missing ids when VS Code auto-saves after a delay (off, so ids do not appear while you type)."
+        },
+        "planner.autoSave": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Save the plan files after an edit made from a view (tree, Gantt, Kanban …). Edits stay undoable either way."
+        },
+        "planner.editor.toggleOnClick": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Clicking inside a task's checkbox `[ ]` in the editor cycles its status (to do → in progress → review → done) and writes `@started`/`@done`."
+        },
+        "planner.codeLens.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show CodeLens above milestone headings."
+        },
+        "planner.codeLens.tasks": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show the scheduled dates and slack above each task."
+        },
+        "planner.codeLens.actions": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show clickable actions next to the CodeLens: owner and **Edit** on tasks, **Add task**, **Add section** and **Edit milestone** on milestones, **Add person**, **Edit person**, **Add time off**, **Plan overtime** and **Add working day** in `team.md`, **Edit project settings** in `project.md`, **Capture to inbox** and **Plan into milestone…** in `inbox.md`, **Add punch item** in `punchlist.md`, **Open in test runner** in test plans. The schedule CodeLens stays."
+        },
+        "planner.templatesFolder": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Folder with your own project templates (one sub-folder per template, Markdown files with `{{name}}`, `{{start}}`, `{{end}}`, `{{date:0.5}}` … placeholders). Relative to the first workspace folder or absolute."
+        },
+        "planner.scheduling.unassignedCapacity": {
+          "type": "number",
+          "default": 40,
+          "minimum": 0,
+          "markdownDescription": "Capacity in hours per week of the virtual **Unassigned** pool that runs tasks without `@owner`."
+        },
+        "planner.diagnostics.overbooked": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show an info diagnostic on tasks in weeks where their owner's demand (ASAP, ignoring capacity) exceeds capacity."
+        },
+        "planner.kanban.wipLimits": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Work-in-progress limit per Kanban column, e.g. `{ \"doing\": 4, \"review\": 3 }`. Columns over their limit are shown in red.",
+          "properties": {
+            "todo": {
+              "type": "number",
+              "minimum": 1
+            },
+            "doing": {
+              "type": "number",
+              "minimum": 1
+            },
+            "review": {
+              "type": "number",
+              "minimum": 1
+            },
+            "blocked": {
+              "type": "number",
+              "minimum": 1
+            },
+            "done": {
+              "type": "number",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "planner.time.roundingMinutes": {
+          "type": "number",
+          "default": 15,
+          "minimum": 1,
+          "markdownDescription": "Timer time is rounded up to this many minutes before it is added to `@act`."
+        },
+        "planner.todos.keywords": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "TODO",
+            "FIXME",
+            "HACK"
+          ],
+          "markdownDescription": "Comment keywords collected in **TODOs in Code** (upper case, whole words, followed by `:`, `(…)` or a space)."
+        },
+        "planner.todos.include": {
+          "type": "string",
+          "default": "**/*.{ts,tsx,js,jsx,mjs,cjs,vue,svelte,py,java,kt,cs,go,rs,rb,php,swift,c,h,cpp,hpp,sql,sh,md,scl,st}",
+          "markdownDescription": "Glob of files scanned for TODO comments (the plan folder is always skipped)."
+        },
+        "planner.todos.exclude": {
+          "type": "string",
+          "default": "**/{node_modules,.git,dist,out,build,target,coverage,vendor,.venv,.vscode-test}/**",
+          "markdownDescription": "Glob of files never scanned for TODO comments."
+        },
+        "planner.todos.maxFiles": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 1,
+          "markdownDescription": "Maximum number of files scanned for TODO comments."
+        },
+        "planner.export.branding": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Branding of exported reports: `{ \"company\": \"Example Corp\", \"accentColor\": \"#0f766e\", \"logo\": \"docs/logo.png\" }` (logo relative to the workspace folder; PNG, JPEG, GIF, SVG or WebP, embedded in the report).",
+          "properties": {
+            "company": {
+              "type": "string"
+            },
+            "accentColor": {
+              "type": "string",
+              "pattern": "^(#[0-9A-Fa-f]{3,8})?$"
+            },
+            "logo": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "planner.export.periodDays": {
+          "type": "number",
+          "default": 7,
+          "minimum": 1,
+          "markdownDescription": "Length of the reporting period in days (\"done this period\" and \"planned next period\")."
+        },
+        "planner.export.ganttWeeks": {
+          "type": "number",
+          "default": 12,
+          "minimum": 1,
+          "markdownDescription": "Weeks shown in the report's Gantt and team load sections."
+        },
+        "planner.export.author": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Author shown in reports. Empty = the name of `planner.me`."
+        },
+        "planner.export.browserPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to Microsoft Edge or Google Chrome for PDF export. Empty = detect automatically; without a browser the HTML report is written instead."
+        },
+        "planner.export.csvDelimiter": {
+          "type": "string",
+          "default": ",",
+          "enum": [
+            ",",
+            ";",
+            "\t"
+          ],
+          "markdownDescription": "Field delimiter of the CSV export (`;` suits Excel in many European locales)."
+        },
+        "planner.export.openAfterExport": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Open the exported file after `Planner: Export…`."
+        },
+        "planner.ai.provider": {
+          "type": "string",
+          "enum": [
+            "vscode-lm",
+            "anthropic",
+            "none"
+          ],
+          "enumDescriptions": [
+            "VS Code Language Model API: any installed model provider, e.g. GitHub Copilot.",
+            "Claude API directly; the key is stored with \"Planner: Set API key\".",
+            "No AI: AI commands are hidden; everything else works."
+          ],
+          "default": "vscode-lm",
+          "markdownDescription": "AI provider for the `Planner AI` commands. AI only proposes changes: every change is shown as a diff to accept or reject, and the scheduler (not the AI) computes all dates."
+        },
+        "planner.ai.vscodeModel": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model family for the `vscode-lm` provider (for example `gpt-4o` or `claude-sonnet-4`). Empty = the first available model."
+        },
+        "planner.ai.model": {
+          "type": "string",
+          "default": "claude-sonnet-5-5",
+          "markdownDescription": "Claude model id for the `anthropic` provider."
+        },
+        "planner.ai.redact": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Terms removed from prompts before they are sent (customer names …). Literal, case-insensitive terms, or `/regex/flags`."
+        },
+        "planner.mcp.configureOnNewProject": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "**New project** also writes `.mcp.json` with the md-planner MCP server, so Claude Code and other agents can build and update the plan right away (same as **Planner: Configure MCP for Claude Code**)."
+        }
+      }
+    },
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "md-planner.mcp",
+        "label": "Markdown Project Planner"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsc --noEmit -p . && node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "node scripts/build.mjs --tests && node scripts/run-integration.mjs",
+    "perf:webviews": "node scripts/build.mjs && node scripts/perf/webviews.mjs",
+    "a11y": "node scripts/build.mjs && node scripts/a11y/check.mjs",
+    "docs:settings": "node scripts/docs/settings.mjs",
+    "docs:manual": "node scripts/build.mjs && node scripts/manual/capture.mjs",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "package": "vsce package",
+    "vscode:prepublish": "tsc --noEmit -p . && node scripts/build.mjs --production"
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "^0.134.0",
+    "@eslint/js": "^9.39.5",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.19.43",
+    "@types/sortablejs": "^1.15.9",
+    "@types/vscode": "~1.95.0",
+    "@vscode/codicons": "^0.0.46-24",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.0.0",
+    "axe-core": "4.10.3",
+    "esbuild": "^0.28.2",
+    "eslint": "^9.39.5",
+    "exceljs": "^4.4.0",
+    "mocha": "^11.8.0",
+    "preact": "^11.0.1",
+    "preact-render-to-string": "^6.8.1",
+    "prettier": "^3.9.10",
+    "sortablejs": "^1.15.7",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.2",
+    "vitest": "^4.1.11",
+    "zod": "^4.6.7"
+  }
+}

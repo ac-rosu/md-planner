@@ -1,0 +1,374 @@
+/* Gantt chart. Colours come from VS Code theme variables only. */
+
+.scroller {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.canvas {
+  position: relative;
+  min-height: 100%;
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--planner-border);
+}
+
+.corner {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 0 8px 6px;
+  font-weight: 600;
+  background: var(--vscode-editor-background);
+  border-right: 1px solid var(--planner-border);
+}
+
+.body {
+  display: flex;
+  align-items: flex-start;
+}
+
+.list {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  flex: none;
+  background: var(--vscode-editor-background);
+  border-right: 1px solid var(--planner-border);
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--planner-row);
+  padding-right: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: default;
+  border-bottom: 1px solid transparent;
+}
+
+.list-row:hover {
+  background: var(--planner-hover);
+}
+
+.list-row.selected {
+  background: var(--planner-selection);
+  color: var(--planner-selection-fg);
+}
+
+.list-row.milestone,
+.list-row.group {
+  font-weight: 600;
+}
+
+.list-row.milestone {
+  background: var(--vscode-editorGroupHeader-tabsBackground, transparent);
+}
+
+.list-row.status-done .row-title {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.list-row .twisty {
+  width: 16px;
+  flex: none;
+  cursor: pointer;
+}
+
+.list-row .row-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.list-row .row-id {
+  font-size: 0.9em;
+}
+
+.list-row .row-owner {
+  min-width: 22px;
+  padding: 0 3px;
+  border-radius: 3px;
+  font-size: 0.85em;
+  text-align: center;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.list-row .row-open {
+  visibility: hidden;
+}
+
+.list-row:hover .row-open,
+.list-row.selected .row-open {
+  visibility: visible;
+}
+
+.codicon.late {
+  color: var(--planner-late-text);
+}
+
+.late-badge {
+  color: var(--planner-late-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.timeline-header .tick {
+  stroke: var(--planner-border);
+}
+
+.timeline-header .tick-label {
+  fill: var(--vscode-foreground);
+  font-size: 11px;
+}
+
+.timeline-header .tick-label.small {
+  fill: var(--planner-muted);
+  font-size: 10px;
+}
+
+.chart {
+  display: block;
+  flex: none;
+  user-select: none;
+}
+
+.chart .stripe.milestone {
+  fill: var(--vscode-editorGroupHeader-tabsBackground, rgba(128, 128, 128, 0.08));
+}
+
+.chart .stripe.group {
+  fill: var(--vscode-editor-lineHighlightBackground, rgba(128, 128, 128, 0.05));
+}
+
+.chart .weekend {
+  fill: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.08));
+  opacity: 0.6;
+}
+
+.chart .holiday {
+  fill: var(--vscode-editorWarning-foreground, #cca700);
+  opacity: 0.12;
+}
+
+.chart .grid {
+  stroke: var(--planner-border);
+  stroke-width: 1;
+  opacity: 0.6;
+}
+
+.today {
+  stroke: var(--vscode-charts-red, #f14c4c);
+  stroke-width: 2;
+}
+
+.chart .selected-row {
+  fill: var(--vscode-list-inactiveSelectionBackground, rgba(128, 128, 128, 0.15));
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.chart .bar {
+  stroke: var(--vscode-editor-background);
+  stroke-width: 1;
+  cursor: grab;
+}
+
+.chart .bar.done {
+  opacity: 0.55;
+}
+
+.chart .bar.blocked {
+  stroke: var(--planner-late);
+  stroke-dasharray: 3 2;
+  stroke-width: 2;
+}
+
+.chart .bar.critical {
+  stroke: var(--vscode-charts-red, #f14c4c);
+  stroke-width: 2;
+}
+
+.chart .progress {
+  fill: var(--vscode-editor-foreground);
+  opacity: 0.25;
+  pointer-events: none;
+}
+
+/* Days with overtime or extra working days: marks above the bar. */
+.chart .overtime {
+  fill: var(--vscode-charts-orange);
+  pointer-events: none;
+}
+
+.chart .bar-label {
+  fill: var(--vscode-editor-background);
+  font-size: 10px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.chart .resize-handle {
+  fill: transparent;
+  cursor: ew-resize;
+}
+
+.chart .link-handle {
+  fill: var(--vscode-editor-background);
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 1.5;
+  opacity: 0;
+  cursor: crosshair;
+}
+
+.chart .row:hover .link-handle {
+  opacity: 1;
+}
+
+.chart .rollup {
+  opacity: 0.85;
+}
+
+.chart .rollup-progress {
+  fill: var(--vscode-editor-foreground);
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.chart .baseline {
+  fill: var(--planner-muted);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.chart .slip {
+  fill: var(--planner-late);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.chart .deadline {
+  stroke: var(--planner-late);
+  stroke-width: 2;
+}
+
+.chart .diamond {
+  fill: var(--vscode-foreground);
+  stroke: var(--vscode-editor-background);
+}
+
+.chart .diamond.late {
+  fill: var(--planner-late);
+}
+
+.chart .diamond.forecast {
+  fill: transparent;
+  stroke: var(--planner-late);
+  stroke-width: 2;
+}
+
+.chart .slip-line {
+  stroke: var(--planner-late);
+  stroke-dasharray: 4 3;
+}
+
+.chart .unscheduled {
+  fill: var(--planner-late);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.chart .link-line {
+  fill: none;
+  stroke: var(--planner-muted);
+  stroke-width: 1.2;
+}
+
+.chart .link-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 8;
+  cursor: pointer;
+}
+
+.chart .link.critical .link-line {
+  stroke: var(--vscode-charts-red, #f14c4c);
+  stroke-width: 1.6;
+}
+
+.chart .link.selected .link-line {
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 2.5;
+}
+
+.chart .arrow-head {
+  fill: var(--planner-muted);
+}
+
+.chart .arrow-head.critical {
+  fill: var(--vscode-charts-red, #f14c4c);
+}
+
+.chart .bar-ghost {
+  fill: var(--vscode-focusBorder);
+  opacity: 0.35;
+  stroke: var(--vscode-focusBorder);
+  stroke-dasharray: 4 2;
+}
+
+.chart .ghost-label {
+  fill: var(--vscode-foreground);
+  font-size: 11px;
+}
+
+.chart .link-ghost {
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.chart .link-ghost-end {
+  fill: var(--vscode-focusBorder);
+}
+
+.chart.dragging.move .bar {
+  cursor: grabbing;
+}
+
+.statusline {
+  padding: 3px 10px;
+  border-top: 1px solid var(--planner-border);
+  font-size: 0.9em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.vscode-high-contrast .chart .bar,
+body.vscode-high-contrast .chart .rollup {
+  stroke: var(--vscode-contrastBorder);
+  stroke-width: 1;
+}
+
+body.vscode-high-contrast .chart .link-line {
+  stroke: var(--vscode-contrastBorder);
+}
+
+body.vscode-high-contrast .list-row.selected {
+  outline: 1px dashed var(--vscode-contrastActiveBorder);
+}

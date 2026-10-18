@@ -1,0 +1,231 @@
+/* Resource heatmap. Colours come from VS Code theme variables only. */
+
+.legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--planner-muted);
+}
+
+.swatch {
+  display: inline-block;
+  width: 14px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid var(--planner-border);
+}
+
+.swatch.under,
+.cell.under {
+  background: color-mix(in srgb, var(--vscode-charts-green) 22%, transparent);
+}
+
+.swatch.near,
+.cell.near {
+  background: color-mix(in srgb, var(--vscode-charts-yellow) 32%, transparent);
+}
+
+.swatch.over,
+.cell.over {
+  background: color-mix(in srgb, var(--vscode-charts-red) 40%, transparent);
+}
+
+.swatch.off,
+.cell.off-full,
+.cell.off-part {
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--vscode-foreground) 22%, transparent) 0 2px,
+    transparent 2px 7px
+  );
+}
+
+.cell.off-part {
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+}
+
+/* Planned overtime and extra working days: a bar at the top of the cell. */
+.swatch.ot,
+.cell.ot {
+  box-shadow: inset 0 3px 0 var(--vscode-charts-orange);
+}
+
+.cell .ot-hours {
+  display: block;
+  font-size: 0.75em;
+  line-height: 1;
+  color: var(--vscode-foreground);
+}
+
+.heat-scroller {
+  flex: 1;
+  overflow: auto;
+}
+
+.heatmap {
+  border-collapse: separate;
+  border-spacing: 2px;
+  padding: 4px 8px;
+}
+
+.heatmap th {
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--vscode-editor-background);
+}
+
+.heatmap thead th {
+  position: sticky;
+  z-index: 2;
+}
+
+.heatmap thead tr:first-child th {
+  top: 0;
+}
+
+.heatmap thead tr:nth-child(2) th {
+  top: 22px;
+}
+
+.heatmap .sticky {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  text-align: left;
+  min-width: 170px;
+  padding-right: 10px;
+}
+
+.heatmap .corner {
+  z-index: 4;
+}
+
+.heatmap .month {
+  text-align: left;
+  font-weight: 500;
+  color: var(--planner-muted);
+}
+
+.heatmap .week {
+  width: 60px;
+  min-width: 60px;
+  font-size: 0.85em;
+  color: var(--planner-muted);
+}
+
+.heatmap .week.today {
+  color: var(--vscode-foreground);
+  text-decoration: underline;
+}
+
+.person .dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.person .role {
+  font-weight: 400;
+  font-size: 0.85em;
+  margin-left: 15px;
+}
+
+.over-count {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  font-size: 0.8em;
+  background: var(--planner-late);
+  color: var(--vscode-editor-background);
+}
+
+.cell {
+  height: 38px;
+  padding: 0;
+  border-radius: 3px;
+  border: 1px solid transparent;
+}
+
+.cell.none {
+  background-color: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.06));
+}
+
+.cell.current {
+  border-color: var(--vscode-focusBorder);
+}
+
+.cell.selected {
+  outline: 2px solid var(--vscode-focusBorder);
+}
+
+.cell-btn {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell .cap {
+  color: var(--vscode-foreground);
+  font-size: 0.85em;
+}
+
+.cell.over .hours {
+  font-weight: 700;
+}
+
+.details {
+  min-height: 96px;
+  max-height: 34vh;
+  overflow: auto;
+  padding: 8px 12px;
+  border-top: 1px solid var(--planner-border);
+}
+
+.details-title {
+  margin-bottom: 6px;
+}
+
+.details-overtime {
+  margin-bottom: 6px;
+}
+
+.details-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.task-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.task-list a {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+}
+
+.task-list a:hover {
+  text-decoration: underline;
+}
+
+body.vscode-high-contrast .cell {
+  border-color: var(--vscode-contrastBorder);
+}
+
+body.vscode-high-contrast .cell.ot {
+  box-shadow: inset 0 3px 0 var(--vscode-contrastActiveBorder, var(--vscode-charts-orange));
+}
+
+body.vscode-high-contrast .cell.over {
+  border-style: dashed;
+  border-width: 2px;
+}

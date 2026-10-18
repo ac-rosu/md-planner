@@ -1,0 +1,308 @@
+/* Kanban board. Colours come from VS Code theme variables only. */
+
+.filters {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.filters select {
+  max-width: 180px;
+}
+
+.filters input[type="search"] {
+  width: 140px;
+}
+
+.board {
+  flex: 1;
+  overflow: auto;
+  display: grid;
+  /* Rows grow with their cards; otherwise the board's fixed height squeezes swimlane rows and
+     cards spill into the next lane. */
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 0 10px;
+  padding: 0 10px 12px;
+}
+
+.column-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px 6px;
+  font-weight: 600;
+  background: var(--vscode-editor-background);
+  border-bottom: 2px solid var(--planner-border);
+}
+
+.column-header.over {
+  color: var(--planner-late-text);
+  border-bottom-color: var(--planner-late);
+}
+
+.column-title {
+  flex: 1;
+}
+
+.column-count {
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 0.85em;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.column-header.over .column-count {
+  background: var(--planner-late);
+  color: var(--vscode-editor-background);
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--vscode-charts-foreground);
+}
+
+.status-dot.status-doing {
+  background: var(--vscode-charts-blue);
+}
+.status-dot.status-review {
+  background: var(--vscode-charts-purple);
+}
+.status-dot.status-blocked {
+  background: var(--vscode-charts-red);
+}
+.status-dot.status-done {
+  background: var(--vscode-charts-green);
+}
+.status-dot.status-cancelled {
+  background: var(--vscode-disabledForeground);
+}
+
+.lane-header {
+  margin-top: 10px;
+  padding: 4px 2px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--planner-border);
+}
+
+.cards {
+  min-height: 48px;
+  padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card {
+  position: relative;
+  padding: 7px 8px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--vscode-editorWidget-border, var(--planner-border));
+  border-left: 3px solid var(--vscode-charts-foreground);
+  background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
+  cursor: grab;
+}
+
+.card:hover {
+  border-color: var(--vscode-focusBorder);
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+}
+
+.status-doing .card {
+  border-left-color: var(--vscode-charts-blue);
+}
+.status-review .card {
+  border-left-color: var(--vscode-charts-purple);
+}
+.status-blocked .card {
+  border-left-color: var(--vscode-charts-red);
+}
+.status-done .card {
+  border-left-color: var(--vscode-charts-green);
+}
+.status-cancelled .card {
+  color: var(--planner-muted);
+  text-decoration: line-through;
+}
+
+.card.late {
+  border-color: var(--planner-late);
+}
+
+.card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding-right: 18px;
+}
+
+.card-title {
+  flex: 1;
+  line-height: 1.35;
+}
+
+.prio-icon {
+  color: var(--planner-late-text);
+}
+
+.prio-low .prio-icon {
+  color: var(--planner-muted);
+}
+
+.card-parent,
+.card-from {
+  margin-top: 2px;
+  font-size: 0.85em;
+}
+
+.card-blocked {
+  margin-top: 4px;
+  font-size: 0.9em;
+  color: var(--planner-late-text);
+}
+
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 0.85em;
+  color: var(--planner-muted);
+}
+
+.card-meta .spacer {
+  flex: 1;
+}
+
+.card-meta .codicon {
+  font-size: 12px;
+  vertical-align: -2px;
+}
+
+.card-id {
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.chip,
+.tag {
+  padding: 0 5px;
+  border-radius: 8px;
+  font-size: 0.85em;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.tag {
+  background: transparent;
+  color: var(--vscode-textLink-foreground);
+  padding: 0;
+}
+
+.card-ot {
+  color: var(--vscode-foreground);
+  border-bottom: 2px solid var(--vscode-charts-orange);
+}
+
+.due.late {
+  color: var(--planner-late-text);
+  font-weight: 600;
+}
+
+/* Initials in the foreground colour on a tint of the person's colour (readable in every theme). */
+.owner {
+  min-width: 22px;
+  padding: 0 4px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 0.85em;
+  font-weight: 600;
+  text-align: center;
+  color: var(--vscode-foreground);
+  background: color-mix(in srgb, var(--owner-color) 22%, transparent);
+  border: 1px solid var(--owner-color);
+  cursor: pointer;
+}
+
+.owner:hover {
+  background: color-mix(in srgb, var(--owner-color) 40%, transparent);
+}
+
+.assign-owner {
+  visibility: hidden;
+}
+
+.card:hover .assign-owner,
+.card:focus-within .assign-owner {
+  visibility: visible;
+}
+
+.column-add {
+  margin-left: -2px;
+}
+
+.sev {
+  padding: 0 5px;
+  border-radius: 3px;
+  font-weight: 700;
+  font-size: 0.85em;
+  color: var(--vscode-editor-background);
+  background: var(--vscode-charts-foreground);
+}
+
+.sev-A {
+  background: var(--vscode-charts-red);
+}
+.sev-B {
+  background: var(--vscode-charts-orange);
+}
+.sev-C {
+  background: var(--vscode-charts-yellow);
+}
+
+.card-open {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  visibility: hidden;
+}
+
+.card:hover .card-open,
+.card:focus-within .card-open {
+  visibility: visible;
+}
+
+.card-ghost {
+  opacity: 0.35;
+  border-style: dashed;
+}
+
+.card-drag {
+  transform: rotate(1deg);
+}
+
+body.vscode-high-contrast .card {
+  border-color: var(--vscode-contrastBorder);
+}
+
+body.vscode-high-contrast .card.late {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-contrastActiveBorder));
+  border-style: dashed;
+}

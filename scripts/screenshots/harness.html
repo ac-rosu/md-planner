@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="theme.css" />
+    <link rel="stylesheet" href="../../dist/webview/__VIEW__.css" />
+    <script>
+      // Stand-in for the VS Code webview API: answers "ready" with the recorded host messages.
+      window.__messages = __MESSAGES__;
+      window.acquireVsCodeApi = () => ({
+        postMessage(m) {
+          if (m.type === "ready") {
+            for (const msg of window.__messages) setTimeout(() => window.postMessage(msg, "*"), 0);
+          }
+        },
+        getState() {
+          return undefined;
+        },
+        setState() {},
+      });
+    </script>
+  </head>
+  <body class="__BODYCLASS__">
+    <div id="root"></div>
+    <script src="../../dist/webview/__VIEW__.js"></script>
+  </body>
+</html>

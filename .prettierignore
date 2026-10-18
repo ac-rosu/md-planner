@@ -1,0 +1,13 @@
+node_modules/
+dist/
+out/
+.vscode-test/
+*.vsix
+package-lock.json
+# Plan files and fixtures are byte-exact test data; never reformat them.
+examples/
+templates/
+test/fixtures/
+docs/SPEC.md
+CHANGELOG.md
+docs/settings.md

@@ -1,0 +1,5 @@
+* text=auto eol=lf
+# Byte-exact test data (CRLF, BOM, trailing whitespace): never normalise.
+test/fixtures/** -text
+*.png binary
+*.ttf binary

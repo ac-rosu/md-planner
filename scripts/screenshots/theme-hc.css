@@ -1,0 +1,56 @@
+/* Subset of the VS Code "Dark High Contrast" theme variables, for rendering webviews outside VS
+   Code. Like the real theme it leaves selection and hover backgrounds undefined (outlines are used
+   instead) and defines the contrast borders. */
+:root {
+  --vscode-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --vscode-font-size: 13px;
+  --vscode-foreground: #ffffff;
+  --vscode-descriptionForeground: #ffffff;
+  --vscode-editor-background: #000000;
+  --vscode-editor-foreground: #ffffff;
+  --vscode-sideBar-background: #000000;
+  --vscode-panel-border: #6fc3df;
+  --vscode-editorGroup-border: #6fc3df;
+  --vscode-contrastBorder: #6fc3df;
+  --vscode-contrastActiveBorder: #f38518;
+  --vscode-button-background: #000000;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-border: #6fc3df;
+  --vscode-button-secondaryBackground: #000000;
+  --vscode-button-secondaryForeground: #ffffff;
+  --vscode-dropdown-background: #000000;
+  --vscode-dropdown-foreground: #ffffff;
+  --vscode-dropdown-border: #6fc3df;
+  --vscode-input-background: #000000;
+  --vscode-input-foreground: #ffffff;
+  --vscode-input-border: #6fc3df;
+  --vscode-focusBorder: #f38518;
+  --vscode-badge-background: #000000;
+  --vscode-badge-foreground: #ffffff;
+  --vscode-charts-foreground: #ffffff;
+  --vscode-charts-red: #f48771;
+  --vscode-charts-blue: #75beff;
+  --vscode-charts-yellow: #ffd370;
+  --vscode-charts-orange: #f8b46b;
+  --vscode-charts-green: #89d185;
+  --vscode-charts-purple: #c5a3ff;
+  --vscode-editorWidget-background: #0c141f;
+  --vscode-editorWidget-border: #6fc3df;
+  --vscode-editorHoverWidget-background: #0c141f;
+  --vscode-editorHoverWidget-border: #6fc3df;
+  --vscode-editorGroupHeader-tabsBackground: #000000;
+  --vscode-editorWarning-foreground: #ffd370;
+  --vscode-icon-foreground: #ffffff;
+  --vscode-disabledForeground: #a5a5a5;
+  --vscode-editor-font-family: Menlo, Consolas, "Courier New", monospace;
+  --vscode-errorForeground: #f48771;
+  --vscode-textLink-foreground: #21a6ff;
+  --vscode-progressBar-background: #6fc3df;
+  --vscode-notifications-background: #000000;
+  --vscode-notifications-foreground: #ffffff;
+  --vscode-notifications-border: #6fc3df;
+  --vscode-inputValidation-errorBorder: #6fc3df;
+  --vscode-textBlockQuote-background: #000000;
+  --vscode-editorWidget-foreground: #ffffff;
+  --vscode-editorHoverWidget-foreground: #ffffff;
+}

@@ -1,0 +1,284 @@
+/* Shared webview styles. Only VS Code theme variables: works in light, dark and high contrast. */
+@import "@vscode/codicons/dist/codicon.css";
+
+:root {
+  --planner-row: 26px;
+  --planner-border: var(
+    --vscode-panel-border,
+    var(--vscode-editorGroup-border, rgba(128, 128, 128, 0.35))
+  );
+  --planner-muted: var(--vscode-descriptionForeground);
+  --planner-hover: var(--vscode-list-hoverBackground);
+  --planner-selection: var(--vscode-list-activeSelectionBackground);
+  --planner-selection-fg: var(--vscode-list-activeSelectionForeground);
+  --planner-late: var(--vscode-charts-red, #f14c4c);
+  --planner-ok: var(--vscode-charts-green, #388a34);
+  --planner-warn: var(--vscode-charts-yellow, #cca700);
+  /* Text in a status colour: mixed with the foreground so it keeps a 4.5:1 contrast in light,
+     dark and high-contrast themes (the chart colours alone are meant for fills). */
+  --planner-late-text: color-mix(in srgb, var(--planner-late) 75%, var(--vscode-foreground));
+  --planner-ok-text: color-mix(in srgb, var(--planner-ok) 75%, var(--vscode-foreground));
+  --planner-warn-text: color-mix(in srgb, var(--planner-warn) 75%, var(--vscode-foreground));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+#root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+button,
+select,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--planner-border);
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+}
+
+.toolbar .title {
+  font-weight: 600;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+
+.toolbar .spacer {
+  flex: 1;
+}
+
+.toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--planner-muted);
+  white-space: nowrap;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.btn.primary {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.btn.primary:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.btn[aria-pressed="true"] {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--planner-hover));
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+select {
+  padding: 2px 4px;
+  border: 1px solid var(--vscode-dropdown-border, var(--planner-border));
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  border-radius: 2px;
+}
+
+input[type="text"],
+input[type="search"] {
+  padding: 3px 6px;
+  border: 1px solid var(--vscode-input-border, var(--planner-border));
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border-radius: 2px;
+}
+
+:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.muted {
+  color: var(--planner-muted);
+}
+
+.notice {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 80%;
+  padding: 6px 12px;
+  border-radius: 3px;
+  background: var(--vscode-notifications-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-notifications-foreground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-notifications-border, var(--planner-border));
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.3));
+  z-index: 50;
+}
+
+.notice.error {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--planner-late));
+}
+
+.tooltip {
+  position: fixed;
+  pointer-events: none;
+  z-index: 40;
+  max-width: 360px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  background: var(--vscode-editorHoverWidget-background);
+  color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-editorHoverWidget-border, var(--planner-border));
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.3));
+  white-space: pre-line;
+  line-height: 1.45;
+  display: none;
+}
+
+.tooltip.visible {
+  display: block;
+}
+
+.tooltip b {
+  font-weight: 600;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+  z-index: 60;
+}
+
+.dialog {
+  min-width: 340px;
+  max-width: 90vw;
+  padding: 12px 14px;
+  background: var(--vscode-editorWidget-background);
+  color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-editorWidget-border, var(--planner-border));
+  box-shadow: 0 4px 16px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.35));
+  border-radius: 4px;
+}
+
+.dialog h2 {
+  font-size: 1.05em;
+  margin: 0 0 10px;
+}
+
+.dialog .field {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dialog .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.dialog .actions .spacer {
+  flex: 1;
+}
+
+.btn.link {
+  padding-left: 0;
+  padding-right: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--vscode-textLink-foreground);
+}
+
+.btn.link:hover {
+  background: transparent;
+  text-decoration: underline;
+}
+
+.empty {
+  padding: 24px;
+  color: var(--planner-muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+body.vscode-high-contrast .btn,
+body.vscode-high-contrast .icon-btn {
+  border-color: var(--vscode-contrastBorder);
+}
