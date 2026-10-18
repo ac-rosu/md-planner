@@ -6,7 +6,7 @@ import { weekLoadAt } from "../../../src/core/load";
 import { scheduleDiagnostics } from "../../../src/core/scheduleDiagnostics";
 import { scheduleJsonText } from "../../../src/core/scheduleJson";
 import { schedulePlan, type ScheduleOptions } from "../../../src/core/scheduler";
-import { FIXTURES, loadSample, md, planFrom, TODAY } from "../helpers";
+import { FIXTURES, loadSample, md, planFrom, timeLimit, TODAY } from "../helpers";
 
 // Mon 2026-10-05 start; Wed 2026-10-14 is a holiday.
 const PROJECT = md(
@@ -516,6 +516,6 @@ describe("performance", () => {
     }
     const best = Math.min(...times);
     console.log(`schedule of 2,000 tasks: best of 3 = ${best.toFixed(1)} ms`);
-    expect(best).toBeLessThan(200);
+    expect(best).toBeLessThan(timeLimit(200));
   });
 });

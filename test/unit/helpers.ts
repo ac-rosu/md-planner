@@ -13,6 +13,15 @@ export const FIXTURES = join(ROOT, "test/fixtures");
 /** The fixed "today" used for every schedule-dependent test. */
 export const TODAY = "2026-10-14";
 
+/**
+ * A wall-clock limit in ms. Shared CI runners (GitHub Actions sets CI=true) are about three times
+ * slower than a development machine and vary from run to run, so they get twice the time; the
+ * targets themselves are checked when the tests run locally.
+ */
+export function timeLimit(ms: number): number {
+  return process.env.CI ? ms * 2 : ms;
+}
+
 export function loadSample(): PlanIndex {
   return loadPlanIndex(SAMPLE_PLAN);
 }

@@ -17,6 +17,7 @@ import { exportMspdi } from "../../../src/export/mspdi";
 import { exportXlsx } from "../../../src/export/xlsx";
 import { DEFAULT_KANBAN_OPTIONS } from "../../../src/webview/shared/protocol";
 import { LARGE_PLAN_TODAY, largePlanFiles } from "../../fixtures/largePlan";
+import { timeLimit } from "../helpers";
 
 const today = LARGE_PLAN_TODAY;
 
@@ -45,7 +46,7 @@ describe("2,000-task plan end to end", () => {
     expect(plan.tasks).toHaveLength(2000);
     expect(plan.milestones).toHaveLength(20);
     expect(plan.issues).toEqual([]);
-    expect(timings.load).toBeLessThan(1000);
+    expect(timings.load).toBeLessThan(timeLimit(1000));
   });
 
   it("recomputes after an edit in under 200 ms (parse, plan, schedules, diagnostics, cache)", () => {
@@ -67,7 +68,7 @@ describe("2,000-task plan end to end", () => {
     };
     recompute(); // warm-up
     timings.recompute = best(5, recompute);
-    expect(timings.recompute).toBeLessThan(200);
+    expect(timings.recompute).toBeLessThan(timeLimit(200));
   });
 
   it("builds every view model quickly", () => {
@@ -81,7 +82,7 @@ describe("2,000-task plan end to end", () => {
     const gantt = buildGanttModel(plan, schedule, { grouping: "milestone" });
     expect(gantt.rows.filter((r) => r.kind === "task" || r.kind === "parent")).toHaveLength(2000);
     for (const view of ["gantt", "kanban", "resources", "dashboard"])
-      expect(timings[view], view).toBeLessThan(150);
+      expect(timings[view], view).toBeLessThan(timeLimit(150));
   });
 
   it("exports the whole plan", async () => {
@@ -101,7 +102,7 @@ describe("2,000-task plan end to end", () => {
     timings.xlsx = performance.now() - t0;
     expect(xlsx.byteLength).toBeGreaterThan(10_000);
     for (const format of ["html", "csv", "mspdi", "xlsx"])
-      expect(timings[format], format).toBeLessThan(3000);
+      expect(timings[format], format).toBeLessThan(timeLimit(3000));
     console.log(
       `2,000 tasks (ms): ${Object.entries(timings)
         .map(([k, v]) => `${k} ${v.toFixed(1)}`)
