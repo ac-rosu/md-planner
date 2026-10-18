@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import { dateSuggestions } from "../../../src/core/dates";
 import {
@@ -194,7 +194,7 @@ describe("date suggestions", () => {
 describe("templates", () => {
   const files = Object.fromEntries(
     walkFiles(join(ROOT, "templates/software")).map((f) => [
-      f.slice(join(ROOT, "templates/software/").length),
+      f.slice(join(ROOT, "templates/software/").length).split(sep).join("/"),
       readFileSync(f, "utf8"),
     ])
   );

@@ -1,7 +1,7 @@
 // MCP server integration tests: the bundled server runs as a child process over stdio and is
 // driven by the MCP SDK client against a temporary copy of the sample plan.
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { hasServerEntry, mergeMcpJson, serverEntry } from "../../../src/mcp/config";
 import { COMMAND_COVERAGE, VIEW_COVERAGE } from "../../../src/mcp/coverage";
@@ -252,12 +252,13 @@ describe("MCP helpers", () => {
     expect(parseServerArgs(["--plan", "/x/plan", "--today", "2026-10-14"], {}).today).toBe(
       "2026-10-14"
     );
-    expect(parseServerArgs([], { PLANNER_PLAN_DIR: "/y/plan" }).planDir).toBe("/y/plan");
+    // Paths are made absolute for the platform (on Windows "/y/plan" becomes "<drive>:\y\plan").
+    expect(parseServerArgs([], { PLANNER_PLAN_DIR: "/y/plan" }).planDir).toBe(resolve("/y/plan"));
     expect(parseServerArgs(["--plan", "/w/docs/plan", "--workspace", "/w"], {})).toMatchObject({
-      planDir: "/w/docs/plan",
-      workspaceDir: "/w",
+      planDir: resolve("/w/docs/plan"),
+      workspaceDir: resolve("/w"),
     });
-    expect(parseServerArgs([], { PLANNER_WORKSPACE: "/v" }).workspaceDir).toBe("/v");
+    expect(parseServerArgs([], { PLANNER_WORKSPACE: "/v" }).workspaceDir).toBe(resolve("/v"));
     expect(serverEntry("/node", "/s.js", "/w/docs/plan", "/w").args).toEqual([
       "/s.js",
       "--plan",

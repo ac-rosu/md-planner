@@ -2,7 +2,7 @@
 // auto-detected; `planner.export.browserPath` (or --browser in the CLI) overrides it.
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { posix, win32 } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export function browserCandidates(platform = process.platform, env = process.env): string[] {
@@ -19,12 +19,12 @@ export function browserCandidates(platform = process.platform, env = process.env
     );
     for (const r of roots) {
       out.push(
-        join(r, "Microsoft", "Edge", "Application", "msedge.exe"),
-        join(r, "Google", "Chrome", "Application", "chrome.exe")
+        win32.join(r, "Microsoft", "Edge", "Application", "msedge.exe"),
+        win32.join(r, "Google", "Chrome", "Application", "chrome.exe")
       );
     }
   } else {
-    for (const dir of (env.PATH ?? "").split(delimiter)) {
+    for (const dir of (env.PATH ?? "").split(posix.delimiter)) {
       for (const name of [
         "microsoft-edge",
         "microsoft-edge-stable",
@@ -33,7 +33,7 @@ export function browserCandidates(platform = process.platform, env = process.env
         "chromium",
         "chromium-browser",
       ]) {
-        out.push(join(dir, name));
+        out.push(posix.join(dir, name));
       }
     }
   }
