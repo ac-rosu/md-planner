@@ -20,7 +20,13 @@ describe("performance with 2,000 more tasks", () => {
     const api = await getApi();
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
     for (const path of Object.keys(files)) await vscode.workspace.fs.delete(planUri(path));
-    await waitFor(() => !api.state.plan.taskById("T5001"), "generated files removed");
+    // Every deletion reaches the index on its own (slow on a CI runner): wait for all 20 files, so
+    // the next suite starts from the sample plan alone.
+    await waitFor(
+      () => !api.service.index.paths.some((p) => p in files),
+      "generated files removed",
+      20_000
+    );
     await restorePlan();
   });
 
