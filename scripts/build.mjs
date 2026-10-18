@@ -7,7 +7,7 @@
 //                                       writes THIRD-PARTY-NOTICES.md for the bundled packages
 import esbuild from "esbuild";
 import { existsSync, readdirSync, rmSync, mkdirSync, statSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { templateFiles } from "./lib/templates.mjs";
 import { readFileSync } from "node:fs";
@@ -43,6 +43,29 @@ const noUnzipper = {
   },
 };
 
+/**
+ * The Claude API client wires every API resource into its client class, so the bundle would also get
+ * the SDK's local agent toolset (a bash shell, ripgrep and file tools, loaded by its Managed Agents
+ * environment worker) and its file-based credential chain. The planner only calls the Messages API
+ * with an explicit API key. The SDK's own stubs for its Node-only modules (the package.json "browser"
+ * field) replace them, so no shell-spawning or credential-file code ships.
+ */
+const sdkDir = join(root, "node_modules", "@anthropic-ai", "sdk");
+const sdkNodeOnly = new Map(
+  Object.entries(JSON.parse(readFileSync(join(sdkDir, "package.json"), "utf8")).browser ?? {}).map(
+    ([from, to]) => [resolve(sdkDir, from), resolve(sdkDir, to)]
+  )
+);
+const sdkNodeOnlyStubs = {
+  name: "sdk-node-only-stubs",
+  setup(build) {
+    build.onResolve({ filter: /(^|\/)node\.m?js$/ }, (args) => {
+      const stub = sdkNodeOnly.get(resolve(args.resolveDir, args.path));
+      return stub ? { path: stub } : undefined;
+    });
+  },
+};
+
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const nodeTarget = {
   ...common,
@@ -50,7 +73,7 @@ const nodeTarget = {
   format: "cjs",
   target: "node20",
   define: { PLANNER_VERSION: JSON.stringify(pkg.version) },
-  plugins: [noUnzipper],
+  plugins: [noUnzipper, sdkNodeOnlyStubs],
 };
 
 /** @type {import("esbuild").BuildOptions[]} */
