@@ -351,7 +351,9 @@ describe("export orchestration and PDF", () => {
         expect(Buffer.from(f.data as Uint8Array).toString("latin1")).toMatch(/\/Type\s*\/Page[^s]/);
       }
     },
-    60_000
+    // Two browser launches, each allowed 60 s by printToPdf (a cold start on a CI runner takes
+    // 15-25 s): a print that really fails then reports its own error instead of a test timeout.
+    150_000
   );
 
   it("is available from the CLI", async () => {
