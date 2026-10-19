@@ -70,23 +70,37 @@ export async function launchChrome(browser = findBrowser()) {
     [
       "--headless=new",
       "--disable-gpu",
+      // Linux CI runners (Ubuntu 26.04) block the user namespaces Chrome's sandbox needs; the
+      // pages loaded here are this repository's own files.
+      ...(process.platform === "linux" && process.env.CI ? ["--no-sandbox"] : []),
       "--remote-debugging-port=0",
       `--user-data-dir=${userDir}`,
       "--allow-file-access-from-files",
       "--window-size=1500,860",
       "about:blank",
     ],
-    { stdio: "ignore" }
+    { stdio: ["ignore", "ignore", "pipe"] }
   );
+  let stderr = "";
+  let exited;
+  chrome.stderr.on("data", (d) => (stderr = (stderr + d).slice(-4000)));
+  chrome.on("exit", (code, signal) => (exited = signal ?? `exit code ${code}`));
   let port;
-  for (let i = 0; i < 100 && !port; i++) {
+  // up to 30 s: a cold start on a CI runner is slow
+  for (let i = 0; i < 300 && !port && !exited; i++) {
     try {
       port = readFileSync(join(userDir, "DevToolsActivePort"), "utf8").split("\n")[0];
     } catch {
       await sleep(100);
     }
   }
-  if (!port) throw new Error("Chrome did not start its DevTools endpoint.");
+  if (!port) {
+    chrome.kill();
+    throw new Error(
+      `Chrome did not start its DevTools endpoint (${exited ?? "no answer in 30 s"}).` +
+        (stderr.trim() ? `\nChrome said:\n${stderr.trim()}` : "")
+    );
+  }
   const target = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find(
     (t) => t.type === "page"
   );
