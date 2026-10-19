@@ -36,6 +36,26 @@ export function encode(text: string): Uint8Array {
   return new TextEncoder().encode(text);
 }
 
+/**
+ * True when VS Code treats the URI's path as case-insensitive: `file:` URIs on Windows and macOS.
+ * There `/c:/plan/x.md` and `/C:/Plan/x.md` are one file, and which casing a URI carries depends on
+ * where it came from (the workspace folder, a file watcher event, an `fsPath`, ...).
+ */
+export function ignoresPathCase(uri: vscode.Uri): boolean {
+  return uri.scheme === "file" && process.platform !== "linux";
+}
+
+/** A string that is equal for two URIs of the same resource. */
+export function uriKey(uri: vscode.Uri): string {
+  return ignoresPathCase(uri) ? uri.toString().toLowerCase() : uri.toString();
+}
+
+/** The open text document of a URI, whatever casing either of them uses. */
+export function openDocument(uri: vscode.Uri): vscode.TextDocument | undefined {
+  const key = uriKey(uri);
+  return vscode.workspace.textDocuments.find((d) => uriKey(d.uri) === key);
+}
+
 export async function exists(uri: vscode.Uri): Promise<boolean> {
   try {
     await vscode.workspace.fs.stat(uri);

@@ -5,7 +5,7 @@ import { promoteTodo, scanTodos, type TodoItem } from "../../core/todos";
 import { type InsertLocation } from "../../core/writer";
 import { type PlanService } from "../planService";
 import { type TodoScanner } from "../todoScanner";
-import { config, toRange } from "../util";
+import { config, toRange, uriKey } from "../util";
 import { pickMilestoneLocation, type PlanIntoTarget } from "./inbox";
 
 export interface TodoArg {
@@ -32,7 +32,7 @@ export async function promoteTodoCommand(
     if (uri && line !== undefined) {
       await scanner.scanFile(uri, true);
       item = scanner.all
-        .find((f) => f.uri.toString() === uri!.toString())
+        .find((f) => uriKey(f.uri) === uriKey(uri!))
         ?.items.find((i) => i.line === line);
     }
   }

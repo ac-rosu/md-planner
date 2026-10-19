@@ -10,7 +10,7 @@ import {
   type TodoItem,
 } from "../core/todos";
 import { type PlanService } from "./planService";
-import { config, decode } from "./util";
+import { config, decode, openDocument, uriKey } from "./util";
 
 export interface TodoFile {
   uri: vscode.Uri;
@@ -37,7 +37,7 @@ export class TodoScanner implements vscode.Disposable {
       watcher.onDidCreate((u) => this.queue(u)),
       watcher.onDidChange((u) => this.queue(u)),
       watcher.onDidDelete((u) => {
-        if (this.files.delete(u.toString())) this.emitter.fire();
+        if (this.files.delete(uriKey(u))) this.emitter.fire();
       }),
       vscode.workspace.onDidChangeTextDocument((e) => {
         if (e.contentChanges.length) this.queue(e.document.uri);
@@ -81,7 +81,7 @@ export class TodoScanner implements vscode.Disposable {
 
   private queue(uri: vscode.Uri): void {
     if (!this.matches(uri)) return;
-    const key = uri.toString();
+    const key = uriKey(uri);
     const t = this.timers.get(key);
     if (t) clearTimeout(t);
     this.timers.set(
@@ -105,18 +105,18 @@ export class TodoScanner implements vscode.Disposable {
   /** Scans one file; files in the plan folder are skipped (their checkboxes are the plan). */
   async scanFile(uri: vscode.Uri, notify: boolean): Promise<void> {
     if (this.service.relPath(uri) !== undefined) return;
-    const open = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
+    const open = openDocument(uri);
     let text: string;
     try {
       text = open ? open.getText() : decode(await vscode.workspace.fs.readFile(uri));
     } catch {
-      this.files.delete(uri.toString());
+      this.files.delete(uriKey(uri));
       if (notify) this.emitter.fire();
       return;
     }
     const keywords = config().get<string[]>("todos.keywords", DEFAULT_TODO_KEYWORDS);
     const items = scanTodos(text, keywords);
-    this.files.set(uri.toString(), {
+    this.files.set(uriKey(uri), {
       uri,
       path: vscode.workspace.asRelativePath(uri, false),
       items,
