@@ -5,7 +5,7 @@
 // .mcp.json names it (so unrelated projects do not get the planner's tools).
 import * as vscode from "vscode";
 import { type PlanService } from "./planService";
-import { config, decode, encode, exists } from "./util";
+import { config, decode, encode, exists, openDocument } from "./util";
 import { hasServerEntry, MCP_SERVER_NAME, mergeMcpJson, serverEntry } from "../mcp/config";
 
 /**
@@ -83,7 +83,7 @@ export async function configureMcpCommand(
     edit.replace(file, new vscode.Range(0, 0, doc.lineCount, 0), text);
   }
   if (!(await vscode.workspace.applyEdit(edit))) return undefined;
-  const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === file.toString());
+  const doc = openDocument(file);
   if (doc?.isDirty) await doc.save();
   if (!options.quiet)
     void vscode.window.showInformationMessage(

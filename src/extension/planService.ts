@@ -8,7 +8,7 @@ import { type ParsedFile } from "../core/model";
 import { type Plan } from "../core/resolve";
 import { invertEdits } from "../core/text";
 import { type FileEdit } from "../core/writer";
-import { config, decode, encode, exists, toRange } from "./util";
+import { config, decode, encode, exists, ignoresPathCase, openDocument, toRange } from "./util";
 
 const REFRESH_DELAY_MS = 300;
 
@@ -120,12 +120,20 @@ export class PlanService implements vscode.Disposable {
     this.fireNow();
   }
 
-  /** Plan-relative POSIX path of a URI inside the plan folder. */
+  /**
+   * Plan-relative POSIX path of a URI inside the plan folder. Where paths are case-insensitive
+   * (Windows, macOS) any casing matches, and a file already in the index keeps its indexed path.
+   */
   relPath(uri: vscode.Uri): string | undefined {
     if (!this._root || uri.scheme !== this._root.scheme) return undefined;
     const root = this._root.path.endsWith("/") ? this._root.path : this._root.path + "/";
-    if (!uri.path.startsWith(root)) return undefined;
-    return uri.path.slice(root.length);
+    const prefix = uri.path.slice(0, root.length);
+    if (!ignoresPathCase(uri)) return prefix === root ? uri.path.slice(root.length) : undefined;
+    if (prefix.toLowerCase() !== root.toLowerCase()) return undefined;
+    const rel = uri.path.slice(root.length);
+    if (this.index.has(rel)) return rel;
+    const lower = rel.toLowerCase();
+    return this.index.paths.find((p) => p.toLowerCase() === lower) ?? rel;
   }
 
   uri(relPath: string): vscode.Uri {
@@ -164,9 +172,7 @@ export class PlanService implements vscode.Disposable {
     for (const path of deleted) this.index.remove(path);
     // Keep the index exactly in sync even before change events arrive.
     for (const fe of nonEmpty) {
-      const doc = vscode.workspace.textDocuments.find(
-        (d) => d.uri.toString() === this.uri(fe.path).toString()
-      );
+      const doc = openDocument(this.uri(fe.path));
       if (doc) this.syncDocument(doc);
     }
     const save =
@@ -234,8 +240,7 @@ export class PlanService implements vscode.Disposable {
 
   async save(paths: string[]): Promise<void> {
     for (const path of paths) {
-      const uri = this.uri(path).toString();
-      const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri);
+      const doc = openDocument(this.uri(path));
       if (doc?.isDirty) await doc.save();
     }
   }
@@ -266,7 +271,7 @@ export class PlanService implements vscode.Disposable {
   private async reloadFromDisk(uri: vscode.Uri): Promise<void> {
     const rel = this.relPath(uri);
     if (rel === undefined || !PlanIndex.isPlanPath(rel)) return;
-    const open = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
+    const open = openDocument(uri);
     if (open && !open.isClosed) {
       this.syncDocument(open);
       return;
@@ -285,9 +290,7 @@ export class PlanService implements vscode.Disposable {
     await Promise.all(
       files.map(async (rel) => {
         const uri = this.uri(rel);
-        const open = vscode.workspace.textDocuments.find(
-          (d) => d.uri.toString() === uri.toString()
-        );
+        const open = openDocument(uri);
         const text = open ? open.getText() : decode(await vscode.workspace.fs.readFile(uri));
         this.index.update(rel, text);
       })
