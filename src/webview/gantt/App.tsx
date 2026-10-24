@@ -12,7 +12,7 @@ import { Notice, Tooltip, UndoRedo } from "../shared/ui";
 import { getState, isoDate, onMessage, post, setState } from "../shared/vscode";
 import { Chart, type DragResult, ROW_H } from "./Chart";
 import { EditDialog, type EditResult } from "./EditDialog";
-import { stepWorkingDays, visibleRows, vscodeContext } from "./rows";
+import { describeFocus, linkFocus, stepWorkingDays, visibleRows, vscodeContext } from "./rows";
 import { dayToX, fitPx, headerTicks, makeScale, ZOOM_PX } from "./scale";
 
 const LEFT_W = 320;
@@ -69,6 +69,11 @@ export function App() {
   useEffect(() => setState<Persisted>({ collapsed: [...collapsed] }), [collapsed]);
 
   const rows = useMemo(() => (model ? visibleRows(model.rows, collapsed) : []), [model, collapsed]);
+  const focus = useMemo(() => {
+    const shown = new Set(rows.map((r) => r.key));
+    const links = (model?.links ?? []).filter((l) => shown.has(l.from) && shown.has(l.to));
+    return linkFocus(links, selected, selectedLink);
+  }, [model, rows, selected, selectedLink]);
   const scale = useMemo(() => {
     if (!model) return makeScale(0, 30, ZOOM_PX.week);
     return makeScale(model.start, model.end, options.pxPerDay ?? ZOOM_PX[options.zoom]);
@@ -226,6 +231,11 @@ export function App() {
     if ((e.key === "Delete" || e.key === "Backspace") && selectedLink && !editing) {
       e.preventDefault();
       removeSelectedLink();
+    } else if (e.key === "Escape" && !editing && (selectedLink || focus.links.size > 0)) {
+      // Back to every dependency line at full strength.
+      e.preventDefault();
+      setSelectedLink(undefined);
+      setSelected(undefined);
     }
   };
   useEffect(() => {
@@ -234,6 +244,7 @@ export function App() {
   });
 
   if (!model) return <div class="empty">Loading the schedule…</div>;
+  const focusText = describeFocus(model, focus, selected, selectedLink);
   const ticks = headerTicks(scale);
   const editRow = editing ? model.rows.find((r) => r.key === editing) : undefined;
   const zoomLabel: Record<GanttZoom, string> = {
@@ -411,6 +422,7 @@ export function App() {
                 <ListRow
                   row={r}
                   selected={r.key === selected}
+                  linked={focus.rows.has(r.key)}
                   collapsed={collapsed.has(r.key)}
                   onToggle={() => toggle(r.key)}
                   onSelect={() => select(r.key, false)}
@@ -427,6 +439,7 @@ export function App() {
               options={options}
               selected={selected}
               selectedLink={selectedLink}
+              focus={focus}
               tooltip={tooltip}
               onSelect={select}
               onEdit={(key) => {
@@ -435,19 +448,25 @@ export function App() {
               }}
               onDrag={onDrag}
               onSelectLink={(l) => {
+                // A click on a line selects it; a click on empty space clears both selections.
                 setSelectedLink(l);
-                if (l) setSelected(undefined);
+                setSelected(undefined);
               }}
             />
           </div>
         </div>
       </div>
-      <div class="statusline muted" aria-live="polite">
-        Drag a bar to move it (@start), drag its end to resize (@est), drag the dot to another bar
-        to add a dependency. Double-click or F2 to edit, right-click for all actions; Alt+←/→ moves,
-        Shift+Alt+←/→ resizes.
-        {model.rows.some((r) => r.overtime) &&
-          " Orange marks above a bar: overtime or extra working days (hover for the hours)."}
+      <div class={`statusline${focusText ? " focus" : " muted"}`} aria-live="polite">
+        {focusText ?? (
+          <>
+            Drag a bar to move it (@start), drag its end to resize (@est), drag the dot to another
+            bar to add a dependency. Click a bar or an arrow to highlight its dependencies.
+            Double-click or F2 to edit, right-click for all actions; Alt+←/→ moves, Shift+Alt+←/→
+            resizes.
+            {model.rows.some((r) => r.overtime) &&
+              " Orange marks above a bar: overtime or extra working days (hover for the hours)."}
+          </>
+        )}
       </div>
       {editRow && (
         <EditDialog
@@ -469,6 +488,7 @@ export function App() {
 function ListRow({
   row,
   selected,
+  linked,
   collapsed,
   focusable,
   onToggle,
@@ -478,6 +498,8 @@ function ListRow({
 }: {
   row: GanttRow;
   selected: boolean;
+  /** At the other end of a highlighted dependency line. */
+  linked: boolean;
   collapsed: boolean;
   focusable: boolean;
   onToggle: () => void;
@@ -500,7 +522,7 @@ function ListRow({
     .join(", ");
   return (
     <div
-      class={`list-row ${row.kind}${selected ? " selected" : ""}${row.status ? ` status-${row.status}` : ""}`}
+      class={`list-row ${row.kind}${selected ? " selected" : ""}${linked ? " linked" : ""}${row.status ? ` status-${row.status}` : ""}`}
       role="treeitem"
       aria-level={row.level + 1}
       aria-expanded={row.hasChildren ? !collapsed : undefined}

@@ -6,7 +6,16 @@ import { isoWeekday } from "../../core/dates";
 import { type GanttLink, type GanttModel, type GanttRow } from "../../core/views/gantt";
 import { type GanttViewOptions } from "../shared/protocol";
 import { type Tooltip } from "../shared/ui";
-import { linkTargetAt, resizeHandleWidth, rowColor, vscodeContext } from "./rows";
+import {
+  type LinkFocus,
+  linkId,
+  linkTargetAt,
+  resizeHandleWidth,
+  type RoutedLink,
+  routeLinks,
+  rowColor,
+  vscodeContext,
+} from "./rows";
 import { dayToX, gridLines, type Scale } from "./scale";
 
 export const ROW_H = 26;
@@ -38,6 +47,8 @@ interface ChartProps {
   options: GanttViewOptions;
   selected?: string;
   selectedLink?: GanttLink;
+  /** Lines to bring forward (the rest fade) and the bars at their other ends. */
+  focus: LinkFocus;
   tooltip: Tooltip;
   onSelect: (key: string, reveal: boolean) => void;
   onEdit: (key: string) => void;
@@ -52,10 +63,15 @@ export function Chart(props: ChartProps) {
   const height = Math.max(rows.length * ROW_H, 40);
   const rowIndex = useMemo(() => new Map(rows.map((r, i) => [r.key, i])), [rows]);
 
-  const staticLayer = useMemo(
-    () => renderStatic(model, rows, scale, options, rowIndex, height, props.selectedLink),
-    [model, rows, scale, options, rowIndex, height, props.selectedLink]
+  const routed = useMemo(
+    () => routeLinks(model.links, rows, scale, ROW_H),
+    [model.links, rows, scale]
   );
+  const staticLayer = useMemo(
+    () => renderStatic(model, rows, scale, options, height, routed),
+    [model, rows, scale, options, height, routed]
+  );
+  const focused = routed.filter((r) => props.focus.links.has(linkId(r.link)));
 
   const linkTarget = (d: Drag) => linkTargetAt(rows, scale, d.key, d.x, d.y, ROW_H);
 
@@ -70,6 +86,7 @@ export function Chart(props: ChartProps) {
     const linkEl = target.closest("[data-link]");
     if (linkEl) {
       const [from, to] = linkEl.getAttribute("data-link")!.split("→");
+      tooltip.hide(); // the help line says what the selected line means
       props.onSelectLink(model.links.find((l) => l.from === from && l.to === to));
       return;
     }
@@ -126,6 +143,21 @@ export function Chart(props: ChartProps) {
 
   const onPointerOver = (e: PointerEvent) => {
     if (drag) return;
+    const linkEl = (e.target as Element).closest("[data-link]");
+    if (linkEl) {
+      const [from, to] = linkEl.getAttribute("data-link")!.split("→");
+      // The selected line is described in the help line already.
+      if (props.selectedLink && linkId(props.selectedLink) === `${from}→${to}`) {
+        tooltip.hide();
+        return;
+      }
+      tooltip.show(
+        linkTooltip(rows[rowIndex.get(from) ?? -1], rows[rowIndex.get(to) ?? -1]),
+        e.clientX,
+        e.clientY
+      );
+      return;
+    }
     const barEl = (e.target as Element).closest("[data-key]");
     if (!barEl) {
       tooltip.hide();
@@ -138,7 +170,7 @@ export function Chart(props: ChartProps) {
   return (
     <svg
       ref={svg}
-      class={`chart${drag ? ` dragging ${drag.kind}` : ""}`}
+      class={`chart${drag ? ` dragging ${drag.kind}` : ""}${focused.length ? " focus" : ""}`}
       width={scale.width}
       height={height}
       aria-hidden="true"
@@ -165,6 +197,16 @@ export function Chart(props: ChartProps) {
           height={ROW_H}
         />
       )}
+      {focused.length > 0 && (
+        <FocusLayer
+          focused={focused}
+          rows={rows}
+          rowIndex={rowIndex}
+          scale={scale}
+          focus={props.focus}
+          selectedLink={props.selectedLink}
+        />
+      )}
       {drag && drag.moved && (
         <DragOverlay
           drag={drag}
@@ -174,6 +216,65 @@ export function Chart(props: ChartProps) {
         />
       )}
     </svg>
+  );
+}
+
+/** "T416 Draft test plan waits for T491 Review FS" */
+function linkTooltip(from: GanttRow | undefined, to: GanttRow | undefined): string[] {
+  const name = (r: GanttRow | undefined) => (r ? (r.id ? `${r.id} ${r.title}` : r.title) : "?");
+  return [`${name(to)}`, `waits for ${name(from)}`, "Click to highlight it, Delete to remove it"];
+}
+
+/**
+ * The highlighted lines drawn again above the bars, so they can be followed all the way, and an
+ * outline around the bars at their other ends.
+ */
+function FocusLayer({
+  focused,
+  rows,
+  rowIndex,
+  scale,
+  focus,
+  selectedLink,
+}: {
+  focused: RoutedLink[];
+  rows: GanttRow[];
+  rowIndex: Map<string, number>;
+  scale: Scale;
+  focus: LinkFocus;
+  selectedLink?: GanttLink;
+}) {
+  const ends = [...focus.rows]
+    .map((key) => rows[rowIndex.get(key) ?? -1])
+    .filter((r) => r?.start !== undefined && r.finish !== undefined);
+  return (
+    <g class="focus-layer">
+      {ends.map((r) => {
+        const x = dayToX(scale, r.start!);
+        const w = Math.max(scale.px * 0.6, dayToX(scale, r.finish! + 1) - x);
+        return (
+          <rect
+            class="link-end"
+            x={x - 3}
+            y={rowIndex.get(r.key)! * ROW_H + 2}
+            width={w + 6}
+            height={ROW_H - 4}
+            rx={4}
+          />
+        );
+      })}
+      <g class="links focused">
+        {focused.map(({ link, d }) => (
+          <g
+            class={`link highlight${selectedLink && linkId(selectedLink) === linkId(link) ? " selected" : ""}`}
+            data-link={linkId(link)}
+          >
+            <path class="link-hit" d={d} />
+            <path class="link-line" d={d} marker-end="url(#arrow-focus)" />
+          </g>
+        ))}
+      </g>
+    </g>
   );
 }
 
@@ -249,9 +350,8 @@ function renderStatic(
   rows: GanttRow[],
   scale: Scale,
   options: GanttViewOptions,
-  rowIndex: Map<string, number>,
   height: number,
-  selectedLink: GanttLink | undefined
+  routed: RoutedLink[]
 ): JSX.Element {
   const holidays = new Set(model.holidays);
   const shading: JSX.Element[] = [];
@@ -280,41 +380,19 @@ function renderStatic(
 
   const bars = rows.map((r, i) => renderRow(r, i, scale, options));
 
-  const links = model.links
-    .filter((l) => rowIndex.has(l.from) && rowIndex.has(l.to))
-    .map((l) => {
-      const a = rows[rowIndex.get(l.from)!];
-      const b = rows[rowIndex.get(l.to)!];
-      if (a.finish === undefined || b.start === undefined) return null;
-      const x1 = dayToX(scale, a.finish + 1);
-      const y1 = rowIndex.get(l.from)! * ROW_H + ROW_H / 2;
-      const x2 = dayToX(scale, b.start);
-      const y2 = rowIndex.get(l.to)! * ROW_H + ROW_H / 2;
-      const down = y2 >= y1 ? 1 : -1;
-      let d: string;
-      if (x2 - x1 >= 12) {
-        const mx = x1 + 6;
-        d = `M${x1},${y1} H${mx} V${y2} H${x2 - 2}`;
-      } else {
-        const midY = y1 + (down * ROW_H) / 2;
-        d = `M${x1},${y1} h6 V${midY} H${x2 - 8} V${y2} H${x2 - 2}`;
-      }
-      const critical = options.showCritical && l.critical;
-      const selected = selectedLink && selectedLink.from === l.from && selectedLink.to === l.to;
-      return (
-        <g
-          class={`link${critical ? " critical" : ""}${selected ? " selected" : ""}`}
-          data-link={`${l.from}→${l.to}`}
-        >
-          <path class="link-hit" d={d} />
-          <path
-            class="link-line"
-            d={d}
-            marker-end={critical ? "url(#arrow-critical)" : "url(#arrow)"}
-          />
-        </g>
-      );
-    });
+  const links = routed.map(({ link: l, d }) => {
+    const critical = options.showCritical && l.critical;
+    return (
+      <g class={`link${critical ? " critical" : ""}`} data-link={linkId(l)}>
+        <path class="link-hit" d={d} />
+        <path
+          class="link-line"
+          d={d}
+          marker-end={critical ? "url(#arrow-critical)" : "url(#arrow)"}
+        />
+      </g>
+    );
+  });
 
   return (
     <g>
@@ -340,6 +418,17 @@ function renderStatic(
           orient="auto"
         >
           <path class="arrow-head critical" d="M0,0 L8,4 L0,8 z" />
+        </marker>
+        <marker
+          id="arrow-focus"
+          viewBox="0 0 8 8"
+          refX="7"
+          refY="4"
+          markerWidth="7"
+          markerHeight="7"
+          orient="auto"
+        >
+          <path class="arrow-head focus" d="M0,0 L8,4 L0,8 z" />
         </marker>
       </defs>
       {stripes}

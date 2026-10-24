@@ -68,6 +68,11 @@
   color: var(--planner-selection-fg);
 }
 
+/* At the other end of a highlighted dependency line. */
+.list-row.linked:not(.selected) {
+  background: color-mix(in srgb, var(--vscode-focusBorder) 22%, transparent);
+}
+
 .list-row.milestone,
 .list-row.group {
   font-weight: 600;
@@ -311,9 +316,40 @@
   stroke-width: 1.6;
 }
 
-.chart .link.selected .link-line {
+/* Focus: a selected line, or the lines of the selected bar, drawn on top; the others fade. */
+.chart.focus .links:not(.focused) .link {
+  opacity: 0.12;
+}
+
+.chart.focus .links:not(.focused) .link:hover {
+  opacity: 1;
+}
+
+.chart .link:hover .link-line {
+  stroke: var(--vscode-foreground);
+  stroke-width: 1.8;
+}
+
+.chart .links.focused .link-line {
   stroke: var(--vscode-focusBorder);
+  stroke-width: 2;
+}
+
+.chart .links.focused .link.selected .link-line {
   stroke-width: 2.5;
+}
+
+.chart .arrow-head.focus {
+  fill: var(--vscode-focusBorder);
+}
+
+/* The bars at the other ends of the highlighted lines. */
+.chart .link-end {
+  fill: none;
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 2;
+  pointer-events: none;
 }
 
 .chart .arrow-head {
@@ -368,6 +404,11 @@
   cursor: grabbing;
 }
 
+/* The help line says what the highlighted dependencies mean. */
+.statusline.focus {
+  color: var(--vscode-foreground);
+}
+
 .statusline {
   padding: 3px 10px;
   border-top: 1px solid var(--planner-border);
@@ -385,6 +426,19 @@ body.vscode-high-contrast .chart .rollup {
 
 body.vscode-high-contrast .chart .link-line {
   stroke: var(--vscode-contrastBorder);
+}
+
+body.vscode-high-contrast .chart .links.focused .link-line,
+body.vscode-high-contrast .chart .link-end {
+  stroke: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
+}
+
+body.vscode-high-contrast .chart .arrow-head.focus {
+  fill: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
+}
+
+body.vscode-high-contrast .list-row.linked {
+  outline: 1px dotted var(--vscode-contrastActiveBorder);
 }
 
 body.vscode-high-contrast .list-row.selected {

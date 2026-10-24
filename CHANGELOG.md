@@ -38,6 +38,12 @@ Safer editing, from the pilot users' feedback.
   a colleague waited for could be left to the end because it had no deadline of its own. A task in
   progress keeps its place, so people no longer switch between tasks of the same urgency and the
   Gantt bars are shorter.
+- Gantt: click an arrow to follow it: it is drawn on top in the accent colour, the bars it connects
+  are outlined, the other arrows fade, and the help line says "T122 waits for T121". Clicking a
+  bar does the same for all arrows into and out of that task ("T491 waits for T411, T413; T416
+  waits for T491"). Hovering an arrow names both tasks; Esc or a click on empty space shows all
+  arrows again. Arrows of tasks that finish on the same day no longer lie on top of each other,
+  and their corners are rounded.
 - Late tasks say what holds them back, following the dependencies to the cause: "Held back by the
   fixed start 2027-10-19 of T461 (via M1)" or "… by Sam having other work first", in the warning,
   the Gantt tooltip and the hovers.

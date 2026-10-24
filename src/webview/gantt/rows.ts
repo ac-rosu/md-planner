@@ -1,7 +1,7 @@
 // Row helpers for the Gantt webview: visibility under collapsed groups, keyboard stepping over
 // working days. Pure functions, unit-tested.
 import { isoWeekday } from "../../core/dates";
-import { type GanttModel, type GanttRow } from "../../core/views/gantt";
+import { type GanttLink, type GanttModel, type GanttRow } from "../../core/views/gantt";
 import { dayToX, type Scale } from "./scale";
 
 /** Rows not hidden by a collapsed ancestor. */
@@ -93,4 +93,173 @@ export function linkTargetAt(
  */
 export function resizeHandleWidth(width: number): number {
   return width < 12 ? 0 : Math.min(8, Math.floor(width / 3));
+}
+
+/** The `data-link` of a dependency line: "T201→T202" (T202 waits for T201). */
+export function linkId(l: Pick<GanttLink, "from" | "to">): string {
+  return `${l.from}→${l.to}`;
+}
+
+export interface RoutedLink {
+  link: GanttLink;
+  /** SVG path from the predecessor's end to the successor's start. */
+  d: string;
+}
+
+/** Pixels between the vertical lines of predecessors that finish on the same day. */
+const CHANNEL_GAP = 3;
+const CORNER = 4;
+
+/**
+ * Paths of the dependency lines between visible rows. A line leaves the end of the predecessor,
+ * turns in a channel just after it and enters the successor at its start; when the successor
+ * starts too soon for that, it goes round through the gap between the rows. Predecessors that
+ * finish on the same day get channels a few pixels apart, so their vertical lines do not lie on top
+ * of each other, and corners are rounded, so a bend does not look like a crossing.
+ */
+export function routeLinks(
+  links: GanttLink[],
+  rows: GanttRow[],
+  scale: Scale,
+  rowHeight: number
+): RoutedLink[] {
+  const index = new Map(rows.map((r, i) => [r.key, i]));
+  const drawable = links.filter((l) => {
+    const a = rows[index.get(l.from) ?? -1];
+    const b = rows[index.get(l.to) ?? -1];
+    return a?.finish !== undefined && b?.start !== undefined;
+  });
+  // Channel per predecessor: its rank among the predecessors that end at the same x.
+  const sourcesAt = new Map<number, number[]>();
+  for (const l of drawable) {
+    const x1 = Math.round(dayToX(scale, rows[index.get(l.from)!].finish! + 1));
+    const list = sourcesAt.get(x1) ?? [];
+    if (!list.includes(index.get(l.from)!)) list.push(index.get(l.from)!);
+    sourcesAt.set(x1, list);
+  }
+  for (const list of sourcesAt.values()) list.sort((a, b) => a - b);
+  return drawable.map((l) => {
+    const ia = index.get(l.from)!;
+    const ib = index.get(l.to)!;
+    const x1 = dayToX(scale, rows[ia].finish! + 1);
+    const y1 = ia * rowHeight + rowHeight / 2;
+    const x2 = dayToX(scale, rows[ib].start!);
+    const y2 = ib * rowHeight + rowHeight / 2;
+    const offset = CHANNEL_GAP * sourcesAt.get(Math.round(x1))!.indexOf(ia);
+    let points: Array<[number, number]>;
+    if (x2 - x1 >= 12) {
+      const mx = Math.min(x1 + 6 + offset, x2 - 6);
+      points = [
+        [x1, y1],
+        [mx, y1],
+        [mx, y2],
+        [x2 - 2, y2],
+      ];
+    } else {
+      const midY = y1 + ((y2 >= y1 ? 1 : -1) * rowHeight) / 2;
+      const mx = x1 + 6 + offset;
+      points = [
+        [x1, y1],
+        [mx, y1],
+        [mx, midY],
+        [x2 - 8, midY],
+        [x2 - 8, y2],
+        [x2 - 2, y2],
+      ];
+    }
+    return { link: l, d: roundedPath(points, CORNER) };
+  });
+}
+
+/** An orthogonal polyline as a path with corners rounded to radius `r` (less on short legs). */
+export function roundedPath(points: Array<[number, number]>, r: number): string {
+  const n = (v: number) => Math.round(v * 10) / 10;
+  const pts = points.filter(
+    (p, i) => i === 0 || p[0] !== points[i - 1][0] || p[1] !== points[i - 1][1]
+  );
+  let d = `M${n(pts[0][0])},${n(pts[0][1])}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [px, py] = pts[i - 1];
+    const [cx, cy] = pts[i];
+    const [nx, ny] = pts[i + 1];
+    const inLen = Math.hypot(cx - px, cy - py);
+    const outLen = Math.hypot(nx - cx, ny - cy);
+    const k = Math.min(r, inLen / 2, outLen / 2);
+    const ax = cx - ((cx - px) / inLen) * k;
+    const ay = cy - ((cy - py) / inLen) * k;
+    const bx = cx + ((nx - cx) / outLen) * k;
+    const by = cy + ((ny - cy) / outLen) * k;
+    d += ` L${n(ax)},${n(ay)} Q${n(cx)},${n(cy)} ${n(bx)},${n(by)}`;
+  }
+  const last = pts[pts.length - 1];
+  return `${d} L${n(last[0])},${n(last[1])}`;
+}
+
+export interface LinkFocus {
+  /** Ids of the highlighted lines; empty when nothing is in focus (every line is drawn as usual). */
+  links: Set<string>;
+  /** Rows at the other end of the highlighted lines (both ends for a selected line). */
+  rows: Set<string>;
+}
+
+/**
+ * The dependency lines to bring forward: the selected line, or the lines into and out of the
+ * selected row. The rest fade, so one dependency can be followed through a busy chart.
+ */
+export function linkFocus(
+  links: GanttLink[],
+  selected: string | undefined,
+  selectedLink: Pick<GanttLink, "from" | "to"> | undefined
+): LinkFocus {
+  if (selectedLink) {
+    const found = links.some((l) => linkId(l) === linkId(selectedLink));
+    return found
+      ? {
+          links: new Set([linkId(selectedLink)]),
+          rows: new Set([selectedLink.from, selectedLink.to]),
+        }
+      : { links: new Set(), rows: new Set() };
+  }
+  const focus: LinkFocus = { links: new Set(), rows: new Set() };
+  if (selected === undefined) return focus;
+  for (const l of links) {
+    if (l.from !== selected && l.to !== selected) continue;
+    focus.links.add(linkId(l));
+    focus.rows.add(l.from === selected ? l.to : l.from);
+  }
+  return focus;
+}
+
+/** "T491" (or the title of a row without an id). */
+export function linkName(rows: GanttRow[], key: string): string {
+  const r = rows.find((x) => x.key === key);
+  return r?.id ?? r?.title ?? key;
+}
+
+/**
+ * The help line while dependencies are highlighted: "T122 waits for T121. Delete removes …" for a
+ * selected arrow, "T491 waits for T411, T413; T416 waits for T491. …" for a selected bar.
+ */
+export function describeFocus(
+  model: Pick<GanttModel, "rows" | "links">,
+  focus: LinkFocus,
+  selected: string | undefined,
+  selectedLink: GanttLink | undefined
+): string | undefined {
+  if (focus.links.size === 0) return undefined;
+  const name = (key: string) => linkName(model.rows, key);
+  if (selectedLink) {
+    return `${name(selectedLink.to)} waits for ${name(selectedLink.from)}. Delete removes this dependency; Esc shows all arrows.`;
+  }
+  if (selected === undefined) return undefined;
+  const shown = model.links.filter((l) => focus.links.has(linkId(l)));
+  const before = shown.filter((l) => l.to === selected).map((l) => name(l.from));
+  const after = shown.filter((l) => l.from === selected).map((l) => name(l.to));
+  const parts: string[] = [];
+  if (before.length) parts.push(`${name(selected)} waits for ${before.join(", ")}`);
+  if (after.length)
+    parts.push(
+      `${after.join(", ")} ${after.length === 1 ? "waits" : "wait"} for ${name(selected)}`
+    );
+  return `${parts.join("; ")}. Esc shows all arrows.`;
 }

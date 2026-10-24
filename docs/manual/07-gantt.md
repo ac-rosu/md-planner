@@ -156,12 +156,22 @@ you drag, the bar under the pointer is outlined and a label says what the link w
 The task you drop on gets `@dep:<id of the first task>`. If the first task has no id yet, it gets
 one. Links that would create a circular dependency are refused with a message.
 
-### Remove a dependency
+### Follow and remove dependencies
 
-Click an arrow to select it, then click **Remove dependency** in the toolbar or press Delete or
-Backspace:
+Click an arrow to select it. It is drawn on top in the accent colour, the two bars it connects are
+outlined (and their rows in the task tree highlighted), the other arrows fade, and the help line at
+the bottom says what it means, such as "T122 waits for T121". To remove the dependency, click
+**Remove dependency** in the toolbar or press Delete or Backspace:
 
 ![A selected dependency and the Remove dependency button](images/gantt-dependency.png)
+
+Click a bar, or select a row in the task tree (also with ↑ / ↓), to highlight the arrows into and
+out of that task in the same way; the help line lists them, such as "T491 waits for T411, T413;
+T416 waits for T491". Hover an arrow to see which tasks it connects. Press Esc or click an empty
+part of the chart to show all arrows again.
+
+Arrows from tasks that finish on the same day run in separate lanes, a few pixels apart, and their
+corners are rounded, so a bend is not mistaken for a crossing.
 
 ### Edit title, owner and estimate
 
@@ -219,6 +229,7 @@ Click a row in the task tree first.
 | Option+← / Option+→ | Move the task one working day earlier / later (`@start`). |
 | Shift+Option+← / →  | Make the task one working day shorter / longer (`@est`).  |
 | Delete / Backspace  | Remove the selected dependency.                           |
+| Esc                 | Show all dependency arrows again.                         |
 | Cmd+Z / Cmd+Shift+Z | Undo / redo the last Gantt edit.                          |
 
 ---

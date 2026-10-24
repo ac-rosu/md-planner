@@ -2,9 +2,15 @@ import { describe, expect, it } from "vitest";
 import { formatDate, isoWeekday, parseDate } from "../../../src/core/dates";
 import { schedulePlan } from "../../../src/core/scheduler";
 import { buildGanttModel } from "../../../src/core/views/gantt";
+import { type GanttRow } from "../../../src/core/views/gantt";
 import {
+  describeFocus,
+  linkFocus,
+  linkId,
   linkTargetAt,
   resizeHandleWidth,
+  roundedPath,
+  routeLinks,
   stepWorkingDays,
   visibleRows,
   vscodeContext,
@@ -185,5 +191,104 @@ describe("gantt drag safety", () => {
     expect(row("T105").tooltip.join("\n")).toContain(
       "Fixed start: not before 2026-11-10 · right-click → Remove fixed start"
     );
+  });
+});
+
+describe("gantt dependency lines", () => {
+  const scale = makeScale(d("2026-10-05"), d("2026-11-30"), 14);
+  const ROW = 26;
+  const bar = (key: string, start: string, finish: string) =>
+    ({ key, kind: "task", start: d(start), finish: d(finish) }) as GanttRow;
+  const link = (from: string, to: string) => ({ from, to, critical: false });
+
+  it("rounds the corners of a line and leaves the end straight for the arrow", () => {
+    expect(
+      roundedPath(
+        [
+          [0, 0],
+          [10, 0],
+          [10, 20],
+          [30, 20],
+        ],
+        4
+      )
+    ).toBe("M0,0 L6,0 Q10,0 10,4 L10,16 Q10,20 14,20 L30,20");
+    // Short legs get a smaller radius; repeated points are dropped.
+    expect(
+      roundedPath(
+        [
+          [0, 0],
+          [2, 0],
+          [2, 0],
+          [2, 10],
+        ],
+        4
+      )
+    ).toBe("M0,0 L1,0 Q2,0 2,1 L2,10");
+  });
+
+  it("gives predecessors that finish on the same day their own vertical lane", () => {
+    const rows = [
+      bar("A", "2026-10-05", "2026-10-07"),
+      bar("B", "2026-10-06", "2026-10-07"),
+      bar("C", "2026-10-12", "2026-10-13"),
+      bar("D", "2026-10-14", "2026-10-15"),
+    ];
+    const routed = routeLinks([link("A", "D"), link("A", "C"), link("B", "C")], rows, scale, ROW);
+    // The lane is where the line turns: the x of its first corner.
+    const laneX = (from: string, to: string) =>
+      Number(routed.find((r) => linkId(r.link) === `${from}→${to}`)!.d.match(/Q([\d.]+),/)![1]);
+    const x1 = dayToX(scale, d("2026-10-08"));
+    // A's lines share one lane (one source), B's line runs 3 px further.
+    expect(laneX("A", "C")).toBe(x1 + 6);
+    expect(laneX("A", "D")).toBe(x1 + 6);
+    expect(laneX("B", "C")).toBe(x1 + 9);
+    // Every line ends at the start of its successor, on the row centre.
+    const end = routed
+      .find((r) => r.link.to === "D")!
+      .d.split(" L")
+      .at(-1);
+    expect(end).toBe(`${dayToX(scale, d("2026-10-14")) - 2},${3 * ROW + ROW / 2}`);
+  });
+
+  it("goes round through the row gap when the successor starts right away", () => {
+    const rows = [bar("A", "2026-10-05", "2026-10-07"), bar("B", "2026-10-07", "2026-10-08")];
+    const [r] = routeLinks([link("A", "B")], rows, scale, ROW);
+    // Down to the gap between the rows (y = 26), back left, down into B.
+    expect(r.d).toContain(",26 ");
+    expect(r.d.endsWith(`L${dayToX(scale, d("2026-10-07")) - 2},39`)).toBe(true);
+  });
+
+  it("skips lines to rows that are hidden or not scheduled", () => {
+    const rows = [bar("A", "2026-10-05", "2026-10-07"), { key: "B", kind: "task" } as GanttRow];
+    expect(routeLinks([link("A", "B"), link("A", "X")], rows, scale, ROW)).toEqual([]);
+  });
+
+  it("highlights the selected line, or the lines of the selected bar", () => {
+    const links = [link("A", "B"), link("B", "C"), link("C", "D")];
+    const line = linkFocus(links, "D", { from: "A", to: "B" });
+    expect([...line.links]).toEqual(["A→B"]);
+    expect([...line.rows]).toEqual(["A", "B"]);
+    const task = linkFocus(links, "B", undefined);
+    expect([...task.links]).toEqual(["A→B", "B→C"]);
+    expect([...task.rows]).toEqual(["A", "C"]);
+    // Nothing to highlight: nothing fades.
+    expect(linkFocus(links, "E", undefined).links.size).toBe(0);
+    expect(linkFocus(links, undefined, { from: "X", to: "Y" }).links.size).toBe(0);
+    expect(linkId(links[0])).toBe("A→B");
+  });
+
+  it("says in the help line what the highlighted dependencies mean", () => {
+    const rows = ["A", "B", "C", "D"].map((k) => ({ key: k, id: `T${k}`, title: k }) as GanttRow);
+    const links = [link("A", "C"), link("B", "C"), link("C", "D")];
+    const model = { rows, links };
+    expect(describeFocus(model, linkFocus(links, "C", undefined), "C", undefined)).toBe(
+      "TC waits for TA, TB; TD waits for TC. Esc shows all arrows."
+    );
+    const sel = links[2];
+    expect(describeFocus(model, linkFocus(links, undefined, sel), undefined, sel)).toBe(
+      "TD waits for TC. Delete removes this dependency; Esc shows all arrows."
+    );
+    expect(describeFocus(model, linkFocus(links, "X", undefined), "X", undefined)).toBeUndefined();
   });
 });
