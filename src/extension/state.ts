@@ -9,7 +9,12 @@ import { type Plan } from "../core/resolve";
 import { isLeaf } from "../core/rollup";
 import { scheduleDiagnostics } from "../core/scheduleDiagnostics";
 import { scheduleJsonText } from "../core/scheduleJson";
-import { type Schedule, schedulePlan, type TaskSchedule } from "../core/scheduler";
+import {
+  type Schedule,
+  schedulePlan,
+  type ScheduleOptions,
+  type TaskSchedule,
+} from "../core/scheduler";
 import { unscheduledText } from "../core/views/gantt";
 import { validatePlan } from "../core/validate";
 import { type PlanService } from "./planService";
@@ -63,7 +68,8 @@ export class PlannerState implements vscode.Disposable {
     this.emitter.fire();
   }
 
-  private scheduleOptions() {
+  /** The options every schedule of the extension uses (a Gantt drag tries changes with them). */
+  scheduleOptions(): ScheduleOptions {
     return {
       today: this.today,
       unassignedCapacity: config().get<number>("scheduling.unassignedCapacity", 40),

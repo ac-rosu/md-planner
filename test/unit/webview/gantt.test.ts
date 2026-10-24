@@ -4,7 +4,9 @@ import { schedulePlan } from "../../../src/core/scheduler";
 import { buildGanttModel } from "../../../src/core/views/gantt";
 import { type GanttRow } from "../../../src/core/views/gantt";
 import {
+  dayLabel,
   describeFocus,
+  dragPreview,
   linkFocus,
   linkId,
   linkTargetAt,
@@ -216,6 +218,26 @@ describe("gantt drag safety", () => {
     expect(resizeHandleWidth(11)).toBe(0);
     expect(resizeHandleWidth(12)).toBe(4);
     expect(resizeHandleWidth(200)).toBe(8);
+  });
+
+  it("previews a drag in working days, as the schedule will place it", () => {
+    const cal = { workweek: [1, 2, 3, 4, 5], holidays: [d("2026-10-14")] };
+    // Wed 7 → Thu 8 Oct (2 working days), moved by 2 calendar days: Fri 9 and Mon 12, not Sat.
+    const bar = { start: d("2026-10-07"), finish: d("2026-10-08") };
+    const moved = dragPreview(cal, bar, "move", 2);
+    expect([moved.start, moved.finish].map(dayLabel)).toEqual(["Fri 2026-10-09", "Mon 2026-10-12"]);
+    // Landing on a Saturday starts on Monday; the holiday on Wed 14 Oct is skipped.
+    const weekend = dragPreview(cal, bar, "move", 3);
+    expect([weekend.start, weekend.finish].map(dayLabel)).toEqual([
+      "Mon 2026-10-12",
+      "Tue 2026-10-13",
+    ]);
+    const holiday = dragPreview(cal, bar, "move", 6);
+    expect(dayLabel(holiday.start)).toBe("Tue 2026-10-13");
+    expect(dayLabel(holiday.finish)).toBe("Thu 2026-10-15");
+    // Resizing onto a Saturday ends on the Friday before; never before the start.
+    expect(dayLabel(dragPreview(cal, bar, "resize", 2).finish)).toBe("Fri 2026-10-09");
+    expect(dragPreview(cal, bar, "resize", -5).finish).toBe(bar.start);
   });
 
   it("offers Remove fixed start on pinned bars only", () => {

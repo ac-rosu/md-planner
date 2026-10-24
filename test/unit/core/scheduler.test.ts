@@ -120,7 +120,7 @@ describe("scheduler basics", () => {
     expect(dates("T3")).toEqual(["2026-10-07", "2026-10-07"]);
   });
 
-  it("orders by priority, then the latest possible start, then file order", () => {
+  it("orders by priority, then the latest possible finish, then file order", () => {
     const p = run([
       "- [ ] low @est:8h @owner:ann @prio:low ^T1",
       "- [ ] high @est:8h @owner:ann @prio:high ^T2",
@@ -182,6 +182,22 @@ describe("scheduler basics", () => {
     expect(dates("T3")).toEqual(["2026-10-06", "2026-10-08"]);
     expect(get("T3").unscheduled).toBeUndefined();
     expect(dates("T1")).toEqual(["2026-10-06", "2026-10-07"]);
+  });
+
+  it("does not move a task ahead of the person's other work because it got longer", () => {
+    // Same deadline: file order decides, whatever the estimates (making a bar longer in the Gantt
+    // must not move its start).
+    const short = run([
+      "- [ ] first @est:8h @owner:ann @due:2026-10-30 ^T1",
+      "- [ ] second @est:8h @owner:ann @due:2026-10-30 ^T2",
+    ]);
+    const long = run([
+      "- [ ] first @est:8h @owner:ann @due:2026-10-30 ^T1",
+      "- [ ] second @est:40h @owner:ann @due:2026-10-30 ^T2",
+    ]);
+    expect(short.dates("T2")[0]).toBe("2026-10-06");
+    expect(long.dates("T2")[0]).toBe("2026-10-06");
+    expect(long.dates("T1")).toEqual(["2026-10-05", "2026-10-05"]);
   });
 
   it("keeps a started task going instead of switching between equal tasks", () => {

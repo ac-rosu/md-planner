@@ -263,3 +263,39 @@ export function describeFocus(
     );
   return `${parts.join("; ")}. Esc shows all arrows.`;
 }
+
+/**
+ * Where a bar dragged by `days` calendar days would go, in working days of the project calendar:
+ * a moved bar starts on the next working day and keeps its number of working days; a resized bar
+ * ends on the last working day on or before the pointer. The schedule decides the final dates
+ * (other work of the person can stretch the bar); the notice after the drag gives them.
+ */
+export function dragPreview(
+  model: Pick<GanttModel, "workweek" | "holidays">,
+  row: { start: number; finish: number },
+  kind: "move" | "resize",
+  days: number
+): { start: number; finish: number } {
+  const holidays = new Set(model.holidays);
+  const working = (d: number) => isWorkingDay(model, holidays, d);
+  const next = (d: number) => {
+    for (let guard = 0; guard < 3660 && !working(d); guard++) d++;
+    return d;
+  };
+  const previous = (d: number) => {
+    for (let guard = 0; guard < 3660 && !working(d); guard++) d--;
+    return d;
+  };
+  if (kind === "resize")
+    return { start: row.start, finish: Math.max(row.start, previous(row.finish + days)) };
+  let length = 0;
+  for (let d = row.start; d < row.finish; d++) if (working(d)) length++;
+  const start = next(row.start + days);
+  return { start, finish: length > 0 ? stepWorkingDays(model, start, length) : start };
+}
+
+/** "Fri 2026-11-27": the weekday matters when a drag ends near a weekend. */
+export function dayLabel(day: number): string {
+  const wd = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][isoWeekday(day) - 1];
+  return `${wd} ${new Date(day * 86_400_000).toISOString().slice(0, 10)}`;
+}

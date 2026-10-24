@@ -6,7 +6,7 @@
 //  2. Done tasks are fixed at @started → @done; cancelled tasks are ignored.
 //  3. Walk days from max(today, project start). Per person, tasks are ready when their
 //     dependencies have finished (plus lag) and their @start has been reached.
-//  4. Ready tasks are ordered: fixed @start first, then @prio, then the latest day they can start
+//  4. Ready tasks are ordered: fixed @start first, then @prio, then the latest day they can finish
 //     without making anything late (their own @due or milestone target, their owner's last
 //     working day, and the tasks that wait for them), then file order.
 //  5. The person's free hours of the day go to tasks in that order; tasks span days and share days.
@@ -39,6 +39,11 @@ export interface ScheduleOptions extends Partial<CalendarOptions> {
   mode?: ScheduleMode;
   /** Calendar days simulated after the start before giving up (default 10 years). */
   horizonDays?: number;
+  /**
+   * Schedule one task as if its remaining hours or its own `@start` were different, without
+   * editing the plan: what a Gantt drag would do, before it is written.
+   */
+  whatIf?: { task: Task; remaining?: number; start?: DayNumber };
 }
 
 /**
@@ -194,10 +199,16 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
       ts.unscheduled = "cycle";
       continue;
     }
-    remaining.set(leaf, remainingHours(leaf));
+    const whatIf = options.whatIf?.task === leaf ? options.whatIf : undefined;
+    remaining.set(leaf, whatIf?.remaining ?? remainingHours(leaf));
     let fs: DayNumber | undefined;
     for (let t: Task | undefined = leaf; t; t = t.parent) {
-      const d = t.start ? parseDate(t.start) : undefined;
+      const d =
+        t === leaf && whatIf?.start !== undefined
+          ? whatIf.start
+          : t.start
+            ? parseDate(t.start)
+            : undefined;
       if (d !== undefined && (fs === undefined || d > fs)) {
         fs = d;
         fixedStartFrom.set(leaf, t);
@@ -315,7 +326,7 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
       else groupsOf.set(m, [g]);
     }
   }
-  const latestStart = latestStarts(plan, graph, groupsOf, pending, tasks, remaining, {
+  const latestFinish = latestFinishes(plan, graph, groupsOf, pending, tasks, remaining, {
     calendar,
     start,
     hpd,
@@ -324,11 +335,11 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
 
   // --- Simulation ------------------------------------------------------------------------------
   // Per resource: `future` holds released tasks by earliest day, `ready` holds eligible tasks by
-  // priority. The priority key does not change over time (the latest start is computed once, so a
+  // priority. The priority key does not change over time (the latest finish is computed once, so a
   // task in progress keeps its place), so heaps keep the order.
   const keyOf = new Map<Task, number[]>();
   const priorityKey = (t: Task): number[] => {
-    const key = [fixedStart.has(t) ? 0 : 1, PRIORITY_RANK[t.prio], latestStart.get(t)!, t.order];
+    const key = [fixedStart.has(t) ? 0 : 1, PRIORITY_RANK[t.prio], latestFinish.get(t)!, t.order];
     keyOf.set(t, key);
     return key;
   };
@@ -478,13 +489,15 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
 }
 
 /**
- * The latest working-day index each open leaf can start without making anything late. It has to
+ * The latest working-day index each open leaf can finish without making anything late. It has to
  * finish by its own deadline, by its owner's last working day (`capacityFrom: … 0h`), and in time
  * for every task that waits for it (that task's latest start, a day earlier when another person
  * takes over, minus the lag). A backward pass like CPM's on the estimated durations, so work that
- * others wait for goes first. Infinity when nothing bounds it.
+ * others wait for goes first. The task's own estimate does not change its own place: making a bar
+ * longer in the Gantt does not make it jump ahead of the person's other work. Infinity when
+ * nothing bounds it.
  */
-function latestStarts(
+function latestFinishes(
   plan: Plan,
   graph: DepGraph,
   groupsOf: Map<Task, DepNode[]>,
@@ -532,14 +545,15 @@ function latestStarts(
       deadlineIdx.get(t) ?? Number.POSITIVE_INFINITY,
       capacityEnd.get(tasks.get(t)!.resource) ?? Number.POSITIVE_INFINITY
     );
+  const latestStart = (t: Task) => latest.get(t)! - remaining.get(t)! / hpd;
   for (let i = order.length - 1; i >= 0; i--) {
     const t = order[i];
     let finishBy = own(t);
-    for (const w of waiters.get(t)!) finishBy = Math.min(finishBy, latest.get(w.task)! - w.gap);
-    latest.set(t, finishBy - remaining.get(t)! / hpd);
+    for (const w of waiters.get(t)!) finishBy = Math.min(finishBy, latestStart(w.task) - w.gap);
+    latest.set(t, finishBy);
   }
   // Only tasks around a cycle the graph did not flag are left: they keep their own bounds.
-  for (const t of pending) if (!latest.has(t)) latest.set(t, own(t) - remaining.get(t)! / hpd);
+  for (const t of pending) if (!latest.has(t)) latest.set(t, own(t));
   return latest;
 }
 

@@ -370,6 +370,11 @@
 .chart .ghost-label {
   fill: var(--vscode-foreground);
   font-size: 11px;
+  /* A halo in the background colour keeps the label readable over lines and other labels. */
+  paint-order: stroke;
+  stroke: var(--vscode-editor-background);
+  stroke-width: 4px;
+  stroke-linejoin: round;
 }
 
 .chart .link-ghost {

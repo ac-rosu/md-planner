@@ -5,7 +5,8 @@ import { formatHours, parseDuration } from "../../core/duration";
 import { wouldCreateCycle } from "../../core/graph";
 import { isOpen, type Task } from "../../core/model";
 import { isLeaf } from "../../core/rollup";
-import { findTaskByKey } from "../../core/scheduler";
+import { describeMoved, dragDay, movedTasks, remainingForFinish } from "../../core/drag";
+import { findTaskByKey, schedulePlan } from "../../core/scheduler";
 import { buildGanttModel, type BaselineLookup } from "../../core/views/gantt";
 import {
   addDependency,
@@ -158,58 +159,75 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
     const t = this.editableLeaf(key);
     const day = parseDate(startIso);
     if (day === undefined) throw new Error(`Invalid date ${startIso}`);
-    const s = this.ctx.state.schedule;
+    const state = this.ctx.state;
+    const s = state.schedule;
     const snapped = s.calendar.nextWorkingDay(day);
     const date = formatDate(snapped);
+    // The schedule after the move, before writing it: where the bar ends up and what else moves.
+    const after = schedulePlan(state.plan, {
+      ...state.scheduleOptions(),
+      whatIf: { task: t, start: snapped },
+    });
     const ok = await this.ctx.history.apply(
       [{ path: t.file, edits: setAttr(this.lines(t), t, "start", date) }],
       `Move ${t.id ?? t.title} to ${date}`
     );
     if (!ok) return false;
     // Every drag is reported with an Undo button, so an accidental one is noticed right away.
-    const ts = s.tasks.get(t);
     const name = t.id ?? t.title;
-    const what = `${name}: fixed start ${t.start ?? "none"} → ${date}.`;
-    if (ts?.earliest !== undefined && snapped < ts.earliest && !ts.task.start)
-      this.changed(`${what} It still waits for its dependencies, so the schedule keeps it later.`);
+    const now = after.tasks.get(t);
+    let what = `${name}: fixed start ${t.start ?? "none"} → ${date}.`;
+    if (now?.start !== undefined && now.start > snapped)
+      what += ` It waits for its dependencies, so it starts ${dragDay(now.start)}.`;
     else if (!t.start)
       // Dragging pins the task; say so the first time, as it stays when the plan changes.
-      this.changed(
-        `${what} It is now pinned: it starts no earlier than that, even when its dependencies finish sooner (right-click → Remove fixed start).`
-      );
-    else this.changed(what);
+      what += ` It is now pinned: it starts no earlier than that, even when its dependencies finish sooner (right-click → Remove fixed start).`;
+    if (now?.finish !== undefined) what += ` Ends ${dragDay(now.finish)}.`;
+    this.changed(`${what} ${describeMoved(state.plan, s, t, movedTasks(s, after, t))}`.trim());
     return true;
   }
 
-  /** Drag the end of a bar: the new span becomes the remaining work, written as `@est` in hours. */
+  /**
+   * Drag the end of a bar: the remaining work becomes what the owner can do on it up to the dropped
+   * day, next to their other work, written as `@est` in hours. The bar then ends on that day.
+   */
   async resize(key: string, finishIso: string): Promise<boolean> {
     const t = this.editableLeaf(key);
-    const s = this.ctx.state.schedule;
+    const state = this.ctx.state;
+    const s = state.schedule;
     const ts = s.tasks.get(t);
     const finish = parseDate(finishIso);
     if (!ts || ts.start === undefined || finish === undefined)
       throw new Error(`${t.id ?? t.title} has no scheduled dates to resize.`);
     const from = s.calendar.nextWorkingDay(Math.max(ts.start, s.start));
-    const to = Math.max(from, finish);
-    let remaining = 0;
-    for (let d = from; d <= to; d++) remaining += s.calendar.capacity(ts.resource, d);
-    if (remaining <= 0) {
-      for (let d = from; d <= to; d++)
-        if (s.calendar.isWorkingDay(d)) remaining += s.calendar.hoursPerDay;
-    }
-    remaining = Math.max(0.5, Math.round(remaining * 2) / 2);
-    let est =
-      t.progress !== undefined && t.progress < 1
-        ? remaining / (1 - t.progress)
-        : remaining + (t.act ?? 0);
-    est = Math.round(est * 2) / 2;
+    const { hours: remaining, schedule: after } = remainingForFinish(
+      state.plan,
+      state.scheduleOptions(),
+      s,
+      t,
+      Math.max(from, finish)
+    );
+    // Rounded down to half hours, so the remaining work never grows past what fits.
+    const est = Math.max(
+      0.5,
+      Math.floor(
+        (t.progress !== undefined && t.progress < 1
+          ? remaining / (1 - t.progress)
+          : remaining + (t.act ?? 0)) * 2
+      ) / 2
+    );
     const value = formatHours(est);
     const before = t.attrs.find((a) => a.key === "est")?.value ?? "none";
     const ok = await this.ctx.history.apply(
       [{ path: t.file, edits: setAttr(this.lines(t), t, "est", value) }],
       `Set ${t.id ?? t.title} estimate to ${value}`
     );
-    if (ok) this.changed(`${t.id ?? t.title}: estimate ${before} → ${value}.`);
+    if (ok) {
+      const ends = after.tasks.get(t)?.finish;
+      this.changed(
+        `${t.id ?? t.title}: estimate ${before} → ${value}${ends !== undefined ? `, ends ${dragDay(ends)}` : ""}. ${describeMoved(state.plan, s, t, movedTasks(s, after, t))}`.trim()
+      );
+    }
     return ok;
   }
 

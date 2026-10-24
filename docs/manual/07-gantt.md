@@ -119,7 +119,8 @@ not milestone rows).
 
 ### Move a bar → `@start`
 
-Drag a bar left or right. A ghost bar shows the new dates while you drag:
+Drag a bar left or right. A ghost bar shows the new dates while you drag, in working days (a bar
+moved onto a Saturday starts on Monday, and keeps its number of working days):
 
 ![Dragging a bar to a new start date](images/gantt-drag-move.png)
 
@@ -129,6 +130,23 @@ earlier, even when its dependencies finish sooner. A notice says so the first ti
 scheduler place the task again, right-click the bar → **Remove fixed start**. If the task's
 dependencies finish later than the date, the scheduler still keeps it after them, and a notice
 tells you so.
+
+A pinned task goes first in its owner's day, so it can become shorter (it no longer shares the
+person with other work).
+
+Other tasks can move too, also ones that do not depend on the dragged task. The notice after the
+drag gives the new dates and says what else moves and why, with **Undo**:
+
+- **Which wait for it**: tasks that depend on it, directly or further down the chain.
+- **The person's other work**: a person works on one thing after another, so moving a task later
+  frees their time and their next tasks move up (−), and a pinned task takes its day first, so
+  others move later (+).
+- **Tasks of a later milestone**: `depends: M1` makes every task of M2 wait for every task of M1,
+  so moving an M1 task past the end of M1 moves M2 (and what waits for M2).
+- **More after those**: tasks that wait for one of the above.
+
+For example: "Ends Tue 2026-12-01. Also moves T430 (+2 d), which waits for it; VV's other work:
+T515 (−5 d) and T516 (−5 d); 25 tasks of M2–M5, which wait for M1 to finish."
 
 A press only becomes a drag after the pointer has moved a few pixels, so a click with a slight
 wobble selects the bar and changes nothing. At Month and Quarter zoom a day is only a few pixels
@@ -141,10 +159,14 @@ so they can only be moved):
 
 ![Dragging the right end of a bar](images/gantt-drag-resize.png)
 
-The planner computes how many hours the owner can work between the scheduled start (or today) and
-the new end, using their capacity and time off, and writes that as the estimate, rounded to half
-hours. Hours already spent (`@act`) are added on top; with `@progress` set, the estimate is scaled
-so that the remaining part fits.
+The bar ends on the day you drop it on (on a weekend: the Friday before). The planner works out how
+many hours the owner can spend on the task up to that day next to their other work, time off and
+dependencies, by trying estimates with the scheduler, and writes the largest one that still ends
+there, rounded down to half hours. Hours already spent (`@act`) are added on top; with `@progress`
+set, the estimate is scaled so that the remaining part fits. Making a bar longer does not move its
+start. The notice gives the new end and the tasks that move with it, and why, such as "T121:
+estimate 3d → 32h, ends Fri 2026-10-23. Also moves T122 (+1 d), which waits for it; Sam's other
+work: T206 (+2 d)".
 
 ### Link two bars → `@dep`
 

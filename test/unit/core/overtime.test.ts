@@ -248,8 +248,8 @@ describe("overtime in the sample project", () => {
     const o = taskOvertime(schedule);
     const summary = [...o].map(([key, t]) => [key, Math.round(t.hours * 10) / 10]);
     expect(summary).toEqual([
-      ["T114", 1.6],
       ["T122", 1.6],
+      ["T114", 1.6],
       ["T206", 4.8],
       ["T105", 1.6],
       ["T303", 4],
@@ -299,8 +299,8 @@ describe("overtime in the sample project", () => {
     ]);
     expect(buildDashboardModel(plan, schedule).lists.overtime.map((i) => [i.id, i.detail])).toEqual(
       [
-        ["T114", "1.6 h · Sam · W45"],
         ["T122", "1.6 h · Sam · W45"],
+        ["T114", "1.6 h · Sam · W45"],
         ["T206", "4.8 h · Sam · W45"],
         ["T105", "1.6 h · Sam · W46"],
         ["T303", "4 h · Maria · W48"],

@@ -84,7 +84,7 @@ describe("attention lists, tests and punch items", () => {
     const l = attentionLists(plan, schedule);
     expect(l.overdue).toEqual([]);
     expect(l.blocked.map((t) => t.id)).toEqual(["T106"]);
-    expect(l.startingThisWeek.map((t) => t.id)).toEqual(["T010", "T301", "T009", "T011"]);
+    expect(l.startingThisWeek.map((t) => t.id)).toEqual(["T009", "T010", "T301", "T011"]);
     expect(l.unassigned.map((t) => t.id)).toEqual(["T112", "T209"]);
     expect(l.unestimated).toEqual([]);
     const later = attentionLists(plan, schedulePlan(plan, { today: "2026-11-02" }));

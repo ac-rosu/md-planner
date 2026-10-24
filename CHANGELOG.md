@@ -33,11 +33,19 @@ Safer editing, from the pilot users' feedback.
 - A move that would make the plan invalid (a dependency loop, a task depending on its new parent)
   asks first.
 - The schedule does the work that others wait for first. Each person takes the task with the
-  latest possible start that is soonest, counted back from its deadline, from the tasks that wait
+  latest possible finish that is soonest, counted back from its deadline, from the tasks that wait
   for it, and from its owner's last working day (`capacityFrom: … 0h`). Before, a short review that
   a colleague waited for could be left to the end because it had no deadline of its own. A task in
   progress keeps its place, so people no longer switch between tasks of the same urgency and the
   Gantt bars are shorter.
+- Gantt drags do what they show. Resizing a bar ends it on the day you drop it on: the estimate is
+  what the owner can do up to that day next to their other work (it assumed they worked on nothing
+  else, so the bar spilled into the next week). Making a bar longer no longer moves its start or
+  pushes it ahead of the person's other work. The ghost bar counts working days, and the notice
+  after a move or resize gives the new end and the other tasks that move, and why: they wait for
+  it, they are the same person's other work, or their milestone waits for this one ("Also moves
+  T430 (+2 d), which waits for it; VV's other work: T515 (−5 d); 25 tasks of M2–M5, which wait for
+  M1 to finish").
 - Gantt: click an arrow to follow it: it is drawn on top in the accent colour, the bars it connects
   are outlined, the other arrows fade, and the help line says "T122 waits for T121". Clicking a
   bar does the same for all arrows into and out of that task ("T491 waits for T411, T413; T416

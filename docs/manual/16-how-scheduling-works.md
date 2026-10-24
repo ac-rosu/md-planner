@@ -78,11 +78,13 @@ Each day, for each person:
 2. It orders them:
    1. tasks with a fixed `@start` first,
    2. then by priority: `@prio:high`, `med` (default), `low`,
-   3. then by the latest day the task can start without making anything late, so the tightest
+   3. then by the latest day the task can finish without making anything late, so the tightest
       task goes first. That day counts back from the task's own deadline (`@due`, an inherited
       `@due`, or the milestone target), from its owner's last working day (when `capacityFrom`
-      drops to 0h), and from every task that waits for it. A short review that someone else waits
-      for therefore comes before a long task that only has its own deadline.
+      drops to 0h), and from every task that waits for it (that task's latest start). A short
+      review that someone else waits for therefore comes before a long task that only has its own
+      deadline. The task's own estimate does not change its place, so making a bar longer in the
+      Gantt does not move it ahead of the person's other work.
    4. then in file order (milestones by id, then line by line).
 3. It gives the person's free hours of that day to the tasks in that order. A task can take several
    days and can share a day with other tasks. It finishes on the day its remaining hours reach zero.

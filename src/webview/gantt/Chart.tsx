@@ -7,6 +7,8 @@ import { type GanttLink, type GanttModel, type GanttRow } from "../../core/views
 import { type GanttViewOptions } from "../shared/protocol";
 import { type Tooltip } from "../shared/ui";
 import {
+  dayLabel,
+  dragPreview,
   type LinkFocus,
   linkId,
   linkTargetAt,
@@ -210,6 +212,7 @@ export function Chart(props: ChartProps) {
       {drag && drag.moved && (
         <DragOverlay
           drag={drag}
+          model={model}
           scale={scale}
           rowIndex={rowIndex}
           target={drag.kind === "link" ? linkTarget(drag) : undefined}
@@ -280,11 +283,13 @@ function FocusLayer({
 
 function DragOverlay({
   drag,
+  model,
   scale,
   rowIndex,
   target,
 }: {
   drag: Drag;
+  model: GanttModel;
   scale: Scale;
   rowIndex: Map<string, number>;
   /** Link drags: the bar under the pointer that would get the dependency. */
@@ -327,22 +332,22 @@ function DragOverlay({
   }
   if (row.start === undefined || row.finish === undefined) return null;
   const days = Math.round((drag.x - drag.originX) / scale.px);
-  const start = drag.kind === "move" ? row.start + days : row.start;
-  const finish = drag.kind === "move" ? row.finish + days : Math.max(row.start, row.finish + days);
+  const { start, finish } = dragPreview(
+    model,
+    { start: row.start, finish: row.finish },
+    drag.kind,
+    days
+  );
   const x = dayToX(scale, start);
   const w = Math.max(scale.px, dayToX(scale, finish + 1) - x);
   return (
     <g class="drag-overlay">
       <rect class="bar-ghost" x={x} y={y + BAR_Y - 2} width={w} height={BAR_H + 4} rx={3} />
       <text class="ghost-label" x={x + w + 6} y={y + ROW_H / 2 + 4}>
-        {isoLabel(start)} → {isoLabel(finish)}
+        {dayLabel(start)} → {dayLabel(finish)}
       </text>
     </g>
   );
-}
-
-function isoLabel(day: number): string {
-  return new Date(day * 86_400_000).toISOString().slice(0, 10);
 }
 
 function renderStatic(

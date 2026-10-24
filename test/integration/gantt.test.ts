@@ -1,6 +1,7 @@
 import * as assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as vscode from "vscode";
+import { formatDate } from "../../src/core/dates";
 import { scheduleJsonText } from "../../src/core/scheduleJson";
 import { type GanttPanel } from "../../src/extension/webviews/ganttPanel";
 import { type TeamNode } from "../../src/extension/views/teamTree";
@@ -83,8 +84,19 @@ describe("scheduler integration and Gantt", () => {
     const panel = await openGantt();
     assert.equal(panel.viewOptions.grouping, "milestone");
     assert.equal(panel.viewOptions.order, "schedule", "rows follow the schedule by default");
+    const posted: Array<{ type: string; message?: string }> = [];
+    const post = panel.post.bind(panel);
+    panel.post = (m) => {
+      posted.push(m as { type: string; message?: string });
+      post(m);
+    };
     await panel.receive({ type: "move", key: "T104", start: "2026-11-07" }); // Saturday
     assert.equal(line(M2, "T104"), "  - [ ] Order events schema @est:6h @start:2026-11-09 ^T104");
+    // The notice gives the new dates (worked out before writing) and what else moves.
+    assert.match(
+      posted.find((m) => m.type === "notice")?.message ?? "",
+      /^T104: fixed start none → 2026-11-09\. It is now pinned: .* Ends Mon 2026-11-09\. Also moves Sam's other work: T122 \(−1 d\)/
+    );
     await waitFor(() => api.state.plan.taskById("T104")?.start === "2026-11-09", "index");
     await waitFor(() => api.state.schedule.byKey.get("T104")?.start === 20766, "rescheduled");
   });
@@ -99,6 +111,7 @@ describe("scheduler integration and Gantt", () => {
   });
 
   it("resizes a bar by writing @est as the remaining hours", async () => {
+    const api = await getApi();
     const panel = await openGantt();
     // Every drag is reported with what changed and an Undo button.
     const posted: unknown[] = [];
@@ -113,9 +126,20 @@ describe("scheduler integration and Gantt", () => {
       line(M2, "T121"),
       "- [ ] Shared API library (auth, validation, logging) @est:32h @owner:sam #backend ^T121"
     );
+    // The notice says where the bar ends now and which other tasks move with it.
     assert.deepEqual(
       posted.find((m) => (m as { type: string }).type === "notice"),
-      { type: "notice", level: "info", message: "T121: estimate 3d → 32h.", undo: true }
+      {
+        type: "notice",
+        level: "info",
+        message:
+          "T121: estimate 3d → 32h, ends Fri 2026-10-23. Also moves T122 (+1 d), T110 (+1 d), T111 (+1 d) and 3 more, which wait for it; Sam's other work: T206 (+2 d) and T104 (+1 d).",
+        undo: true,
+      }
+    );
+    await waitFor(
+      () => formatDate(api.state.schedule.byKey.get("T121")?.finish ?? 0) === "2026-10-23",
+      "rescheduled"
     );
   });
 
