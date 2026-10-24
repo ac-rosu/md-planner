@@ -221,6 +221,8 @@ export interface Project {
   workweekText: string;
   hoursPerDay: number;
   holidays: Array<[number, number]>;
+  /** Hours budgeted for the whole project (`budget: 1200h`, `150d`, `30w` or a plain number). */
+  budget?: number;
   template?: string;
   phases: PhaseRef[];
 }

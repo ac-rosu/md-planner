@@ -147,7 +147,9 @@ export type DashboardToHost =
   | CommonWebviewMessage
   | { type: "baseline"; name?: string }
   | { type: "open"; view: PlannerView }
-  | { type: "saveBaseline" };
+  | { type: "saveBaseline" }
+  /** Opens the project form (to set the budget). */
+  | { type: "editProject" };
 
 // ---------------------------------------------------------------------------------------------
 // Test runner

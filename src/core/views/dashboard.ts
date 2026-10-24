@@ -1,6 +1,13 @@
 // Dashboard view model: milestone cards, burn-up, estimate accuracy, attention lists, test and
 // punch status. Also used by the HTML status report.
 import { type Baseline, milestoneTrends } from "../baseline";
+import {
+  blockedImpact,
+  type BudgetFigures,
+  budgetSummary,
+  describeBlockedImpact,
+  overBudgetReasons,
+} from "../budget";
 import { formatDate, isoWeekKey, parseDate, weekStart } from "../dates";
 import { formatHours } from "../duration";
 import {
@@ -18,7 +25,7 @@ import {
 import { type Task } from "../model";
 import { milestoneStats, deadlineOf } from "../queries";
 import { type Plan } from "../resolve";
-import { estimateHours, ownerOf } from "../rollup";
+import { estimateHours, ownerOf, remainingHours as remainingOf } from "../rollup";
 import { taskOvertime } from "../load";
 import { type Schedule, taskKey } from "../scheduler";
 import { buildResourcesModel, plannedOvertime } from "./resources";
@@ -75,6 +82,19 @@ export interface DashboardModel {
   remainingHours: number;
   /** Overtime and extra working days scheduled from this week on. */
   overtime: { hours: number; byPerson: Array<{ name: string; hours: number; weeks: string[] }> };
+  /** Hours: the budget from project.md (if set) against planned, logged and forecast work. */
+  budget: BudgetFigures & {
+    budget?: number;
+    savings: number;
+    /** Why the forecast is over the budget (empty when within it). */
+    reasons: string[];
+    /** Tasks taking longer than estimated, most first. */
+    overruns: DashboardItem[];
+    unestimated: number;
+    milestones: Array<BudgetFigures & { id: string; title: string }>;
+  };
+  /** Blocked tasks: the work that waits for them. */
+  blockedWaiting: { tasks: number; hours: number };
 }
 
 export function buildDashboardModel(
@@ -99,6 +119,9 @@ export function buildDashboardModel(
     return o ? (plan.personById(o)?.name ?? o) : "unassigned";
   };
   const lists = attentionLists(plan, schedule);
+  const budget = budgetSummary(plan);
+  const impact = new Map(blockedImpact(plan, schedule).map((b) => [b.task, b]));
+  const waitingOnBlocked = new Set([...impact.values()].flatMap((b) => b.waiting));
   const milestones: MilestoneCard[] = plan.milestones
     .filter((m) => m.status !== "cancelled")
     .map((m) => {
@@ -143,14 +166,19 @@ export function buildDashboardModel(
       return item(t, `${formatDate(ts.start!)} → ${formatDate(ts.finish!)} · ${owner(t)}`);
     }),
     milestones,
-    burnUp: { project: burnUp(plan, schedule), milestones: burnMilestones },
+    burnUp: {
+      project: { ...burnUp(plan, schedule), budget: plan.project.budget },
+      milestones: burnMilestones,
+    },
     accuracy: estimateAccuracy(plan),
     personNames,
     lists: {
       overdue: lists.overdue.map((t) => item(t, `due ${deadlineOf(plan, t)} · ${owner(t)}`)),
-      blocked: lists.blocked.map((t) =>
-        item(t, t.blocked ? `${t.blocked} · ${owner(t)}` : `no reason given · ${owner(t)}`)
-      ),
+      blocked: lists.blocked.map((t) => {
+        const effect = impact.get(t);
+        const why = effect ? describeBlockedImpact(effect) : "";
+        return item(t, `${t.blocked ?? "no reason given"} · ${owner(t)}${why ? ` · ${why}` : ""}`);
+      }),
       startingThisWeek: lists.startingThisWeek.map((t) => {
         const ts = schedule.tasks.get(t)!;
         return item(t, `${formatDate(ts.start!)} · ${owner(t)}${hoursText(t)}`);
@@ -166,6 +194,27 @@ export function buildDashboardModel(
     baseline: baseline?.name,
     remainingHours: Math.round(remainingHours * 10) / 10,
     overtime: overtimeSummary(plan, schedule),
+    budget: {
+      budget: budget.budget,
+      planned: budget.planned,
+      spent: budget.spent,
+      remaining: budget.remaining,
+      forecast: budget.forecast,
+      savings: budget.savings,
+      reasons: overBudgetReasons(budget),
+      overruns: budget.overruns.map((o) =>
+        item(
+          o.task,
+          `+${formatHours(o.hours)} over ${formatHours(estimateHours(o.task) ?? 0)}${o.task.status === "blocked" ? " · blocked" : ""} · ${owner(o.task)}`
+        )
+      ),
+      unestimated: budget.unestimated.length,
+      milestones: budget.milestones,
+    },
+    blockedWaiting: {
+      tasks: waitingOnBlocked.size,
+      hours: Math.round([...waitingOnBlocked].reduce((sum, t) => sum + remainingOf(t), 0)),
+    },
   };
 }
 

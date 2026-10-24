@@ -105,10 +105,16 @@ export function App() {
             value={`${Math.round(model.remainingHours)} h`}
             detail={`${model.milestones.length} milestones`}
           />
+          <BudgetKpi b={model.budget} />
           <Kpi label="Late milestones" value={String(late)} bad={late > 0} />
           <Kpi
             label="Blocked"
             value={String(model.lists.blocked.length)}
+            detail={
+              model.blockedWaiting.tasks
+                ? `${model.blockedWaiting.tasks} tasks (${model.blockedWaiting.hours} h) wait for them`
+                : ""
+            }
             bad={model.lists.blocked.length > 0}
           />
           <Kpi
@@ -141,6 +147,8 @@ export function App() {
           </div>
         </section>
 
+        <BudgetPanel model={model} />
+
         <div class="two-col">
           <section aria-labelledby="burn-title" class="panel">
             <div class="panel-head">
@@ -160,6 +168,11 @@ export function App() {
             <div class="chart-legend">
               <span class="key scope" /> scope <span class="key done" /> done{" "}
               <span class="key forecast" /> forecast <span class="key today" /> today
+              {burn?.budget !== undefined && (
+                <>
+                  <span class="key budget" /> budget
+                </>
+              )}
             </div>
           </section>
           <section aria-labelledby="acc-title" class="panel">
@@ -342,11 +355,248 @@ function BurnUpChart({ burn }: { burn: DashboardModel["burnUp"]["project"] }) {
           {t.label}
         </text>
       ))}
+      {g.budgetY !== undefined && (
+        <g>
+          <line class="budget" x1={g.plot.left} x2={g.plot.right} y1={g.budgetY} y2={g.budgetY} />
+          <text class="axis budget-label" x={g.plot.right} y={g.budgetY - 5} text-anchor="end">
+            budget {Math.round(burn.budget!)} h
+          </text>
+        </g>
+      )}
       <path class="line scope" d={g.scope} />
       <path class="line forecast" d={g.forecast} />
       <path class="line done" d={g.done} />
       {g.todayX !== undefined && (
         <line class="today" x1={g.todayX} x2={g.todayX} y1={g.plot.top} y2={g.plot.bottom} />
+      )}
+    </svg>
+  );
+}
+
+/** "1,250 h": hours rounded, with thousands separators. */
+function hours(h: number): string {
+  return `${Math.round(h).toLocaleString("en-US")} h`;
+}
+
+/** Budget key figure: the forecast against the budget, "140 h left" or "50 h over". */
+function BudgetKpi({ b }: { b: DashboardModel["budget"] }) {
+  if (b.budget === undefined)
+    return <Kpi label="Budget" value="not set" detail={`planned ${hours(b.planned)}`} />;
+  const left = b.budget - b.forecast;
+  return (
+    <Kpi
+      label="Budget"
+      value={hours(b.budget)}
+      detail={`forecast ${hours(b.forecast)} · ${left >= 0 ? `${hours(left)} left` : `${hours(-left)} over`}`}
+      bad={left < 0}
+    />
+  );
+}
+
+/**
+ * Budget against the plan: a meter (logged and remaining hours make up the forecast; red past the
+ * budget line), the figures, why it goes over, and the hours per milestone.
+ */
+function BudgetPanel({ model }: { model: DashboardModel }) {
+  const b = model.budget;
+  const over = b.budget !== undefined && b.forecast > b.budget;
+  return (
+    <section aria-labelledby="budget-title" class="panel budget-panel">
+      <div class="panel-head">
+        <h2 id="budget-title">Budget</h2>
+        <button class="btn" onClick={() => send({ type: "editProject" })}>
+          <span class="codicon codicon-edit" />{" "}
+          {b.budget === undefined ? "Set budget…" : "Edit budget…"}
+        </button>
+      </div>
+      <div class="budget-grid">
+        <div>
+          <BudgetMeter b={b} />
+          <div class="chart-legend">
+            <span class="swatch logged" /> logged <span class="swatch remaining" /> remaining
+            {over && (
+              <>
+                <span class="swatch overrun" /> over budget
+              </>
+            )}
+            {b.budget !== undefined && (
+              <>
+                <span class="key budget" /> budget
+              </>
+            )}
+            <span class="planned-key">▲</span> planned
+          </div>
+          <div class="budget-figures">
+            <Figure label="Budget" value={b.budget === undefined ? "not set" : hours(b.budget)} />
+            <Figure label="Planned" value={hours(b.planned)} detail="sum of estimates" />
+            <Figure
+              label="Forecast"
+              value={hours(b.forecast)}
+              detail="logged + remaining"
+              bad={over}
+            />
+            <Figure label="Logged" value={hours(b.spent)} detail="@act" />
+            {b.budget !== undefined && (
+              <Figure
+                label={over ? "Over budget" : "Left"}
+                value={hours(Math.abs(b.budget - b.forecast))}
+                bad={over}
+              />
+            )}
+          </div>
+          {b.reasons.length > 0 && (
+            <div class="budget-why">
+              <h3>
+                <span class="codicon codicon-warning" /> Why the forecast is over the budget
+              </h3>
+              <ul>
+                {b.reasons.map((r) => (
+                  <li>{r}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {b.budget === undefined && (
+            <p class="muted small">
+              Set the project's budget in hours (budget: in project.md) to compare it with the plan.
+            </p>
+          )}
+          {b.unestimated > 0 && b.reasons.length === 0 && (
+            <p class="muted small">
+              {b.unestimated} open task(s) have no estimate yet: the forecast will grow.
+            </p>
+          )}
+        </div>
+        <div>
+          <table class="accuracy budget-table">
+            <caption>By milestone</caption>
+            <thead>
+              <tr>
+                <th scope="col">milestone</th>
+                <th scope="col">planned</th>
+                <th scope="col">logged</th>
+                <th scope="col">forecast</th>
+                <th scope="col">vs plan</th>
+              </tr>
+            </thead>
+            <tbody>
+              {b.milestones.map((m) => {
+                const diff = Math.round(m.forecast - m.planned);
+                return (
+                  <tr>
+                    <td title={m.title}>{m.id}</td>
+                    <td>{hours(m.planned)}</td>
+                    <td>{hours(m.spent)}</td>
+                    <td>{hours(m.forecast)}</td>
+                    <td class={diff > 0 ? "bad" : diff < 0 ? "good" : ""}>
+                      {diff > 0 ? `+${diff} h` : diff < 0 ? `−${-diff} h` : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {b.overruns.length > 0 && (
+            <List
+              title="Taking longer than estimated"
+              icon="watch"
+              items={b.overruns.slice(0, 5)}
+            />
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Figure({
+  label,
+  value,
+  detail,
+  bad,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  bad?: boolean;
+}) {
+  return (
+    <div class="figure">
+      <div class="muted small">{label}</div>
+      <div class={`figure-value${bad ? " bad" : ""}`}>{value}</div>
+      {detail && <div class="muted small">{detail}</div>}
+    </div>
+  );
+}
+
+/** One bar on an hours scale: logged, then remaining up to the forecast; the budget line on top. */
+function BudgetMeter({ b }: { b: DashboardModel["budget"] }) {
+  const W = 600;
+  const H = 46;
+  const BAR = 16;
+  const top = 18;
+  const max = Math.max(b.budget ?? 0, b.forecast, b.planned, 1) * 1.04;
+  const x = (h: number) => (Math.min(h, max) / max) * W;
+  const limit = b.budget ?? Number.POSITIVE_INFINITY;
+  const spentEnd = x(Math.min(b.spent, b.forecast));
+  const withinEnd = x(Math.min(b.forecast, limit));
+  const forecastEnd = x(b.forecast);
+  const gap = 2;
+  const label =
+    b.budget === undefined
+      ? `Forecast ${hours(b.forecast)}, of which ${hours(b.spent)} logged; planned ${hours(b.planned)}; no budget set`
+      : `Budget ${hours(b.budget)}; forecast ${hours(b.forecast)}, of which ${hours(b.spent)} logged; planned ${hours(b.planned)}`;
+  return (
+    <svg class="budget-meter" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label}>
+      <rect class="track" x={0} y={top} width={W} height={BAR} rx={4} />
+      {spentEnd > 0 && (
+        <rect class="logged" x={0} y={top} width={spentEnd} height={BAR} rx={4}>
+          <title>Logged {hours(b.spent)}</title>
+        </rect>
+      )}
+      {withinEnd - spentEnd > gap && (
+        <rect
+          class="remaining"
+          x={spentEnd + (spentEnd > 0 ? gap : 0)}
+          y={top}
+          width={withinEnd - spentEnd - (spentEnd > 0 ? gap : 0)}
+          height={BAR}
+          rx={4}
+        >
+          <title>
+            Remaining {hours(b.remaining)} · forecast {hours(b.forecast)}
+          </title>
+        </rect>
+      )}
+      {forecastEnd - withinEnd > gap && (
+        <rect
+          class="overrun"
+          x={withinEnd + gap}
+          y={top}
+          width={forecastEnd - withinEnd - gap}
+          height={BAR}
+          rx={4}
+        >
+          <title>Over budget {hours(b.forecast - limit)}</title>
+        </rect>
+      )}
+      <path class="planned" d={`M${x(b.planned)},${top + BAR + 2} l-4,7 h8 z`}>
+        <title>Planned {hours(b.planned)}</title>
+      </path>
+      {b.budget !== undefined && (
+        <g>
+          <line class="budget" x1={x(b.budget)} x2={x(b.budget)} y1={top - 4} y2={top + BAR + 4}>
+            <title>Budget {hours(b.budget)}</title>
+          </line>
+          <text
+            class="budget-label"
+            x={x(b.budget)}
+            y={top - 7}
+            text-anchor={x(b.budget) > W - 80 ? "end" : "middle"}
+          >
+            budget {hours(b.budget)}
+          </text>
+        </g>
       )}
     </svg>
   );

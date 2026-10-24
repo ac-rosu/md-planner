@@ -6,6 +6,7 @@ import { type Issue, isOpen, type Task, TEST_TYPES } from "./model";
 import { type Plan } from "./resolve";
 import { estimateHours, isEffectivelyDone, isLeaf } from "./rollup";
 import { range, type Range } from "./text";
+import { budgetIssues } from "./budget";
 import { consistencyIssues } from "./consistency";
 import { attrIssue, depIdRange, lineContentRange, statusRange } from "./issueRanges";
 
@@ -124,6 +125,7 @@ export function validatePlan(plan: Plan, options: ValidateOptions = {}): Issue[]
   checkTests(plan, issues);
   checkPunch(plan, issues);
   issues.push(...consistencyIssues(plan));
+  issues.push(...budgetIssues(plan));
   return dedupe(issues);
 }
 

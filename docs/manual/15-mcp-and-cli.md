@@ -90,11 +90,11 @@ A `dryRun` first checks a large plan without writing. MCP clients that support p
 
 **Start and format**
 
-| Tool                | Does                                                                                                                   |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `get_plan_overview` | Project settings, people, milestones with forecasts, counts, test plans, the next free ids – or that there is no plan. |
-| `get_plan_format`   | The plan format, how scheduling works and how to use the tools.                                                        |
-| `read_plan_file`    | The Markdown of a plan file, or the list of plan files.                                                                |
+| Tool                | Does                                                                                                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_plan_overview` | Project settings and hours (budget, planned, logged, forecast, why over budget), people, milestones with forecasts, counts, test plans, the next free ids – or that there is no plan. |
+| `get_plan_format`   | The plan format, how scheduling works and how to use the tools.                                                                                                                       |
+| `read_plan_file`    | The Markdown of a plan file, or the list of plan files.                                                                                                                               |
 
 **Project and whole plan**
 
@@ -102,7 +102,7 @@ A `dryRun` first checks a large plan without writing. MCP clients that support p
 | ---------------- | ------------------------------------------------------------------------------------------------------------- |
 | `list_templates` | The templates: `empty`, `blank`, `software` and custom ones.                                                  |
 | `create_project` | A new plan from a template (refuses when one exists).                                                         |
-| `update_project` | Name, code, start, end, work week, hours per day, holidays (replace, add, remove).                            |
+| `update_project` | Name, code, start, end, work week, hours per day, budget, holidays (replace, add, remove).                    |
 | `build_plan`     | Project, people, milestones with sections and tasks, inbox, punch items and test plans in one validated step. |
 
 **Team**

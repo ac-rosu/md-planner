@@ -64,6 +64,13 @@ describe("MCP tools on the sample plan", () => {
     expect((await call("update_project", { workweek: "someday" })).text).toContain(
       "Invalid work week"
     );
+    expect((await call("update_project", { budget: "a lot" })).text).toContain("Invalid budget");
+    const b = (await call("update_project", { budget: "900h" })).json;
+    expect(b.changed[0].after).toEqual(["budget: 900h # hours agreed with the customer"]);
+    const hours = (await call("get_plan_overview")).json.project.hours;
+    expect(hours).toMatchObject({ budget: 900, planned: 820, logged: 82, forecast: 826 });
+    expect(hours.overBudget).toBe(0);
+    expect(hours.whyOverBudget).toEqual([]);
   });
 
   it("adds, changes and removes people", async () => {

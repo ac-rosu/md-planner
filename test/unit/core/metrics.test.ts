@@ -223,7 +223,8 @@ describe("dashboard model", () => {
     expect(d.endVariance).toBe(0);
     expect(d.lists.blocked[0]).toMatchObject({
       id: "T106",
-      detail: "waiting for the payment provider API keys · Priya",
+      detail:
+        "waiting for the payment provider API keys · Priya · can stay blocked until 2026-12-14",
     });
     expect(d.criticalPath[0].id).toBe("T304");
     expect(d.tests.map((t) => t.id)).toEqual(["UAT-01", "UAT-02"]);

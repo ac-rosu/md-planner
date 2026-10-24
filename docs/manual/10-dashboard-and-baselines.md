@@ -33,11 +33,38 @@ A late milestone card has a red top border, like M5 in the picture.
 | Complete          | Each task's progress weighted by its estimate: done tasks count fully, open tasks by the share already worked (`@act` or `@progress`). Cancelled tasks are left out. Big tasks count more than small ones. |
 | Forecast finish   | The last scheduled finish of the project, compared with `end` in `project.md`.                                                                                                                             |
 | Remaining work    | Remaining hours of all open tasks, and the number of milestones.                                                                                                                                           |
+| Budget            | The project's `budget` and the forecast hours against it: `N h left` or, in red, `N h over` ([Budget](#budget)). _not set_ when `project.md` has no budget.                                                |
 | Late milestones   | Milestones whose forecast is after their target.                                                                                                                                                           |
-| Blocked           | Tasks with status `[!]`.                                                                                                                                                                                   |
+| Blocked           | Tasks with status `[!]`, and how many tasks (and hours) wait for them.                                                                                                                                     |
 | Open punch items  | Open punch items with the count per severity. Red when any A item is open.                                                                                                                                 |
 | Failed test steps | Test steps with `@result:fail`.                                                                                                                                                                            |
 | Planned overtime  | Hours of overtime and extra working days the schedule uses from this week on, with the people who work them ([Team load](09-team-load.md#overtime-and-extra-working-days)).                                |
+
+## Budget
+
+Set the project's budget in hours with **Edit budget…** (or **Set budget…**) in this panel, the
+**Budget** field of the project form, or `budget: 800h` in `project.md` (days and weeks work too:
+`100d`, `20w`).
+
+![The budget panel](images/dashboard-budget.png)
+
+| #   | Element         | Meaning                                                                                                                                                                                       |
+| --- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Meter           | The forecast as one bar: hours logged (blue), hours still to do (light blue), the part over the budget (red). The purple line is the budget, ▲ the planned hours. Hover a part for its hours. |
+| 2   | Figures         | **Budget**; **Planned**: the sum of the estimates; **Forecast**: what the work will take, hours logged plus the remaining work; **Logged**: the `@act` hours; **Left** or **Over budget**.    |
+| 3   | Why over budget | Only when the forecast is over the budget: whether the estimates already add up to more, which tasks take longer than estimated (blocked ones say so), and open tasks without an estimate.    |
+| 4   | By milestone    | Planned, logged and forecast hours per milestone, and the forecast against the plan: where an overrun comes from.                                                                             |
+| 5   | Taking longer   | Tasks whose logged (or logged plus remaining) hours are above their estimate, most first. Click one to open it.                                                                               |
+| 6   | Edit budget…    | Opens the project form.                                                                                                                                                                       |
+
+How the forecast is counted, per task: a done task counts its `@act` (or its estimate when no
+time was logged); an open task its `@act` (or the share done with `@progress`) plus its remaining
+work; a cancelled task the hours logged on it before it was cancelled. Open tasks without an
+estimate count 0 until they get one, and the panel says how many there are. The budget covers the
+milestone tasks; punch-list and inbox items are not counted.
+
+When the forecast is over the budget, `project.md` gets a warning on the `budget` line with the same
+reasons, and the status report lists it as a risk.
 
 ## Burn-up and estimate accuracy
 
@@ -50,6 +77,7 @@ The **burn-up** shows, in hours:
 - **done** (green): hours of tasks completed, by their `@done` date.
 - **forecast** (blue dashed): the scheduled finishes plus work already done, up to the end.
 - **today** (red).
+- **budget** (purple): the project's budget, when there is one (whole project only).
 
 Choose **Whole project** or one milestone in the selector.
 
@@ -66,7 +94,7 @@ same statistics drive **AI: Calibrate estimates** ([AI assistant](14-ai-assistan
 | List               | Contains                                                                                                                     |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
 | Overdue            | Open leaf tasks whose deadline (`@due`, inherited `@due`, or the milestone target) has passed.                               |
-| Blocked            | Blocked tasks with their reason and owner.                                                                                   |
+| Blocked            | Blocked tasks with their reason and owner, what waits for them and how long they can stay blocked ([below](#blocked-tasks)). |
 | Starting this week | Tasks scheduled to start in the current ISO week, with start date, owner and hours.                                          |
 | Unassigned         | Open tasks without an owner.                                                                                                 |
 | Unestimated        | Open leaf tasks without an estimate.                                                                                         |
@@ -74,6 +102,22 @@ same statistics drive **AI: Calibrate estimates** ([AI assistant](14-ai-assistan
 | Planned overtime   | Tasks that use overtime or extra working days from this week on: hours, owner and ISO weeks (only shown when there are any). |
 
 Each list shows its count and up to twelve items; click an item to open it in the editor.
+
+### Blocked tasks
+
+The schedule plans a blocked task as if it could go ahead, so the forecast does not show the delay
+yet. The **Blocked** list says what it costs:
+
+- **N tasks (H h) wait for it**: the open work that depends on it, directly or further down the
+  chain (also through its parent and through milestone `depends:`).
+- **can stay blocked until 2026-12-14**: the last day it can stay blocked without moving anything
+  (its latest start minus one working day, from its slack). On the critical path it adds that after
+  that day the end date moves.
+- **already delaying the plan** (or **the end date**): it has no slack left, so every day it stays
+  blocked moves its milestone (or the end of the project).
+
+A blocked task costs budget hours only when people log time on it while it is blocked; then it
+shows up under **Taking longer than estimated**, marked as blocked.
 
 **Tests** shows one bar per test plan: pass (green), fail (red), n.a. and open, with the date of the
 last run. **Open punch items** shows the split by severity, the open, closed and overdue counts, and

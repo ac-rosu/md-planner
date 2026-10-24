@@ -121,6 +121,17 @@ describe("HTML status report", () => {
     expect(risks).toContain("Critical path: 8 task(s) from T304 to T407");
     expect(risks).toMatch(/Sam has more work than capacity in 2026-W43, 2026-W44/);
     expect(risks).toContain("2 open task(s) have no owner.");
+    expect(risks).toContain(
+      '<span class="late">The forecast of 826 h is 26 h over the budget of 800 h.</span> The estimates add up to 820 h, 20 h over the budget.'
+    );
+  });
+
+  it("shows the forecast against the budget in the key figures and the burn-up", () => {
+    expect(html).toContain(
+      '<b class="late">826h / 800h</b><span>forecast vs budget, 26h over</span>'
+    );
+    expect(html).toContain(">budget 800 h</text>");
+    expect(html).toContain("purple: budget");
   });
 });
 

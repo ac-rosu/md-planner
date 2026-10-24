@@ -90,6 +90,8 @@ export interface BurnUp {
   points: BurnPoint[];
   scope: number;
   today: DayNumber;
+  /** The project's hours budget, drawn as a line (whole project only). */
+  budget?: number;
 }
 
 /**

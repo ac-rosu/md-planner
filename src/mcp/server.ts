@@ -200,6 +200,10 @@ const projectSettings = {
   end: date.optional(),
   workweek: z.string().optional().describe("mon-fri, mon-thu, sun-thu …"),
   hoursPerDay: z.number().optional(),
+  budget: z
+    .string()
+    .optional()
+    .describe("Hours budget of the whole project: 1200h, 150d or 30w; empty removes it"),
   holidays: strings.optional().describe("Replaces the holidays: dates and from..to ranges"),
 };
 
@@ -234,7 +238,7 @@ export function createServer(tools: PlannerTools): McpServer {
   // --- Overview and format -------------------------------------------------------------------
   tool(
     "get_plan_overview",
-    "Start here. Project settings, people (capacity, time off, overtime), milestones (target, forecast, progress, sections), counts, test plans, the next free ids and the critical path – or that there is no plan yet.",
+    "Start here. Project settings and hours (budget, planned, logged, forecast, why over budget), people (capacity, time off, overtime), milestones (target, forecast, progress, sections), counts, test plans, the next free ids and the critical path – or that there is no plan yet.",
     {},
     () => planOverview(tools),
     true
@@ -277,7 +281,7 @@ export function createServer(tools: PlannerTools): McpServer {
   );
   tool(
     "update_project",
-    "Change the project settings: name, code, start, end, work week, hours per day, holidays (replace, add or remove).",
+    "Change the project settings: name, code, start, end, work week, hours per day, hours budget, holidays (replace, add or remove).",
     { ...projectSettings, addHolidays: strings.optional(), removeHolidays: strings.optional() },
     (a) => updateProject(tools, a)
   );

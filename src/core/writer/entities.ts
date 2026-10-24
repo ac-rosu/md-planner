@@ -530,6 +530,8 @@ export interface ProjectChange {
   end?: string;
   workweek?: string;
   hoursPerDay?: string;
+  /** Hours budget, e.g. `1200h` ("" removes it). */
+  budget?: string;
   holidays?: string[];
 }
 
@@ -551,6 +553,7 @@ export function changeProject(
         end: change.end,
         workweek: change.workweek,
         hoursPerDay: change.hoursPerDay,
+        budget: change.budget,
         holidays: change.holidays === undefined ? undefined : change.holidays.join(", "),
       },
     })

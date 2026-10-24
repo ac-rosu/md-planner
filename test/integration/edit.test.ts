@@ -487,10 +487,35 @@ describe("create and edit from the user interface", () => {
     );
     assert.ok(
       docText("project.md").includes(
-        "hoursPerDay: 7.5\nholidays: 2026-12-25, 2026-12-26, 2027-01-01, 2027-04-27, 2027-05-05\n"
+        "hoursPerDay: 7.5\nbudget: 800h # hours agreed with the customer\nholidays: 2026-12-25, 2026-12-26, 2027-01-01, 2027-04-27, 2027-05-05\n"
       )
     );
     await waitFor(() => api.state.plan.project.hoursPerDay === 7.5, "project indexed");
+  });
+
+  it("sets the budget from the project form and warns when the forecast is over it", async () => {
+    const api = await getApi();
+    // The sample is 26 h over its 800 h budget: a warning on the budget line says why.
+    const warning = await waitFor(
+      () =>
+        vscode.languages
+          .getDiagnostics(planUri("project.md"))
+          .find((d) => d.code === "over-budget"),
+      "over-budget warning"
+    );
+    assert.match(warning.message, /^Forecast 826 h is 26 h over the budget of 800 h\./);
+    assert.ok(await run<boolean>("planner.editProject", { budget: "110d" }));
+    assert.ok(docText("project.md").includes("budget: 110d # hours agreed with the customer\n"));
+    await waitFor(() => api.state.plan.project.budget === 880, "budget indexed");
+    await waitFor(
+      () =>
+        !vscode.languages
+          .getDiagnostics(planUri("project.md"))
+          .some((d) => d.code === "over-budget"),
+      "warning gone"
+    );
+    assert.ok(await run<boolean>("planner.editProject", { budget: "" }));
+    assert.ok(!docText("project.md").includes("budget:"));
   });
 
   it("shows clickable actions as CodeLens and hides them with planner.codeLens.actions", async () => {

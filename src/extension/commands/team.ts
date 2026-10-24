@@ -3,7 +3,7 @@
 // day, holidays). Forms as in edit.ts; values passed as an argument skip the form.
 import * as vscode from "vscode";
 import { isOpen, type Person } from "../../core/model";
-import { parseOvertime, parseWorkday, personIdFromName } from "../../core/resolve";
+import { parseBudget, parseOvertime, parseWorkday, personIdFromName } from "../../core/resolve";
 import { parseCapacity } from "../../core/duration";
 import {
   addPerson,
@@ -99,7 +99,16 @@ const PERSON_FIELDS = [
 function weekArg(x: unknown): string | undefined {
   return valuesArg<{ week: string }>(x, ["week"], ["week"])?.week;
 }
-const PROJECT_FIELDS = ["name", "code", "start", "end", "workweek", "hoursPerDay", "holidays"];
+const PROJECT_FIELDS = [
+  "name",
+  "code",
+  "start",
+  "end",
+  "workweek",
+  "hoursPerDay",
+  "budget",
+  "holidays",
+];
 
 function message(text: string): void {
   void vscode.window.setStatusBarMessage(`$(check) ${text}`, 5000);
@@ -714,6 +723,7 @@ interface ProjectForm {
   end: string;
   workweek: string;
   hoursPerDay: string;
+  budget: string;
   holidays: string[];
 }
 
@@ -741,6 +751,7 @@ export async function editProjectCommand(
       end: prop("end"),
       workweek: prop("workweek"),
       hoursPerDay: prop("hoursPerDay"),
+      budget: prop("budget"),
       holidays: listItems(prop("holidays")),
     };
     const form: ProjectForm = { ...original, holidays: [...original.holidays] };
@@ -821,6 +832,26 @@ export async function editProjectCommand(
         },
       },
       {
+        icon: "credit-card",
+        label: "Budget",
+        value: (s) => s.budget || undefined,
+        detail: "Hours for the whole project; the dashboard compares it with the plan",
+        changed: changed("budget"),
+        edit: async (s) => {
+          const hpd = Number(s.hoursPerDay) || plan.project.hoursPerDay;
+          const v = await askText({
+            title: "Project budget in hours (empty: no budget)",
+            value: s.budget,
+            placeHolder: "e.g. 1200h, 150d or 30w",
+            validate: (x) =>
+              x.trim() === "" || parseBudget(x, hpd) !== undefined
+                ? undefined
+                : "Hours such as 1200h, or days or weeks (150d, 30w)",
+          });
+          if (v !== undefined) s.budget = v.trim();
+        },
+      },
+      {
         icon: "calendar",
         label: "Holidays",
         value: (s) =>
@@ -858,6 +889,7 @@ export async function editProjectCommand(
       end: pick("end") as string | undefined,
       workweek: pick("workweek") as string | undefined,
       hoursPerDay: pick("hoursPerDay") as string | undefined,
+      budget: pick("budget") as string | undefined,
       holidays: pick("holidays") as string[] | undefined,
     };
   }

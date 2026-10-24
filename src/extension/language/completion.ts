@@ -1,5 +1,6 @@
 // Completion in plan files: `@` keys, owner ids, task ids after `@dep:`, tags, dates, enum values
 // and property values (status, depends, milestone, type).
+import { budgetSummary } from "../../core/budget";
 import * as vscode from "vscode";
 import {
   dateSuggestions,
@@ -300,6 +301,8 @@ export class PlanCompletionProvider implements vscode.CompletionItemProvider {
       return items(plan.milestones.map((x) => [x.id, x.title]));
     if (kind === "test" && key === "type") return items(TEST_TYPES.map((t) => [t]));
     if (key === "workweek") return items([["mon-fri"], ["mon-thu"], ["sun-thu"], ["mon-sat"]]);
+    if (kind === "project" && key === "budget")
+      return items([[`${Math.ceil(budgetSummary(plan).planned)}h`, "the estimates so far"]]);
     if (key === "target" || key === "start" || key === "end" || key === "off")
       return dateSuggestions(this.service.today()).map((s) => {
         const item = new vscode.CompletionItem(

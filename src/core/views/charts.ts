@@ -15,6 +15,8 @@ export interface BurnUpGeometry {
   done: string;
   forecast: string;
   todayX?: number;
+  /** y of the budget line, when the burn-up has a budget. */
+  budgetY?: number;
   xTicks: Tick[];
   yTicks: Tick[];
   max: number;
@@ -27,7 +29,12 @@ export function burnUpGeometry(burn: BurnUp, width = 640, height = 240): BurnUpG
   const plot = { left: 48, top: 12, right: width - 12, bottom: height - 28 };
   const pts = burn.points;
   const max = niceMax(
-    Math.max(burn.scope, ...pts.map((p) => Math.max(p.done ?? 0, p.forecast ?? 0)), 1)
+    Math.max(
+      burn.scope,
+      burn.budget ?? 0,
+      ...pts.map((p) => Math.max(p.done ?? 0, p.forecast ?? 0)),
+      1
+    )
   );
   const first = pts[0]?.week ?? burn.today;
   const last = (pts[pts.length - 1]?.week ?? burn.today) + 6;
@@ -74,6 +81,7 @@ export function burnUpGeometry(burn: BurnUp, width = 640, height = 240): BurnUpG
     done: line((p) => p.done),
     forecast: line((p) => p.forecast),
     todayX,
+    budgetY: burn.budget === undefined ? undefined : round(y(burn.budget)),
     xTicks,
     yTicks,
     max,

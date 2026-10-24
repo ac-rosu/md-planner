@@ -1,5 +1,11 @@
 // HTML status report: one self-contained file (inline CSS, static SVG, no scripts) with
 // selectable sections and a print stylesheet. Also the input for the PDF export.
+import {
+  blockedImpact,
+  budgetSummary,
+  describeBlockedImpact,
+  overBudgetReasons,
+} from "../../core/budget";
 import { type Baseline } from "../../core/baseline";
 import { formatDate, parseDate, weekStart } from "../../core/dates";
 import { formatHours } from "../../core/duration";
@@ -378,6 +384,17 @@ function kpis(d: ReturnType<typeof buildDashboardModel>): string {
       (d.endVariance ?? 0) > 0 ? "late" : ""
     ),
     item(formatHours(Math.round(d.remainingHours)), "remaining work"),
+    ...(d.budget.budget !== undefined
+      ? [
+          item(
+            `${formatHours(Math.round(d.budget.forecast))} / ${formatHours(Math.round(d.budget.budget))}`,
+            d.budget.forecast > d.budget.budget
+              ? `forecast vs budget, ${formatHours(Math.round(d.budget.forecast - d.budget.budget))} over`
+              : `forecast vs budget, ${formatHours(Math.round(d.budget.budget - d.budget.forecast))} left`,
+            d.budget.forecast > d.budget.budget ? "late" : ""
+          ),
+        ]
+      : []),
     item(String(late), "late milestones", late ? "late" : ""),
     item(String(d.lists.blocked.length), "blocked tasks", d.lists.blocked.length ? "late" : ""),
     item(String(d.punch.open), "open punch items", d.punch.bySeverity.A ? "late" : ""),
@@ -398,6 +415,9 @@ function burnUpSvg(burn: ReturnType<typeof buildDashboardModel>["burnUp"]["proje
       (t) =>
         `<text x="${t.pos}" y="${g.plot.bottom + 16}" font-size="10" fill="#59636e">${esc(t.label)}</text>`
     ),
+    g.budgetY !== undefined
+      ? `<line x1="${g.plot.left}" x2="${g.plot.right}" y1="${g.budgetY}" y2="${g.budgetY}" stroke="#8250df" stroke-width="2"/><text x="${g.plot.right}" y="${g.budgetY - 5}" text-anchor="end" font-size="10" fill="#1f2328" paint-order="stroke" stroke="#ffffff" stroke-width="4">budget ${Math.round(burn.budget!)} h</text>`
+      : "",
     `<path d="${g.scope}" fill="none" stroke="#8c959f" stroke-dasharray="6 4" stroke-width="1.5"/>`,
     `<path d="${g.forecast}" fill="none" stroke="#0969da" stroke-dasharray="4 3" stroke-width="2"/>`,
     `<path d="${g.done}" fill="none" stroke="#1a7f37" stroke-width="2.5"/>`,
@@ -405,7 +425,7 @@ function burnUpSvg(burn: ReturnType<typeof buildDashboardModel>["burnUp"]["proje
       ? `<line x1="${g.todayX}" x2="${g.todayX}" y1="${g.plot.top}" y2="${g.plot.bottom}" stroke="#cf222e"/>`
       : "",
   ];
-  return `<h3>Burn-up (estimated hours)</h3><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${g.width} ${g.height}" width="${g.width}" height="${g.height}" role="img" aria-label="Burn-up chart">${parts.join("")}</svg><p class="muted">Grey dashed: scope · green: done · blue dashed: forecast · red: today.</p>`;
+  return `<h3>Burn-up (estimated hours)</h3><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${g.width} ${g.height}" width="${g.width}" height="${g.height}" role="img" aria-label="Burn-up chart">${parts.join("")}</svg><p class="muted">Grey dashed: scope · green: done · blue dashed: forecast · red: today${burn.budget !== undefined ? " · purple: budget" : ""}.</p>`;
 }
 
 function owner(plan: Plan, t: Task): string {
@@ -454,6 +474,16 @@ export function computeRisks(plan: Plan, schedule: Schedule, demand?: Schedule):
       );
     }
   }
+  const budget = budgetSummary(plan);
+  const why = overBudgetReasons(budget);
+  if (why.length && budget.budget !== undefined)
+    risks.push(
+      `<span class="late">The forecast of ${Math.round(budget.forecast)} h is ${Math.round(budget.forecast - budget.budget)} h over the budget of ${Math.round(budget.budget)} h.</span> ${why.map(esc).join(" ")}`
+    );
+  for (const b of blockedImpact(plan, schedule).filter((x) => x.critical || x.late))
+    risks.push(
+      `Blocked <b>${esc(b.task.id ?? b.task.title)}</b>${b.task.blocked ? ` (${esc(b.task.blocked)})` : ""}: ${esc(describeBlockedImpact(b))}.`
+    );
   const lists = attentionLists(plan, schedule);
   if (lists.unestimated.length)
     risks.push(

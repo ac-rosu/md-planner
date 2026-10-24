@@ -591,7 +591,7 @@ export async function captureWebviews({ root, out, pages, models, only }) {
 
     "dashboard-charts": async () => {
       await open("dashboard", 1500, 1320);
-      const burn = await t.rect({ sel: "section.panel", index: 0 });
+      const burn = await t.rect('section[aria-labelledby="burn-title"]');
       await t.shot(img("dashboard-charts"), {
         scale: WIDE,
         clip: { x: 0, y: burn.y - 6, w: 1500, h: burn.h + 12 },
@@ -610,6 +610,23 @@ export async function captureWebviews({ root, out, pages, models, only }) {
             d: 6,
             dx: -110,
           },
+        ],
+      });
+    },
+
+    "dashboard-budget": async () => {
+      await open("dashboard", 1500, 1320);
+      const panel = await t.rect(".budget-panel");
+      await t.shot(img("dashboard-budget"), {
+        scale: WIDE,
+        clip: { x: 0, y: panel.y - 6, w: 1500, h: panel.h + 12 },
+        annotations: [
+          { target: ".budget-meter", n: 1, at: "n", d: 8, dx: -200 },
+          { target: ".budget-figures", n: 2, at: "s", d: 4, dx: 160 },
+          { target: ".budget-why", n: 3, at: "s", d: 8 },
+          { target: "table.budget-table caption", n: 4, at: "e", d: 12 },
+          { target: ".budget-panel .list h3", n: 5, at: "e", d: 12 },
+          { target: { sel: ".budget-panel .btn", text: "Edit budget" }, n: 6, at: "w", d: 8 },
         ],
       });
     },

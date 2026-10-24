@@ -234,6 +234,19 @@ export function resolveProject(file: ProjectFile | undefined, issues: Issue[]): 
       issue(issues, path, ww, "invalid-value", `Invalid workweek "${ww.value}" (e.g. mon-fri).`);
     }
   }
+  let budget: number | undefined;
+  const b = getProp(props, "budget");
+  if (b && b.value !== "") {
+    budget = parseBudget(b.value, hoursPerDay);
+    if (budget === undefined)
+      issue(
+        issues,
+        path,
+        b,
+        "invalid-value",
+        `Invalid budget "${b.value}": hours such as 1200h, or days or weeks (150d, 30w).`
+      );
+  }
   const start = dateProp(path, props, "start", issues);
   const end = dateProp(path, props, "end", issues);
   if (start && end && end < start) {
@@ -260,9 +273,17 @@ export function resolveProject(file: ProjectFile | undefined, issues: Issue[]): 
       getProps(props, "holidays").concat(getProps(props, "holiday")),
       issues
     ),
+    budget,
     template: getProp(props, "template")?.value || undefined,
     phases: file?.phases ?? [],
   };
+}
+
+/** `1200h`, `150d`, `30w` or a plain number of hours; undefined when invalid or not positive. */
+export function parseBudget(text: string, hoursPerDay: number): number | undefined {
+  const t = text.trim().replace(/,/g, "");
+  const hours = /^\d+(\.\d+)?$/.test(t) ? Number(t) : parseDuration(t, hoursPerDay);
+  return hours !== undefined && hours > 0 ? hours : undefined;
 }
 
 /** `2026-11-02..2026-11-27 +8h/week` or `2026-11-05 +2h/day`: a period and the extra hours. */

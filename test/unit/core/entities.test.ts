@@ -494,6 +494,22 @@ describe("entity writers", () => {
     );
   });
 
+  it("sets, changes and removes the project budget", () => {
+    const plan = planFrom(files());
+    const f = plan.file("project.md")!;
+    const added = apply(f, changeProject(f.lines, plan.project, { budget: "1200h" }));
+    expect(added).toContain("budget: 1200h\n");
+    const withBudget = planFrom({ ...files(), "project.md": added });
+    const g = withBudget.file("project.md")!;
+    expect(withBudget.project.budget).toBe(1200);
+    expect(apply(g, changeProject(g.lines, withBudget.project, { budget: "150d" }))).toBe(
+      added.replace("budget: 1200h", "budget: 150d")
+    );
+    expect(apply(g, changeProject(g.lines, withBudget.project, { budget: "" }))).toBe(
+      f.lines.serialize()
+    );
+  });
+
   it("captures inbox items, or creates inbox.md", () => {
     const plan = planFrom({ ...files(), "inbox.md": md("# Inbox", "", "- [ ] Old idea") });
     const c = captureInbox(plan, "Ask for datasheets #customer");

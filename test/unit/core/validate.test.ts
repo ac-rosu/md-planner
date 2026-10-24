@@ -159,11 +159,12 @@ describe("diagnostics", () => {
     ).toEqual(["hint:missing-id:2"]);
   });
 
-  it("the sample project only has expected informational diagnostics", () => {
+  it("the sample project only has expected informational diagnostics, and its budget warning", () => {
     const plan = loadSample().plan;
     const issues = validatePlan(plan).filter(
       (i) => i.severity === "error" || i.severity === "warning"
     );
-    expect(issues).toEqual([]);
+    // The sample is 26 h over its budget on purpose, to show the budget on the dashboard.
+    expect(issues.map((i) => `${i.file}:${i.code}`)).toEqual(["project.md:over-budget"]);
   });
 });

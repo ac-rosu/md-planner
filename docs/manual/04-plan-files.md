@@ -65,6 +65,7 @@ start: 2026-10-01
 end: 2027-03-31
 workweek: mon-fri
 hoursPerDay: 8
+budget: 800h # hours agreed with the customer
 holidays: 2026-12-25, 2026-12-26, 2027-01-01, 2027-04-27
 template: software # phase template used by 'New project'
 
@@ -84,6 +85,7 @@ Free description of the project.
 | `end`         | `2027-03-31`                         | Planned end; the dashboard shows how far the forecast finish is from it.                 |
 | `workweek`    | `mon-fri`, `mon-thu`, `sun-thu`      | Working days of the project.                                                             |
 | `hoursPerDay` | `8`                                  | Hours in a working day (0–24). Defines `d` in durations.                                 |
+| `budget`      | `800h`, `100d`, `20w`                | Hours budgeted for the whole project. The dashboard compares it with the plan.           |
 | `holidays`    | `2026-12-25, 2026-12-28..2026-12-31` | Non-working days for everybody, comma-separated dates and ranges. `holiday:` also works. |
 | `template`    | `software`                           | Informational: the template the project was created from.                                |
 | `## Phases`   | `- Backend → M2`                     | Informational list of phases and their milestones.                                       |

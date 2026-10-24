@@ -54,6 +54,18 @@ Safer editing, from the pilot users' feedback.
   and their corners are rounded.
 - Gantt: pinch on the trackpad, or Ctrl/Cmd + scroll wheel, zooms the timeline smoothly around
   the pointer, from several years down to single days. The zoom is remembered like the others.
+- Project budget in hours: `budget: 800h` in `project.md` (or the **Budget** field of the project
+  form, or **Set budget…** on the dashboard). The dashboard shows it against the planned (sum of
+  estimates), logged and forecast hours, as a key figure, a budget panel (meter, per milestone,
+  tasks taking longer than estimated) and a line in the burn-up. When the forecast is over the
+  budget, it says why: estimates above the budget, tasks over their estimate (blocked ones marked),
+  open tasks without an estimate; `project.md` gets a warning, and the status report and the AI
+  status summary include it. MCP: `update_project` sets the budget, `get_plan_overview` reports
+  the hours.
+- Blocked tasks say what they hold up: the work that waits for them and how long they can stay
+  blocked before something moves ("2 tasks (24 h) wait for it · can stay blocked until
+  2026-10-26"), or that they already delay the plan; on the dashboard, in the status report's risks
+  and the AI summary.
 - Late tasks say what holds them back, following the dependencies to the cause: "Held back by the
   fixed start 2027-10-19 of T461 (via M1)" or "… by Sam having other work first", in the warning,
   the Gantt tooltip and the hovers.

@@ -143,8 +143,10 @@ overtime. Plan them from the team load with one click.
 ![Dashboard](docs/images/dashboard.png)
 
 The dashboard has KPIs, milestone cards (hours-weighted progress, forecast against target, trend
-since the baseline), burn-up charts, estimate accuracy per person and tag, overdue, blocked,
-unassigned and unestimated work, test status and open punch items. **Planner: Save baseline**
+since the baseline), the project's hours budget against the planned and forecast hours (and why it
+goes over), burn-up charts, estimate accuracy per person and tag, overdue, blocked (with what waits
+for them and how long they can stay blocked), unassigned and unestimated work, test status and
+open punch items. **Planner: Save baseline**
 stores a snapshot in `plan/baselines/`.
 
 ### Time tracking

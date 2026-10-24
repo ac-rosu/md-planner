@@ -64,6 +64,9 @@ export class DashboardPanel extends WebviewPanelHost<HostToDashboard, DashboardT
       case "saveBaseline":
         await vscode.commands.executeCommand("planner.saveBaseline");
         return;
+      case "editProject":
+        await vscode.commands.executeCommand("planner.editProject");
+        return;
       case "open":
         await vscode.commands.executeCommand(
           m.view === "gantt"

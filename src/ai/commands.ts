@@ -653,9 +653,12 @@ export function statusSummaryRequest(
     (t) => isLeaf(t) && t.status === "done" && t.done && t.done >= periodStart && t.done <= d.today
   );
   const lines = [
-    `Write a 5–8 sentence status summary for the project manager of "${plan.project.name}" as of ${d.today}, from the metrics below only. Mention progress, the forecast against the targets, slips since the baseline, blocked items, tests and punch items. No headings, no bullet points.`,
+    `Write a 5–8 sentence status summary for the project manager of "${plan.project.name}" as of ${d.today}, from the metrics below only. Mention progress, the forecast against the targets, the hours against the budget, slips since the baseline, blocked items, tests and punch items. No headings, no bullet points.`,
     "",
     `Overall: ${Math.round(d.progress * 100)}% complete (hours-weighted); forecast finish ${d.forecastFinish ?? "unknown"}${d.end ? `, planned end ${d.end}` : ""}${d.endVariance !== undefined ? ` (${d.endVariance > 0 ? `${d.endVariance} working days late` : d.endVariance < 0 ? `${-d.endVariance} working days early` : "on time"})` : ""}; ${Math.round(d.remainingHours)} hours of work remaining.`,
+    d.budget.budget !== undefined
+      ? `Hours: budget ${Math.round(d.budget.budget)} h; planned ${Math.round(d.budget.planned)} h; logged ${Math.round(d.budget.spent)} h; forecast ${Math.round(d.budget.forecast)} h (${d.budget.forecast > d.budget.budget ? `${Math.round(d.budget.forecast - d.budget.budget)} h over budget` : `${Math.round(d.budget.budget - d.budget.forecast)} h left`}).${d.budget.reasons.length ? ` Why over: ${d.budget.reasons.join(" ")}` : ""}`
+      : `Hours: no budget set; planned ${Math.round(d.budget.planned)} h; logged ${Math.round(d.budget.spent)} h; forecast ${Math.round(d.budget.forecast)} h.`,
     "Milestones:",
     ...d.milestones.map(
       (m) =>

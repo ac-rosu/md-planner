@@ -219,6 +219,117 @@
 .key.today {
   border-color: var(--vscode-charts-red);
 }
+.key.budget {
+  border-color: var(--vscode-charts-purple);
+}
+
+/* Budget: the purple line is the budget in both the burn-up and the meter. */
+.burnup .budget,
+.budget-meter .budget {
+  stroke: var(--vscode-charts-purple);
+  stroke-width: 2;
+}
+
+.burnup .budget-label,
+.budget-meter .budget-label {
+  fill: var(--vscode-foreground);
+  font-size: 11px;
+  /* A halo in the background colour keeps the label readable over the lines. */
+  paint-order: stroke;
+  stroke: var(--vscode-editor-background);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.budget-panel {
+  margin-top: 12px;
+}
+
+.budget-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.budget-meter {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.budget-meter .track {
+  fill: color-mix(in srgb, var(--vscode-charts-blue) 12%, transparent);
+}
+
+.budget-meter .logged,
+.chart-legend .swatch.logged {
+  fill: var(--vscode-charts-blue);
+  background: var(--vscode-charts-blue);
+}
+
+.budget-meter .remaining,
+.chart-legend .swatch.remaining {
+  fill: color-mix(in srgb, var(--vscode-charts-blue) 45%, transparent);
+  background: color-mix(in srgb, var(--vscode-charts-blue) 45%, transparent);
+}
+
+.budget-meter .overrun,
+.chart-legend .swatch.overrun {
+  fill: var(--vscode-charts-red);
+  background: var(--vscode-charts-red);
+}
+
+.budget-meter .planned,
+.planned-key {
+  fill: var(--planner-muted);
+  color: var(--planner-muted);
+}
+
+.planned-key {
+  margin-left: 6px;
+  font-size: 0.8em;
+}
+
+.chart-legend .swatch {
+  display: inline-block;
+  width: 12px;
+  height: 10px;
+  border-radius: 2px;
+  margin-left: 6px;
+}
+
+.budget-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  margin-top: 8px;
+}
+
+.figure-value {
+  font-size: 1.15em;
+  font-weight: 600;
+}
+
+.budget-why {
+  margin-top: 10px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--planner-late);
+  background: color-mix(in srgb, var(--planner-late) 8%, transparent);
+}
+
+.budget-why h3 {
+  margin: 2px 0 4px;
+  font-size: 1em;
+}
+
+.budget-why ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.budget-table td:first-child {
+  white-space: nowrap;
+}
 
 .accuracy {
   width: 100%;
@@ -326,4 +437,9 @@ body.vscode-high-contrast .kpi,
 body.vscode-high-contrast .ms-card,
 body.vscode-high-contrast .panel {
   border-color: var(--vscode-contrastBorder);
+}
+
+body.vscode-high-contrast .budget-meter rect {
+  stroke: var(--vscode-contrastBorder);
+  stroke-width: 1;
 }

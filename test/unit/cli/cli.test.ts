@@ -20,18 +20,19 @@ describe("cli", () => {
     expect(a.flags.get("json")).toBe(true);
   });
 
-  it("validates the sample: no errors, the late M5 warning; --strict fails on it", async () => {
+  it("validates the sample: no errors, the late M5 and over-budget warnings; --strict fails", async () => {
     const r = await run("validate", "--plan", SAMPLE_PLAN, "--today", TODAY);
     expect(r.code).toBe(0);
     expect(r.out).toMatch(/M5-launch\.md:24:\d+: warning late-task/);
-    expect(r.out).toMatch(/11 files, 50 tasks: 0 error\(s\), 1 warning\(s\)/);
+    expect(r.out).toMatch(/project\.md:8:\d+: warning over-budget: Forecast 826 h is 26 h over/);
+    expect(r.out).toMatch(/11 files, 50 tasks: 0 error\(s\), 2 warning\(s\)/);
     expect((await run("validate", "--plan", SAMPLE_PLAN, "--today", TODAY, "--strict")).code).toBe(
       1
     );
     const json = JSON.parse(
       (await run("validate", "--plan", SAMPLE_PLAN, "--today", TODAY, "--json")).out
     );
-    expect(json).toMatchObject({ errors: 0, warnings: 1 });
+    expect(json).toMatchObject({ errors: 0, warnings: 2 });
   });
 
   it("prints the schedule as a table or JSON identical to the core", async () => {

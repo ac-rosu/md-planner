@@ -295,7 +295,10 @@ describe("summary and review", () => {
       "- M5 – Launch: 0% done, target 2027-03-26, forecast 2027-03-31 (3 d late)"
     );
     expect(r.prompt).toContain(
-      "Blocked: Payment form (waiting for the payment provider API keys · Priya)."
+      "Blocked: Payment form (waiting for the payment provider API keys · Priya · can stay blocked until 2026-12-14)."
+    );
+    expect(r.prompt).toContain(
+      "Hours: budget 800 h; planned 820 h; logged 82 h; forecast 826 h (26 h over budget). Why over: The estimates add up to 820 h, 20 h over the budget."
     );
     expect(readSummary({ summary: " On track. " })).toBe("On track.");
     expect(() => readSummary({ summary: "" })).toThrow();

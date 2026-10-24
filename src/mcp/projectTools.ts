@@ -1,6 +1,8 @@
 // Project tools: create a plan from a template (also when there is no plan yet), change the
 // project settings, and an overview of the whole plan for an agent to start from.
+import { budgetSummary, overBudgetReasons } from "../core/budget";
 import { formatDate, isValidDate, parseWorkweek } from "../core/dates";
+import { parseBudget } from "../core/resolve";
 import { listItems, type ProjectChange, changeProject } from "../core/writer/entities";
 import { defaultEndDate, instantiateTemplate } from "../core/templates";
 import { milestoneStats } from "../core/queries";
@@ -18,6 +20,8 @@ export interface ProjectSettings {
   /** e.g. mon-fri, mon-thu, sun-thu */
   workweek?: string;
   hoursPerDay?: number;
+  /** Hours budget: `1200h`, `150d`, `30w` or a number of hours; "" removes it. */
+  budget?: string;
   /** Replaces the holidays: dates or ranges from..to. */
   holidays?: string[];
   addHolidays?: string[];
@@ -103,6 +107,12 @@ export function applySettings(st: Staging, args: ProjectSettings): void {
     throw new ToolError(`Invalid work week "${args.workweek}" (e.g. mon-fri, mon-thu, sun-thu).`);
   if (args.hoursPerDay !== undefined && !(args.hoursPerDay > 0 && args.hoursPerDay <= 24))
     throw new ToolError(`Invalid hours per day ${args.hoursPerDay} (more than 0, at most 24).`);
+  if (
+    args.budget !== undefined &&
+    args.budget.trim() !== "" &&
+    parseBudget(args.budget, args.hoursPerDay ?? plan.project.hoursPerDay) === undefined
+  )
+    throw new ToolError(`Invalid budget "${args.budget}" (hours such as 1200h, or 150d, 30w).`);
   let holidays: string[] | undefined;
   if (args.holidays || args.addHolidays || args.removeHolidays) {
     const current = listItems(
@@ -124,6 +134,7 @@ export function applySettings(st: Staging, args: ProjectSettings): void {
     end: args.end,
     workweek: args.workweek,
     hoursPerDay: args.hoursPerDay === undefined ? undefined : String(args.hoursPerDay),
+    budget: args.budget,
     holidays,
   };
   st.apply({ path: file.path, edits: changeProject(file.lines, plan.project, change) });
@@ -155,6 +166,18 @@ export function planOverview(tools: PlannerTools) {
       hoursPerDay: p.hoursPerDay,
       holidays: p.holidays.map(range),
       forecastFinish: fmt(s.finish),
+      hours: (() => {
+        const b = budgetSummary(plan);
+        return {
+          budget: b.budget,
+          planned: b.planned,
+          logged: b.spent,
+          remaining: b.remaining,
+          forecast: b.forecast,
+          overBudget: b.budget !== undefined ? Math.max(0, b.forecast - b.budget) : undefined,
+          whyOverBudget: overBudgetReasons(b),
+        };
+      })(),
     },
     people: plan.people.map((x) => ({
       id: x.id,
