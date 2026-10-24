@@ -98,7 +98,7 @@ export async function main(
       const schedule = schedulePlan(plan, { today, unassignedCapacity });
       const issues = [
         ...validatePlan(plan, { graph: schedule.graph }),
-        ...scheduleDiagnostics(plan, schedule),
+        ...scheduleDiagnostics(plan, schedule, { workload: true }),
       ];
       const errors = issues.filter((i) => i.severity === "error").length;
       const warnings = issues.filter((i) => i.severity === "warning").length;

@@ -365,14 +365,9 @@ export class PlannerTools {
 
   validatePlan() {
     this.load();
-    const demand = schedulePlan(this.plan, {
-      today: this.today,
-      mode: "demand",
-      unassignedCapacity: this.options.unassignedCapacity ?? 40,
-    });
     const issues = [
       ...validatePlan(this.plan, { graph: this.schedule.graph }),
-      ...scheduleDiagnostics(this.plan, this.schedule, demand),
+      ...scheduleDiagnostics(this.plan, this.schedule, { workload: true }),
     ];
     return {
       errors: issues.filter((i) => i.severity === "error").length,

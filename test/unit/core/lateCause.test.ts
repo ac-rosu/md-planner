@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { impliedDeps } from "../../../src/core/consistency";
 import { describeLateCause, lateCause, unscheduledCause } from "../../../src/core/lateCause";
-import { overbookedDiagnostics, scheduleDiagnostics } from "../../../src/core/scheduleDiagnostics";
+import { scheduleDiagnostics, workloadDiagnostics } from "../../../src/core/scheduleDiagnostics";
 import { newErrors, planErrors } from "../../../src/core/newErrors";
 import { schedulePlan } from "../../../src/core/scheduler";
 import { validatePlan } from "../../../src/core/validate";
@@ -162,30 +162,34 @@ describe("tasks that cannot be scheduled", () => {
   });
 });
 
-describe("overbooked people", () => {
-  it("adds one note per person on their heading, listing the weeks", () => {
+describe("people whose workload makes tasks late", () => {
+  it("adds one plain note per person on their heading, only when tasks end up late", () => {
     const p = plan(
       md(
         "# M1",
         "",
-        "- [ ] A @est:5d @owner:sam ^T1",
-        "- [ ] B @est:5d @owner:sam ^T2",
-        "- [ ] C @est:1d @owner:alex ^T3"
+        "- [ ] Big job @est:2w @owner:sam @prio:high ^T1",
+        "- [ ] Small fix @est:1d @owner:sam @due:2026-10-20 ^T2",
+        "- [ ] Other work @est:1d @owner:alex ^T3"
       )
     );
-    const issues = overbookedDiagnostics(
-      p,
-      schedulePlan(p, { today: "2026-10-14", mode: "demand" })
-    );
+    const s = schedulePlan(p, { today: "2026-10-14" });
+    const issues = workloadDiagnostics(p, s);
     expect(issues).toHaveLength(1);
     expect(issues[0]).toMatchObject({
       file: "team.md",
       range: { start: { line: 2 } },
       severity: "info",
+      code: "overbooked",
       data: { person: "sam" },
     });
-    expect(issues[0].message).toMatch(
-      /^Sam has more work ready than capacity if everything started as early as possible: 2026-W42 \(\d+h for \d+h\)/
+    expect(issues[0].message).toBe(
+      "Sam has 88h of open work, about 3 weeks at 40h a week, planned until 2026-10-28. This task finishes after the deadline because Sam has other work first: T2 (6 working days late). Give some of this work to someone else, or move the deadlines."
     );
+    // Without late tasks there is nothing to report, however full the week.
+    const busy = plan(
+      md("# M1", "", "- [ ] A @est:3w @owner:sam ^T1", "- [ ] B @est:3w @owner:sam ^T2")
+    );
+    expect(workloadDiagnostics(busy, schedulePlan(busy, { today: "2026-10-14" }))).toEqual([]);
   });
 });

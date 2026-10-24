@@ -4,7 +4,16 @@ import * as vscode from "vscode";
 import { overloadedWeeks } from "../../src/core/views/resources";
 import { type DashboardPanel } from "../../src/extension/webviews/dashboardPanel";
 import { type ResourcesPanel } from "../../src/extension/webviews/resourcesPanel";
-import { docText, getApi, planUri, restorePlan, TODAY, waitFor } from "./helpers";
+import {
+  docText,
+  getApi,
+  openPlanFile,
+  planUri,
+  positionOf,
+  restorePlan,
+  TODAY,
+  waitFor,
+} from "./helpers";
 
 const M2 = "milestones/M2-backend.md";
 
@@ -68,21 +77,25 @@ describe("team load, dashboard, baselines and time tracking", () => {
     await panel.receive({ type: "mode", mode: "capacity" });
   });
 
-  it("reports overbooked people once, on their heading in team.md", async () => {
-    const diags = await waitFor(() => {
-      const d = vscode.languages
-        .getDiagnostics(planUri("team.md"))
-        .filter((x) => x.code === "overbooked");
-      return d.length ? d : undefined;
-    }, "overbooked diagnostics");
-    const sam = diags.filter((d) => d.message.startsWith("Sam "));
-    assert.equal(sam.length, 1);
-    assert.match(
-      sam[0].message,
-      /^Sam has more work ready than capacity if everything started as early as possible: 2026-W\d\d \(\d+h for 40h\), .* Team load → Demand shows these weeks\.$/
+  it("tells, on the person in team.md, when their workload makes a task late", async () => {
+    const editor = await openPlanFile(M2);
+    const pos = await positionOf(M2, "## Notes");
+    // Due tomorrow, low priority: Sam does the other work first.
+    await editor.edit((b) =>
+      b.insert(pos, "- [ ] Urgent small fix @est:1d @owner:sam @due:2026-10-15 @prio:low\n\n")
     );
-    assert.equal(sam[0].severity, vscode.DiagnosticSeverity.Information);
-    // Tasks no longer carry the note.
+    const diag = await waitFor(
+      () =>
+        vscode.languages
+          .getDiagnostics(planUri("team.md"))
+          .find((x) => x.code === "overbooked" && x.message.startsWith("Sam ")),
+      "workload diagnostic"
+    );
+    assert.match(
+      diag.message,
+      /^Sam has [\d.]+h of open work, about \d+ weeks at 40h a week, planned until \d{4}-\d\d-\d\d\. This task finishes after the deadline because Sam has other work first: Urgent small fix \(\d+ working days late\)\./
+    );
+    assert.equal(diag.severity, vscode.DiagnosticSeverity.Information);
     assert.ok(!vscode.languages.getDiagnostics(planUri(M2)).some((x) => x.code === "overbooked"));
   });
 

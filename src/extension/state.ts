@@ -109,11 +109,9 @@ export class PlannerState implements vscode.Disposable {
       return c.issues;
     const issues = [
       ...validatePlan(plan, { missingIds: options.missingIds, graph: this.schedule.graph }),
-      ...scheduleDiagnostics(
-        plan,
-        this.schedule,
-        config().get<boolean>("diagnostics.overbooked", true) ? this.demand : undefined
-      ),
+      ...scheduleDiagnostics(plan, this.schedule, {
+        workload: config().get<boolean>("diagnostics.overbooked", true),
+      }),
     ];
     this.issueCache = { plan, today, missingIds: options.missingIds, issues };
     return issues;

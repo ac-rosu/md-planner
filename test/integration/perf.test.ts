@@ -28,6 +28,8 @@ describe("performance with 2,000 more tasks", () => {
       20_000
     );
     await restorePlan();
+    // Recompute now, so diagnostics computed with the generated tasks do not outlive them.
+    api.service.fireNow();
   });
 
   it("recomputes the schedule, diagnostics and every open view quickly", async () => {

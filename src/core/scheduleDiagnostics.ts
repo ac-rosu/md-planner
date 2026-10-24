@@ -1,16 +1,21 @@
-// Diagnostics that need a schedule: tasks finishing after their deadline, unschedulable tasks and
-// (with a demand schedule) overbooked people.
+// Diagnostics that need a schedule: tasks finishing after their deadline, unschedulable tasks,
+// milestones that float, and people whose workload makes tasks late.
 import { type DayNumber, formatDate } from "./dates";
+import { formatHours } from "./duration";
 import { describeLateCause, lateCause, unscheduledCause } from "./lateCause";
-import { loadLevel, weeklyLoad } from "./load";
 import { type Issue } from "./model";
 import { isFloatingMilestone, previousMilestone } from "./queries";
 import { type Plan } from "./resolve";
+import { remainingHours } from "./rollup";
 import { range } from "./text";
 import { type Schedule } from "./scheduler";
 import { lineContentRange } from "./validate";
 
-export function scheduleDiagnostics(plan: Plan, schedule: Schedule, demand?: Schedule): Issue[] {
+export function scheduleDiagnostics(
+  plan: Plan,
+  schedule: Schedule,
+  options: { workload?: boolean } = {}
+): Issue[] {
   const issues: Issue[] = [];
   for (const ts of schedule.tasks.values()) {
     const t = ts.task;
@@ -59,7 +64,7 @@ export function scheduleDiagnostics(plan: Plan, schedule: Schedule, demand?: Sch
     }
   }
   issues.push(...floatingMilestones(plan, schedule));
-  if (demand) issues.push(...overbookedDiagnostics(plan, demand));
+  if (options.workload) issues.push(...workloadDiagnostics(plan, schedule));
   return issues;
 }
 
@@ -104,30 +109,52 @@ function deadlineSource(plan: Plan, t: Plan["tasks"][number]): string {
 }
 
 /**
- * One info per person whose demand (every task as early as it can start, ignoring capacity) exceeds
- * their capacity in some weeks, on the person's heading in team.md. It used to be on every task of
- * those weeks: dozens of notes that did not say where they came from. Tasks that end up late
- * because of it say so in their own late warning.
+ * One info per person whose workload makes their tasks late, on the person's heading in team.md:
+ * how much open work they have, until when it is planned, and which tasks finish after their
+ * deadline because the person has other work first. (It used to report weeks where everything
+ * started at once would exceed capacity, a what-if that read as nonsense: "244h for 36h".)
  */
-export function overbookedDiagnostics(plan: Plan, demand: Schedule): Issue[] {
+export function workloadDiagnostics(plan: Plan, schedule: Schedule): Issue[] {
   const issues: Issue[] = [];
-  const end = demand.finish ?? demand.start;
   for (const p of plan.people) {
-    const over = weeklyLoad(demand, p.id, demand.start, end).filter(
-      (w) => loadLevel(w.hours, w.capacity) === "over"
-    );
-    if (over.length === 0) continue;
-    const weeks = over
-      .slice(0, 6)
-      .map((w) => `${w.week} (${Math.round(w.hours)}h for ${Math.round(w.capacity)}h)`);
+    const id = p.id.toLowerCase();
+    const mine = [...schedule.tasks.values()].filter((ts) => ts.resource === id && !ts.done);
+    const late = mine.filter((ts) => {
+      if (!ts.late) return false;
+      const cause = lateCause(schedule, ts.task);
+      return cause?.kind === "busy" && cause.resource === id;
+    });
+    if (late.length === 0) continue;
+    const hours = mine.reduce((sum, ts) => sum + remainingHours(ts.task), 0);
+    const days = p.workweek?.size ?? plan.project.workweek.size;
+    const weekly = p.capacityPer === "week" ? p.capacityHours : p.capacityHours * days;
+    const finishes = mine.flatMap((ts) => (ts.finish !== undefined ? [ts.finish] : []));
+    const until = finishes.length ? formatDate(Math.max(...finishes)) : undefined;
+    const waiting = mine.filter((ts) => ts.unscheduled).length;
+    const lateList = late
+      .slice(0, 5)
+      .map((ts) => {
+        const d = schedule.calendar.workingDaysBetween(ts.deadline!, ts.finish!);
+        return `${ts.task.id ?? ts.task.title} (${d} working day${d === 1 ? "" : "s"} late)`;
+      })
+      .join(", ");
     const line = Math.max(0, p.headingLine);
     issues.push({
       file: p.file,
       range: range(line, 0, plan.file(p.file)?.lines.line(line).length ?? 0),
       severity: "info",
       code: "overbooked",
-      message: `${p.name} has more work ready than capacity if everything started as early as possible: ${weeks.join(", ")}${over.length > 6 ? `, and ${over.length - 6} more week${over.length - 6 === 1 ? "" : "s"}` : ""}. The schedule spreads this work over later weeks; tasks that end up late because of it say so. Team load → Demand shows these weeks.`,
-      data: { person: p.id, weeks: over.map((w) => w.week).join(",") },
+      message:
+        `${p.name} has ${formatHours(Math.round(hours * 10) / 10)} of open work` +
+        (weekly > 0
+          ? `, about ${Math.ceil(hours / weekly)} weeks at ${formatHours(weekly)} a week`
+          : "") +
+        (until ? `, planned until ${until}` : "") +
+        (waiting
+          ? ` (${waiting} more task${waiting === 1 ? "" : "s"} cannot be scheduled yet)`
+          : "") +
+        `. ${late.length === 1 ? "This task finishes" : `${late.length} tasks finish`} after the deadline because ${p.name} has other work first: ${lateList}${late.length > 5 ? ", …" : ""}. Give some of this work to someone else, or move the deadlines.`,
+      data: { person: p.id },
     });
   }
   return issues;

@@ -59,10 +59,9 @@ describe("2,000-task plan end to end", () => {
       index.update(path, flip ? original.replace("@est:2d", "@est:3d") : original);
       const plan = index.plan;
       const schedule = schedulePlan(plan, { today });
-      const demand = schedulePlan(plan, { today, mode: "demand" });
       const issues = [
         ...validatePlan(plan, { graph: schedule.graph }),
-        ...scheduleDiagnostics(plan, schedule, demand),
+        ...scheduleDiagnostics(plan, schedule, { workload: true }),
       ];
       return [scheduleJsonText(plan, schedule), issues];
     };

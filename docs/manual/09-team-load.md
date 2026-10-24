@@ -64,12 +64,13 @@ dates allow, ignoring capacity. Red cells are where work piles up:
 
 ![Demand mode with overloaded weeks](images/resources-demand.png)
 
-The same demand calculation produces one `overbooked` information message per person, on their
-heading in `team.md`, listing these weeks ([Diagnostics](05-editor.md#diagnostics)), and the
-"more work than capacity" lines in the risks section of the status report. Demand above capacity
-is normal for someone with a queue of work: the schedule spreads it over the following weeks. What
-matters is whether tasks end up late; those say so themselves ("Held back by Sam having other work
-first").
+The same demand calculation produces the "more work than capacity" lines in the risks section of
+the status report. Demand above capacity is normal for someone with a queue of work: the schedule
+spreads it over the following weeks. What matters is whether tasks end up late. When someone's
+workload does that, their heading in `team.md` gets one plain message
+([Diagnostics](05-editor.md#diagnostics)), for example: "VV has 572.5h of open work, about 16
+weeks at 36h a week, planned until 2027-01-12. This task finishes after the deadline because VV has
+other work first: T464 (28 working days late)."
 
 ## Resolving overload
 

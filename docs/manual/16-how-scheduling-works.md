@@ -98,7 +98,8 @@ wait for it are reported too, naming it, so you know which task to give to someo
   everything is ahead of plan.
 - **Late tasks**: tasks scheduled to finish after their `@due` or their milestone's target.
 - **Demand schedule**: the same plan scheduled as early as possible, ignoring capacity. It shows
-  raw overload in the team-load view and produces the `overbooked` messages (one per person).
+  raw overload in the team-load view. (The `overbooked` message on a person comes from the real
+  schedule: it appears when their workload makes tasks late.)
 
 ## Steering the schedule
 

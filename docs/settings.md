@@ -101,7 +101,7 @@ Type: number · default: `40` · minimum: 0
 
 ### `planner.diagnostics.overbooked`
 
-Show an info diagnostic on each person in `team.md` whose demand (every task as early as possible, ignoring capacity) exceeds their capacity in some weeks, listing those weeks.
+Show an info diagnostic on a person in `team.md` when their workload makes tasks late: their open work, until when it is planned, and the tasks that finish after their deadline because of it.
 
 Type: boolean · default: `true`
 
