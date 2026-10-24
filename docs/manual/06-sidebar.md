@@ -77,6 +77,7 @@ Right-click a task:
 | Log time…        | Adds hours to `@act`.                                                                   |
 | Planner AI ▸     | Break down task, Estimate, Suggest owners. Hidden when `planner.ai.provider` is `none`. |
 | Move task to…    | Moves the task (with subtasks and notes) to another milestone or section; its id stays. |
+| Reorganize ▸     | Move task up / down, Indent task (subtask of the task above), Outdent task.             |
 | Open Gantt       | Opens the Gantt with this task selected and scrolled into view.                         |
 | Open Kanban      | Opens the board with this card focused.                                                 |
 | Delete task…     | Deletes the task, its subtasks and notes, and the dependencies on it, after asking.     |
@@ -84,6 +85,11 @@ Right-click a task:
 
 Right-click a **milestone** for Add task…, Add section…, Edit milestone…, Open milestone file and
 Delete milestone…; right-click a **section** for Add task….
+
+**Drag and drop** a task to reorganize the plan: onto a section or a milestone moves it there (a
+milestone with sections asks which one); onto another task asks whether it goes before it, after
+it, or as its subtask. With a task selected, Option+↑ / Option+↓ move it among its siblings and
+Option+→ / Option+← indent and outdent it. A task always moves with its notes and subtasks.
 
 Edits made from views are saved automatically (`planner.autoSave`) and can be undone with Cmd+Z
 in the file.

@@ -19,6 +19,17 @@ Safer editing, from the pilot users' feedback.
   year that fits), a fixed start after work started or after the milestone target, a due date after
   the milestone target, done tasks without `@done`, leftover `@started`, dependencies on cancelled
   tasks, and tasks depending on themselves, their parent or their subtask.
+- Subtasks no longer make work disappear: a parent's `@est` is a budget, shared by its subtasks
+  that have no estimate yet. When the subtasks' estimates leave part of it unscheduled, a warning
+  offers to add a subtask for the rest or to set `@est` to their total.
+- Parents follow their subtasks: in progress when one starts, done with the last one, reopened
+  when one reopens (`planner.parentStatus`). Finishing a task with open subtasks asks whether to
+  finish them too, cancel them or leave them open; warnings point out a done parent with open
+  subtasks.
+- Reorganize tasks without breaking the outline: Move up / down, Indent, Outdent (context menus,
+  Option+arrows in the Milestones view), drag and drop in the Milestones view (dropping onto a task
+  asks: before, after or as a subtask), and Option+↑ / ↓ on a task line in a plan file moves the
+  task with its notes and subtasks (`planner.editor.moveTasksAsBlocks`).
 
 ## 1.0.0
 

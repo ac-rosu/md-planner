@@ -19,6 +19,20 @@ export function leavesOf(task: Task): Task[] {
   return out;
 }
 
+/** Subtasks at any depth that are still open (not done or cancelled, nor under a cancelled one). */
+export function openSubtasks(task: Task): Task[] {
+  const out: Task[] = [];
+  const walk = (t: Task) => {
+    for (const c of t.children) {
+      if (c.status === "cancelled") continue;
+      if (isOpen(c.status)) out.push(c);
+      walk(c);
+    }
+  };
+  walk(task);
+  return out;
+}
+
 /** True when a task or one of its ancestors is cancelled. */
 export function isEffectivelyCancelled(task: Task): boolean {
   for (let t: Task | undefined = task; t; t = t.parent) if (t.status === "cancelled") return true;
@@ -44,11 +58,14 @@ export function isEffectivelyDone(task: Task): boolean {
   return false;
 }
 
-/** Estimated hours: own `@est`, else the sum of the children. Undefined when nothing is estimated. */
+/**
+ * Estimated hours: own `@est`, else the sum of the children (a subtask without `@est`: its share of
+ * the parent's budget). Undefined when nothing is estimated.
+ */
 export function estimateHours(task: Task): number | undefined {
   if (task.est !== undefined) return task.est;
   const kids = activeChildren(task);
-  if (kids.length === 0) return undefined;
+  if (kids.length === 0) return task.budget;
   let sum = 0;
   let any = false;
   for (const c of kids) {
@@ -59,6 +76,46 @@ export function estimateHours(task: Task): number | undefined {
     }
   }
   return any ? sum : undefined;
+}
+
+export interface BudgetSplit {
+  /** Hours of the estimated subtasks (at any depth, down to the first one with `@est`). */
+  estimated: number;
+  /** Hours logged on the parent itself (`@act`), which also come out of its estimate. */
+  logged: number;
+  /** Subtasks without an estimate: they share what is left. */
+  unestimated: Task[];
+}
+
+/** How a parent's `@est` is used by its subtasks. */
+export function budgetSplit(parent: Task): BudgetSplit {
+  let estimated = 0;
+  const unestimated: Task[] = [];
+  const walk = (t: Task) => {
+    for (const c of activeChildren(t)) {
+      if (c.est !== undefined) estimated += c.est;
+      else if (isLeaf(c)) unestimated.push(c);
+      else walk(c);
+    }
+  };
+  walk(parent);
+  return { estimated, logged: parent.act ?? 0, unestimated };
+}
+
+/**
+ * A parent's `@est` is the budget of its subtasks: the subtasks without an estimate share what the
+ * estimated ones (and time logged on the parent) leave of it, so adding subtasks to an estimated
+ * task never makes its work disappear. Sets `budget` on those subtasks; resets it everywhere else.
+ */
+export function assignBudgets(tasks: Task[]): void {
+  for (const t of tasks) t.budget = undefined;
+  for (const p of tasks) {
+    if (p.est === undefined || isLeaf(p)) continue;
+    const { estimated, logged, unestimated } = budgetSplit(p);
+    if (unestimated.length === 0) continue;
+    const share = (p.est - estimated - logged) / unestimated.length;
+    if (share > 0) for (const u of unestimated) u.budget = share;
+  }
 }
 
 /** Actual hours: own `@act` plus the children's. */
@@ -80,7 +137,7 @@ export function remainingHours(task: Task): number {
     return sum;
   }
   if (!isOpen(task.status) || isEffectivelyDone(task)) return 0;
-  const est = task.est ?? 0;
+  const est = estimateHours(task) ?? 0;
   if (task.progress !== undefined) return Math.max(0, est * (1 - task.progress));
   return Math.max(0, est - (task.act ?? 0));
 }
@@ -90,14 +147,14 @@ export function progressOf(task: Task): number {
   if (task.status === "done") return 1;
   if (task.status === "cancelled") return 0;
   if (isLeaf(task)) {
-    const est = task.est ?? 0;
+    const est = estimateHours(task) ?? 0;
     if (est <= 0) return task.progress ?? 0;
     return Math.min(1, Math.max(0, 1 - remainingHours(task) / est));
   }
   let total = 0;
   let done = 0;
   for (const leaf of leavesOf(task)) {
-    const est = leaf.est ?? 0;
+    const est = estimateHours(leaf) ?? 0;
     total += est;
     done += est * progressOf(leaf);
   }
@@ -118,7 +175,7 @@ export function progressOfLeaves(leaves: Task[]): number {
     if (l.status === "cancelled") continue;
     count++;
     if (l.status === "done") doneCount++;
-    const est = l.est ?? 0;
+    const est = estimateHours(l) ?? 0;
     total += est;
     done += est * progressOf(l);
   }

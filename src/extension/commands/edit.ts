@@ -15,7 +15,13 @@ import {
 import { type Plan } from "../../core/resolve";
 import { findTaskByKey } from "../../core/scheduler";
 import { addPunchItem } from "../../core/testRun";
-import { type InsertLocation, moveTask, nextId, statusDateAttrs } from "../../core/writer";
+import {
+  type InsertLocation,
+  moveTask,
+  nextId,
+  statusDateAttrs,
+  statusSideEdits,
+} from "../../core/writer";
 import {
   addTask,
   appendSectionTo,
@@ -54,6 +60,7 @@ import {
 } from "../ui/inputs";
 import { pickMilestoneLocation, type PlanIntoTarget } from "./inbox";
 import { resolveTask, stringArg, type TaskArg, valuesArg } from "./args";
+import { statusEffects } from "./status";
 
 /** Where a new task goes, from a tree node, a Kanban column, a Gantt row or the editor. */
 export interface AddTaskTarget {
@@ -531,7 +538,7 @@ async function chooseLocation(
 }
 
 /** Existing section, no section, or a new one; "" = no section, undefined = cancelled. */
-async function pickSection(m: Milestone, title: string): Promise<string | undefined> {
+export async function pickSection(m: Milestone, title: string): Promise<string | undefined> {
   const pick = await askChoice(
     title,
     [
@@ -756,10 +763,17 @@ export async function editTaskCommand(
     }
     edit = diffTask(original, form);
   }
+  // Finishing a task with open subtasks asks what happens to them; parents follow.
+  const status = edit.status !== undefined && edit.status !== t.status ? edit.status : undefined;
+  const effects = status ? await statusEffects(t, status) : {};
+  if (!effects) return false;
   const current = resolveTask(service, t.id ?? { file: t.file, line: t.line })?.task ?? t;
   const file = service.plan.file(current.file);
   if (!file) return false;
-  const edits = changeTask(file.lines, current, edit, state.today);
+  const edits = [
+    ...changeTask(file.lines, current, edit, state.today),
+    ...(status ? statusSideEdits(file.lines, current, status, state.today, effects) : []),
+  ];
   if (edits.length === 0) return false;
   const ok = await service.apply([{ path: current.file, edits }], {
     source: r.fromEditor ? "editor" : "view",

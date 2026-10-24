@@ -17,9 +17,14 @@ import {
   moveTask as moveTaskEdits,
   renameTaskId as renameTaskIdEdits,
   setNotes,
+  statusSideEdits,
+  type SubtaskChoice,
 } from "../core/writer";
 import { deleteTaskWithLinks } from "../core/writer/entities";
+import { openSubtasks } from "../core/rollup";
+import { placeTask } from "../core/writer/structure";
 import { milestoneOf } from "./milestoneTools";
+import { workspaceSettings } from "./settings";
 import { type Staging } from "./staging";
 import { allocateIds, buildTasks, personOf, TaskRefs, type TaskSpec } from "./taskSpecs";
 import { findTask, type PlannerTools, ToolError } from "./tools";
@@ -120,6 +125,8 @@ export interface TaskUpdate {
   status?: Status;
   /** Reason (status blocked). */
   blocked?: string;
+  /** Finishing a task with open subtasks: finish them too, cancel them, or keep them open. */
+  subtasks?: SubtaskChoice;
   estimate?: string;
   actual?: string;
   /** Person id or name; "" removes the owner. */
@@ -141,7 +148,7 @@ export interface TaskUpdate {
 }
 
 /** Stages one task update against the staged plan. */
-export function stageTaskUpdate(st: Staging, u: TaskUpdate, today: string): string {
+export function stageTaskUpdate(st: Staging, u: TaskUpdate, today: string, rollUp = true): string {
   const plan = st.plan;
   const t = findTask(plan, u.id);
   if (!t) throw new ToolError(`Unknown task "${u.id}".`);
@@ -180,6 +187,15 @@ export function stageTaskUpdate(st: Staging, u: TaskUpdate, today: string): stri
   }
   for (const k of Object.keys(u.attributes ?? {}))
     check(/^[A-Za-z][\w-]*$/.test(k), `invalid attribute name "${k}".`);
+  const statusChange = u.status !== undefined && u.status !== t.status ? u.status : undefined;
+  const open = statusChange === "done" ? openSubtasks(t) : [];
+  if (u.subtasks !== undefined)
+    check(["done", "cancelled", "keep"].includes(u.subtasks), `invalid subtasks "${u.subtasks}".`);
+  else if (open.length)
+    check(
+      false,
+      `has ${open.length} open subtask${open.length === 1 ? "" : "s"} (${open.map((x) => x.id ?? x.title).join(", ")}): pass subtasks "done" to finish them too, "cancelled" to cancel them, or "keep" to leave them open (they are no longer scheduled).`
+    );
   if (errors.length) throw new ToolError(errors.join("\n"));
 
   let deps: string[] | undefined;
@@ -216,6 +232,10 @@ export function stageTaskUpdate(st: Staging, u: TaskUpdate, today: string): stri
     for (const tag of u.addTags ?? []) e.addTag(tag.replace(/^#/, ""));
     for (const tag of u.removeTags ?? []) e.removeTag(tag.replace(/^#/, ""));
   });
+  if (statusChange)
+    edits.push(
+      ...statusSideEdits(file.lines, t, statusChange, today, { subtasks: u.subtasks, rollUp })
+    );
   if (u.notes !== undefined) edits.push(...setNotes(file.lines, t, [u.notes].flat()));
   st.apply({ path: file.path, edits });
   return t.id ?? taskKey(t);
@@ -224,16 +244,31 @@ export function stageTaskUpdate(st: Staging, u: TaskUpdate, today: string): stri
 export function updateTasks(tools: PlannerTools, args: { updates: TaskUpdate[] }) {
   if (!args.updates?.length) throw new ToolError("No updates given.");
   const st = tools.stage();
-  const ids = args.updates.map((u) => stageTaskUpdate(st, u, tools.today));
+  const rollUp = workspaceSettings(tools.workspaceDir).parentStatus !== "off";
+  const ids = args.updates.map((u) => stageTaskUpdate(st, u, tools.today, rollUp));
   return { updated: ids, changed: tools.commit(st) };
 }
 
-export function moveTask(tools: PlannerTools, args: { id: string } & TaskLocation) {
+export function moveTask(
+  tools: PlannerTools,
+  args: { id: string; before?: string; after?: string } & TaskLocation
+) {
   const st = tools.stage();
   const plan = st.plan;
   const t = findTask(plan, args.id);
   if (!t || t.kind !== "task")
     throw new ToolError(`Unknown task "${args.id}" (inbox items: use plan_inbox_item).`);
+  const places = [args.parent, args.before, args.after].filter((x) => x !== undefined);
+  if (places.length > 1) throw new ToolError("Give only one of parent, before and after.");
+  if (args.before !== undefined || args.after !== undefined) {
+    const ref = (args.before ?? args.after)!;
+    const target = findTask(plan, ref);
+    if (!target || target.kind !== "task") throw new ToolError(`Unknown task "${ref}".`);
+    const r = placeTask(plan, t, target, args.before !== undefined ? "before" : "after");
+    if ("reason" in r) throw new ToolError(r.reason);
+    st.apply(r.edits);
+    return { id: t.id ?? taskKey(t), changed: tools.commit(st) };
+  }
   let destFile: string;
   let location: InsertLocation;
   if (args.parent) {

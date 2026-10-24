@@ -38,6 +38,15 @@ Save the plan files after an edit made from a view (tree, Gantt, Kanban …). Ed
 
 Type: boolean · default: `true`
 
+### `planner.parentStatus`
+
+How a parent task's status follows its subtasks when a status is changed from the planner (commands, checkbox hover, Kanban, timer, task form, MCP). Finishing a task with open subtasks always asks whether to finish them too, cancel them or keep them open.
+
+Type: string · default: `"auto"`
+
+- `"auto"`: A to-do parent goes in progress when one of its subtasks starts, is done when its last subtask is done, and reopens when a subtask of a done parent reopens.
+- `"off"`: A parent's status only changes when you change it.
+
 ### `planner.templatesFolder`
 
 Folder with your own project templates (one sub-folder per template, Markdown files with `{{name}}`, `{{start}}`, `{{end}}`, `{{date:0.5}}` … placeholders). Relative to the first workspace folder or absolute.
@@ -51,6 +60,12 @@ Type: string · default: `""`
 Clicking inside a task's checkbox `[ ]` in the editor cycles its status (to do → in progress → review → done) and writes `@started`/`@done`. Off by default: a click meant to place the cursor changed the task. Hover the checkbox to change the status, or use **Planner: Cycle status** (Ctrl/Cmd+Alt+X).
 
 Type: boolean · default: `false`
+
+### `planner.editor.moveTasksAsBlocks`
+
+**Alt+Up** / **Alt+Down** on a task line move the task with its notes and subtasks past the task above or below it at the same level. VS Code's own Move Line Up/Down moves only the line, which hands subtasks to another task. Other lines move as usual.
+
+Type: boolean · default: `true`
 
 ### `planner.codeLens.enabled`
 

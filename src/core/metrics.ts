@@ -3,7 +3,14 @@ import { type DayNumber, formatDate, parseDate, weekStart } from "./dates";
 import { isOpen, type Task, type TestPlan } from "./model";
 import { deadlineOf, isOpenTask } from "./queries";
 import { type Plan } from "./resolve";
-import { isEffectivelyCancelled, isLeaf, ownerOf, progressOf, startedOn } from "./rollup";
+import {
+  estimateHours,
+  isEffectivelyCancelled,
+  isLeaf,
+  ownerOf,
+  progressOf,
+  startedOn,
+} from "./rollup";
 import { type Schedule } from "./scheduler";
 
 // ---------------------------------------------------------------------------------------------
@@ -98,7 +105,7 @@ export function burnUp(plan: Plan, schedule: Schedule, milestoneId?: string): Bu
       (!milestoneId || t.milestoneId === milestoneId) &&
       schedule.tasks.has(t)
   );
-  const scope = leaves.reduce((s, t) => s + (t.est ?? 0), 0);
+  const scope = leaves.reduce((s, t) => s + (estimateHours(t) ?? 0), 0);
   const projectStart = plan.project.start ? parseDate(plan.project.start)! : schedule.start;
   let first = projectStart;
   let last = schedule.today;
@@ -122,7 +129,8 @@ export function burnUp(plan: Plan, schedule: Schedule, milestoneId?: string): Bu
       let done = 0;
       for (const t of leaves) {
         const d = doneAt.get(t);
-        if (d !== undefined && d <= Math.min(weekEnd, schedule.today)) done += t.est ?? 0;
+        if (d !== undefined && d <= Math.min(weekEnd, schedule.today))
+          done += estimateHours(t) ?? 0;
       }
       point.done = done;
     }
@@ -131,9 +139,9 @@ export function burnUp(plan: Plan, schedule: Schedule, milestoneId?: string): Bu
       for (const t of leaves) {
         const ts = schedule.tasks.get(t)!;
         const finish = t.status === "done" ? doneAt.get(t) : ts.finish;
-        if (finish !== undefined && finish <= weekEnd) forecast += t.est ?? 0;
+        if (finish !== undefined && finish <= weekEnd) forecast += estimateHours(t) ?? 0;
         else if (t.status !== "done" && finish !== undefined)
-          forecast += (t.est ?? 0) - Math.max(0, remainingOf(t));
+          forecast += (estimateHours(t) ?? 0) - Math.max(0, remainingOf(t));
       }
       point.forecast = forecast;
     }
@@ -143,7 +151,7 @@ export function burnUp(plan: Plan, schedule: Schedule, milestoneId?: string): Bu
 }
 
 function remainingOf(t: Task): number {
-  const est = t.est ?? 0;
+  const est = estimateHours(t) ?? 0;
   if (t.progress !== undefined) return est * (1 - t.progress);
   return Math.max(0, est - (t.act ?? 0));
 }
@@ -180,7 +188,7 @@ export function attentionLists(plan: Plan, schedule: Schedule): AttentionLists {
       })
       .sort((a, b) => startOf(a) - startOf(b) || a.order - b.order),
     unassigned: open.filter((t) => !ownerOf(t)),
-    unestimated: open.filter((t) => t.est === undefined),
+    unestimated: open.filter((t) => estimateHours(t) === undefined),
   };
 }
 
@@ -263,7 +271,7 @@ export function projectProgress(plan: Plan): number {
   let done = 0;
   for (const t of plan.tasks) {
     if (!isLeaf(t) || isEffectivelyCancelled(t)) continue;
-    const est = t.est ?? 0;
+    const est = estimateHours(t) ?? 0;
     total += est;
     done += est * progressOf(t);
   }

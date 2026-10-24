@@ -148,6 +148,11 @@ export interface Task {
 
   // Resolved values (set by resolvePlan; hours are numbers)
   est?: number;
+  /**
+   * Hours of a subtask without `@est`: its share of the nearest parent's `@est` that the estimated
+   * subtasks leave (see assignBudgets). Undefined when the task has its own estimate or no budget.
+   */
+  budget?: number;
   act?: number;
   owner?: string;
   deps: DepRef[];

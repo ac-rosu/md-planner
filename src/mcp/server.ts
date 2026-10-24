@@ -124,6 +124,12 @@ const taskUpdate = {
   title: z.string().optional(),
   status: status.optional(),
   blocked: z.string().optional().describe("Reason (status blocked)"),
+  subtasks: z
+    .enum(["done", "cancelled", "keep"])
+    .optional()
+    .describe(
+      "Required when status 'done' leaves open subtasks: finish them too, cancel them, or keep them open (no longer scheduled)"
+    ),
   estimate: z.string().optional(),
   actual: z.string().optional(),
   owner: z.string().optional().describe("Person id or name; '' removes the owner"),
@@ -428,7 +434,7 @@ export function createServer(tools: PlannerTools): McpServer {
   );
   tool(
     "update_task",
-    "Change a task or punch item: status (writes @started/@done), title, estimate, actual, owner, fixed start, due, priority, progress, blocked reason, tags, dependencies (replace, add, remove), any attribute, notes. '' removes a value.",
+    "Change a task or punch item: status (writes @started/@done; parents follow their subtasks unless planner.parentStatus is off; finishing a task with open subtasks needs 'subtasks'), title, estimate, actual, owner, fixed start, due, priority, progress, blocked reason, tags, dependencies (replace, add, remove), any attribute, notes. '' removes a value.",
     taskUpdate,
     (a) => updateTasks(tools, { updates: [a as never] })
   );
@@ -440,12 +446,14 @@ export function createServer(tools: PlannerTools): McpServer {
   );
   tool(
     "move_task",
-    "Move a task with its subtasks and notes to another milestone, section or parent; its id stays.",
+    "Move a task with its subtasks and notes to another milestone, section or parent, or right before or after another task (reorder, outdent); its id stays.",
     {
       id: z.string(),
       milestone: z.string().optional(),
       section: z.string().optional(),
-      parent: z.string().optional(),
+      parent: z.string().optional().describe("Becomes the last subtask of this task"),
+      before: z.string().optional().describe("Placed right before this task, at its level"),
+      after: z.string().optional().describe("Placed right after this task, at its level"),
     },
     (a) => moveTask(tools, a)
   );

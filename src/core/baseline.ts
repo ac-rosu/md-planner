@@ -2,7 +2,7 @@
 // plan/baselines/, compared against the current schedule in the Gantt and the dashboard.
 import { type DayNumber, formatDate, parseDate } from "./dates";
 import { type Plan } from "./resolve";
-import { isLeaf } from "./rollup";
+import { estimateHours, isLeaf } from "./rollup";
 import { type Schedule, taskKey } from "./scheduler";
 import { type BaselineLookup } from "./views/gantt";
 
@@ -42,7 +42,7 @@ export function createBaseline(plan: Plan, schedule: Schedule, name: string): Ba
       title: t.title,
       start: start === undefined ? undefined : formatDate(start),
       finish: finish === undefined ? undefined : formatDate(finish),
-      hours: isLeaf(t) ? (t.est ?? 0) : (roll?.hours ?? 0),
+      hours: isLeaf(t) ? (estimateHours(t) ?? 0) : (roll?.hours ?? 0),
     };
   }
   const milestones: Record<string, BaselineMilestone> = {};

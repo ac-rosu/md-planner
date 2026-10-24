@@ -167,7 +167,7 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
       critical: false,
       unassigned: owner === undefined || owner.toLowerCase() === UNASSIGNED,
       unknownOwner: owner !== undefined && !known,
-      unestimated: leaf.est === undefined,
+      unestimated: estimateHours(leaf) === undefined,
       deadline: deadline ? parseDate(deadline) : undefined,
     };
     tasks.set(leaf, ts);
@@ -451,7 +451,7 @@ function fixDone(
   if (ts.start !== undefined && ts.finish !== undefined && ts.finish < ts.start)
     ts.start = ts.finish;
   if (t.status !== "done" || ts.start === undefined || ts.finish === undefined) return;
-  const hours = t.act ?? t.est ?? 0;
+  const hours = t.act ?? estimateHours(t) ?? 0;
   if (hours <= 0) return;
   const days: DayNumber[] = [];
   for (let d = ts.start; d <= ts.finish; d++)
@@ -492,7 +492,7 @@ function rollUp(plan: Plan, s: Schedule): void {
       if (ts.start !== undefined && (start === undefined || ts.start < start)) start = ts.start;
       if (ts.finish !== undefined && (finish === undefined || ts.finish > finish))
         finish = ts.finish;
-      const est = l.est ?? 0;
+      const est = estimateHours(l) ?? 0;
       hours += est;
       total += est;
       done += est * progressOf(l);

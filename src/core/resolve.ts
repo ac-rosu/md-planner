@@ -32,6 +32,7 @@ import {
   type TestPlan,
 } from "./model";
 import { getProp, getProps, splitList } from "./parser/properties";
+import { assignBudgets } from "./rollup";
 
 export interface Plan {
   files: ParsedFile[];
@@ -116,6 +117,8 @@ export function resolvePlan(input: Iterable<ParsedFile>): Plan {
       }
     }
   }
+
+  assignBudgets([...tasks, ...punch, ...inbox]);
 
   const tagSet = new Set<string>();
   for (const t of [...tasks, ...punch, ...inbox]) for (const tag of t.tags) tagSet.add(tag.tag);

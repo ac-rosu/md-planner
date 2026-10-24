@@ -5,6 +5,7 @@ import { registerNewProjectCommand } from "./commands/newProject";
 import { findById } from "./commands/args";
 import { registerTaskCommands } from "./commands/tasks";
 import { registerEditCommands } from "./commands/edit";
+import { MilestonesDragAndDrop, registerOutlineCommands } from "./commands/outline";
 import { registerTeamCommands } from "./commands/team";
 import { PlanCodeActionProvider } from "./language/codeActions";
 import { PlanCodeLensProvider } from "./language/codeLens";
@@ -52,6 +53,8 @@ export interface PlannerApi {
   service: PlanService;
   state: PlannerState;
   milestones: MilestonesTreeProvider;
+  /** Drag and drop of the Milestones view. */
+  milestonesDnd: MilestonesDragAndDrop;
   team: TeamTreeProvider;
   inbox: InboxTreeProvider;
   punch: PunchTreeProvider;
@@ -126,10 +129,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<Planne
   const team = new TeamTreeProvider(state, teamFilter);
   const inbox = new InboxTreeProvider(state, inboxFilter);
   const punch = new PunchTreeProvider(state, punchFilter);
+  const milestonesDnd = new MilestonesDragAndDrop(state);
   const milestonesView = vscode.window.createTreeView("planner.milestones", {
     treeDataProvider: milestones,
     showCollapseAll: true,
+    dragAndDropController: milestonesDnd,
   });
+  context.subscriptions.push(...registerOutlineCommands(state, milestonesView));
   const teamView = vscode.window.createTreeView("planner.team", {
     treeDataProvider: team,
     showCollapseAll: true,
@@ -286,6 +292,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Planne
     service,
     state,
     milestones,
+    milestonesDnd,
     team,
     inbox,
     punch,

@@ -6,7 +6,7 @@ import { formatHours } from "../../core/duration";
 import { attentionLists, punchStats, testStats } from "../../core/metrics";
 import { isOpen, type Task } from "../../core/model";
 import { type Plan } from "../../core/resolve";
-import { isLeaf, ownerOf } from "../../core/rollup";
+import { estimateHours, isLeaf, ownerOf } from "../../core/rollup";
 import { type Schedule } from "../../core/scheduler";
 import { burnUpGeometry } from "../../core/views/charts";
 import { buildDashboardModel } from "../../core/views/dashboard";
@@ -220,7 +220,7 @@ export function renderStatusReport(plan: Plan, schedule: Schedule, o: StatusRepo
       );
     const doneRows = done.map(
       (t) =>
-        `<tr><td>${esc(t.id ?? "")}</td><td>${esc(t.title)}</td><td>${esc(owner(plan, t))}</td><td>${esc(t.done)}</td><td class="num">${hours(t.act ?? t.est)}</td></tr>`
+        `<tr><td>${esc(t.id ?? "")}</td><td>${esc(t.title)}</td><td>${esc(owner(plan, t))}</td><td>${esc(t.done)}</td><td class="num">${hours(t.act ?? estimateHours(t))}</td></tr>`
     );
     const nextRows = next.map((t) => {
       const ts = schedule.tasks.get(t)!;

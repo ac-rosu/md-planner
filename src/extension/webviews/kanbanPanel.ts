@@ -5,7 +5,7 @@ import { type TaskFilter } from "../../core/filter";
 import { type Priority, type Status, type Task } from "../../core/model";
 import { findTaskByKey } from "../../core/scheduler";
 import { buildKanbanModel, KANBAN_COLUMNS, priorityForDrop } from "../../core/views/kanban";
-import { applyStatus, editTaskLine } from "../../core/writer";
+import { applyStatus, editTaskLine, statusSideEdits } from "../../core/writer";
 import {
   DEFAULT_KANBAN_OPTIONS,
   type HostToKanban,
@@ -13,6 +13,7 @@ import {
   type KanbanViewOptions,
 } from "../../webview/shared/protocol";
 import { type AddTaskTarget } from "../commands/edit";
+import { statusEffects } from "../commands/status";
 import { config } from "../util";
 import { type PanelContext, WebviewPanelHost } from "./panel";
 import { revealTaskInEditor } from "./reveal";
@@ -170,16 +171,26 @@ export class KanbanPanel extends WebviewPanelHost<HostToKanban, KanbanToHost> {
       : undefined;
 
     if (m.status === t.status && owner === undefined && !prio) return false;
-    if (m.status !== t.status) parts.unshift(m.status);
+    const statusChange = m.status !== t.status;
+    if (statusChange) parts.unshift(m.status);
     if (prio) parts.push(`priority ${prio}`);
-    const edits = editTaskLine(lines, t, (e) => {
-      if (m.status !== t.status) applyStatus(e, t, m.status, today, { blockedReason: m.reason });
-      if (owner !== undefined) e.setAttr("owner", owner ?? undefined);
-      if (prio) e.setAttr("prio", prio === "med" ? undefined : prio);
-    });
+    // Finishing a card with open subtasks asks what happens to them; parents follow. The card is
+    // looked up again after the question, in case its file changed meanwhile.
+    const effects = statusChange ? await statusEffects(t, m.status) : {};
+    if (!effects) return false;
+    const card = statusChange ? this.task(m.key) : t;
+    const cardLines = statusChange ? this.lines(card) : lines;
+    const edits = [
+      ...editTaskLine(cardLines, card, (e) => {
+        if (statusChange) applyStatus(e, card, m.status, today, { blockedReason: m.reason });
+        if (owner !== undefined) e.setAttr("owner", owner ?? undefined);
+        if (prio) e.setAttr("prio", prio === "med" ? undefined : prio);
+      }),
+      ...(statusChange ? statusSideEdits(cardLines, card, m.status, today, effects) : []),
+    ];
     return this.ctx.history.apply(
-      [{ path: t.file, edits }],
-      `${t.id ?? t.title}: ${parts.join(", ")}`
+      [{ path: card.file, edits }],
+      `${card.id ?? card.title}: ${parts.join(", ")}`
     );
   }
 

@@ -67,6 +67,10 @@ export const COMMAND_COVERAGE: Record<string, Coverage> = {
   "planner.addSubtask": { tools: ["create_tasks"] },
   "planner.editTask": { tools: ["update_task"] },
   "planner.moveTask": { tools: ["move_task"] },
+  "planner.moveTaskUp": { tools: ["move_task"] },
+  "planner.moveTaskDown": { tools: ["move_task"] },
+  "planner.indentTask": { tools: ["move_task"] },
+  "planner.outdentTask": { tools: ["move_task"] },
   "planner.deleteTask": { tools: ["delete_tasks"] },
   "planner.addSection": { tools: ["add_sections"] },
   "planner.addMilestone": { tools: ["create_milestones"] },
@@ -97,6 +101,10 @@ export const VIEW_COVERAGE: Record<string, string[]> = {
   "Test runner: finish run": ["finish_test_run"],
   "Test runner: reset": ["reset_test_results"],
   "Dashboard: baseline comparison": ["compare_baseline", "get_dashboard"],
-  "Editor: click a checkbox (next status)": ["update_task"],
+  "Editor: click a checkbox (next status), or a status in its hover": ["update_task"],
+  "Editor: Alt+Up / Alt+Down on a task line (move with subtasks)": ["move_task"],
+  "Milestones view: drag and drop a task (before, after, as a subtask, into a section)": [
+    "move_task",
+  ],
   "Editor: rename a task id (F2)": ["rename_task_id"],
 };

@@ -123,6 +123,52 @@ describe("refusing writes that add errors", () => {
   });
 });
 
+describe("update_task with subtasks", () => {
+  const M1 = md(
+    "# M1 – A",
+    "",
+    "id: M1",
+    "",
+    "- [/] Parent @started:2026-10-01 ^T1",
+    "  - [x] Done child @est:1h @done:2026-10-02 ^T2",
+    "  - [ ] Open child @est:1h ^T3"
+  );
+
+  it("asks the agent what happens to open subtasks when a parent is finished", () => {
+    const { tools, read } = planWith({ "milestones/M1-a.md": M1 });
+    expect(() => updateTasks(tools, { updates: [{ id: "T1", status: "done" }] })).toThrow(
+      /T1: has 1 open subtask \(T3\): pass subtasks "done"/
+    );
+    expect(read("milestones/M1-a.md")).toBe(M1);
+    updateTasks(tools, { updates: [{ id: "T1", status: "done", subtasks: "cancelled" }] });
+    expect(read("milestones/M1-a.md")).toBe(
+      md(
+        "# M1 – A",
+        "",
+        "id: M1",
+        "",
+        `- [x] Parent @started:2026-10-01 @done:${TODAY} ^T1`,
+        "  - [x] Done child @est:1h @done:2026-10-02 ^T2",
+        "  - [-] Open child @est:1h ^T3"
+      )
+    );
+  });
+
+  it("finishes the parent with its last subtask, unless planner.parentStatus is off", () => {
+    const { tools, read } = planWith({ "milestones/M1-a.md": M1 });
+    updateTasks(tools, { updates: [{ id: "T3", status: "done" }] });
+    expect(read("milestones/M1-a.md")).toContain(
+      `- [x] Parent @started:2026-10-01 @done:${TODAY} ^T1`
+    );
+    const off = planWith({ "milestones/M1-a.md": M1 });
+    const vscodeDir = join(dirname(off.tools.planDir), ".vscode");
+    mkdirSync(vscodeDir, { recursive: true });
+    writeFileSync(join(vscodeDir, "settings.json"), '{ "planner.parentStatus": "off" }');
+    updateTasks(off.tools, { updates: [{ id: "T3", status: "done" }] });
+    expect(off.read("milestones/M1-a.md")).toContain("- [/] Parent @started:2026-10-01 ^T1");
+  });
+});
+
 describe("task keys", () => {
   it("get_task and the write tools take the same ids, keys and inbox positions", () => {
     const { tools } = planWith({

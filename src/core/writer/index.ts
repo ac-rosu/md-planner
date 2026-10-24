@@ -4,6 +4,7 @@
 import {
   type PropertyBlock,
   type PropertyEntry,
+  isOpen,
   type ParsedFile,
   type Status,
   STATUS_CHAR,
@@ -12,8 +13,8 @@ import {
 import { parseFileAs } from "../parser/files";
 import { formatAttr } from "../parser/taskLine";
 import { type Plan } from "../resolve";
-import { hasLoggedWork } from "../rollup";
-import { pos, range, type TextEdit, type TextLines } from "../text";
+import { hasLoggedWork, openSubtasks } from "../rollup";
+import { applyEdits, pos, range, type TextEdit, TextLines } from "../text";
 import { minimalLineEdit, TaskLineEditor } from "./lineEditor";
 
 export { TaskLineEditor, minimalLineEdit } from "./lineEditor";
@@ -51,9 +52,12 @@ export function setStatus(
   task: Task,
   status: Status,
   today: string,
-  options: StatusOptions = {}
+  options: StatusOptions & StatusEffects = {}
 ): TextEdit[] {
-  return editTaskLine(lines, task, (e) => applyStatus(e, task, status, today, options));
+  return [
+    ...editTaskLine(lines, task, (e) => applyStatus(e, task, status, today, options)),
+    ...statusSideEdits(lines, task, status, today, options),
+  ];
 }
 
 /** The status change of setStatus() on a line editor, so it can be combined with other edits. */
@@ -76,6 +80,62 @@ export function applyStatus(
   if (status === "blocked" && options.blockedReason !== undefined)
     e.setAttr("blocked", options.blockedReason);
   if (status !== "blocked" && e.hasAttr("blocked")) e.setAttr("blocked", undefined);
+}
+
+/** What happens to a task's open subtasks when it is finished. */
+export type SubtaskChoice = "done" | "cancelled" | "keep";
+
+export interface StatusEffects {
+  /** Finishing a task with open subtasks: finish them too, cancel them, or keep them open. */
+  subtasks?: SubtaskChoice;
+  /**
+   * Parents follow their subtasks: a to-do parent goes in progress when a subtask starts, an open
+   * parent is done when its last subtask is, and a done parent reopens when a subtask reopens.
+   */
+  rollUp?: boolean;
+}
+
+/**
+ * The edits besides the task's own line that a status change brings (the caller changes that line
+ * with applyStatus): its open subtasks when it is finished along with them, and its parents. All
+ * are lines of the task's file.
+ */
+export function statusSideEdits(
+  lines: TextLines,
+  task: Task,
+  status: Status,
+  today: string,
+  effects: StatusEffects
+): TextEdit[] {
+  if (task.kind === "step") return [];
+  const next = new Map<Task, Status>([[task, status]]);
+  const edits: TextEdit[] = [];
+  const change = (t: Task, to: Status) => {
+    next.set(t, to);
+    edits.push(...setStatus(lines, t, to, today));
+  };
+  if (status === "done" && effects.subtasks && effects.subtasks !== "keep")
+    for (const s of openSubtasks(task)) change(s, effects.subtasks);
+  if (!effects.rollUp) return edits;
+  const now = (t: Task) => next.get(t) ?? t.status;
+  for (let child = task, p = task.parent; p; child = p, p = p.parent) {
+    const kids = p.children.filter((c) => now(c) !== "cancelled");
+    const parent = now(p);
+    const childStatus = now(child);
+    let to: Status | undefined;
+    if (
+      kids.length > 0 &&
+      kids.every((c) => now(c) === "done") &&
+      (parent === "todo" || parent === "doing" || parent === "review")
+    )
+      to = "done";
+    else if ((childStatus === "doing" || childStatus === "review") && parent === "todo")
+      to = "doing";
+    else if (parent === "done" && isOpen(childStatus)) to = "doing";
+    if (!to) break;
+    change(p, to);
+  }
+  return edits;
 }
 
 /** The status dates a new item with this status gets (as applyStatus would write them). */
@@ -169,6 +229,21 @@ export function replaceLines(
   return [{ range: { start: pos(a, 0), end: lines.lineEnd(b) }, newText: middle.join(lines.eol) }];
 }
 
+/** One edit that turns `lines` into `after`, touching only the lines between the common parts. */
+export function linesDiff(lines: TextLines, after: string): TextEdit[] {
+  const next = TextLines.parse(after);
+  const a = lines.lineCount;
+  const b = next.lineCount;
+  let p = 0;
+  while (p < a && p < b && lines.line(p) === next.line(p)) p++;
+  let q = 0;
+  while (q < a - p && q < b - p && lines.line(a - 1 - q) === next.line(b - 1 - q)) q++;
+  if (p === a && p === b) return [];
+  const middle: string[] = [];
+  for (let i = p; i < b - q; i++) middle.push(next.line(i));
+  return replaceLines(lines, p, a - 1 - q, middle);
+}
+
 /** Deletes lines `from`..`to` (inclusive), including their line endings. */
 export function deleteLines(lines: TextLines, from: number, to: number): TextEdit {
   if (to + 1 < lines.lineCount) {
@@ -219,6 +294,7 @@ export type InsertLocation =
   | { kind: "section"; title: string }
   /** Top level, outside any `##` section (after the description, before the first section). */
   | { kind: "root" }
+  | { kind: "before"; task: Task }
   | { kind: "after"; task: Task }
   | { kind: "child"; task: Task };
 
@@ -245,7 +321,7 @@ function locationIndent(location: InsertLocation): { indent: string; marker: str
       marker: t.children[0]?.marker ?? t.marker,
     };
   }
-  if (location.kind === "after")
+  if (location.kind === "after" || location.kind === "before")
     return { indent: location.task.indentText, marker: location.task.marker };
   return { indent: "", marker: "-" };
 }
@@ -259,6 +335,8 @@ function insertionEdit(
   const { indent, marker } = locationIndent(location);
   const text = body(indent, marker);
   switch (location.kind) {
+    case "before":
+      return insertLines(lines, location.task.line, text);
     case "after":
     case "child":
       return insertLines(lines, location.task.endLine + 1, text);
@@ -413,8 +491,24 @@ export function moveTask(
     if (transform) moved[0] = transform(moved[0]);
     return moved;
   });
+  if (source.path === target.path) {
+    // Within one file the insertion may fall inside the deleted range (at the end of a file without
+    // a final line ending): insert first, then delete the block where it ended up, and emit one
+    // edit of the lines in between.
+    const lines = source.lines;
+    const inserted = applyEdits(lines.serialize(), [insert]);
+    const at = insert.range.start;
+    const shift =
+      at.line < task.line || (at.line === task.line && at.character === 0)
+        ? insert.newText.split(lines.eol).length - 1
+        : 0;
+    const after = TextLines.parse(inserted);
+    const removed = applyEdits(inserted, [
+      deleteLines(after, task.line + shift, task.endLine + shift),
+    ]);
+    return [{ path: source.path, edits: linesDiff(lines, removed) }];
+  }
   const del = deleteTask(source.lines, task);
-  if (source.path === target.path) return [{ path: source.path, edits: [del, insert] }];
   return [
     { path: source.path, edits: [del] },
     { path: target.path, edits: [insert] },

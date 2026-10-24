@@ -361,8 +361,9 @@ export function buildGanttModel(plan: Plan, schedule: Schedule, options: GanttOp
       if (ts?.start !== undefined && (start === undefined || ts.start < start)) start = ts.start;
       if (ts?.finish !== undefined && (finish === undefined || ts.finish > finish))
         finish = ts.finish;
-      total += l.est ?? 0;
-      done += (l.est ?? 0) * progressOf(l);
+      const est = estimateHours(l) ?? 0;
+      total += est;
+      done += est * progressOf(l);
     }
     const progress = total > 0 ? done / total : 0;
     return {

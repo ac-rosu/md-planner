@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import { matchCheckbox } from "../../core/parser/taskLine";
 import { assignMissingIds, nextStatus, renumberCopiedIds, setStatus } from "../../core/writer";
 import { itemAtLine } from "../commands/args";
+import { statusEffects } from "../commands/status";
 import { type PlanService } from "../planService";
 import { config, toRange } from "../util";
 
@@ -68,9 +69,13 @@ async function onSelection(
   const cb = matchCheckbox(doc.lineAt(pos.line).text);
   // A click inside the brackets places the cursor right after `[` or right before `]`.
   if (!cb || pos.character < cb.statusCol || pos.character > cb.statusCol + 1) return;
-  const file = service.fileFor(doc);
   const task = itemAtLine(service.plan, rel, pos.line);
-  if (!file || !task || task.line !== pos.line) return;
-  const edits = setStatus(file.lines, task, nextStatus(task.status), service.today());
+  if (!task || task.line !== pos.line) return;
+  const next = nextStatus(task.status);
+  const effects = await statusEffects(task, next);
+  const file = service.fileFor(doc);
+  const current = itemAtLine(service.plan, rel, pos.line);
+  if (!effects || !file || current?.line !== pos.line) return;
+  const edits = setStatus(file.lines, current, next, service.today(), effects);
   await service.apply([{ path: rel, edits }], { source: "editor" });
 }

@@ -267,8 +267,19 @@ Rules for writing a task line:
 - Only **leaf tasks** (tasks without subtasks) are scheduled. Parents roll up: start = earliest
   subtask start, finish = latest finish, hours = sum, progress weighted by hours.
 - A parent without its own `@est` uses the sum of its subtasks' estimates.
+- A parent **with** its own `@est` gives a budget to its subtasks: subtasks without an estimate
+  share what the estimated ones leave (minus time logged on the parent itself). So you can split
+  `@est:3d` into subtasks and estimate them later; the three days stay in the schedule. When every
+  subtask has an estimate and they add up to less, the rest is not scheduled: the editor warns and
+  offers to add a subtask for the rest or to set `@est` to the subtasks' total. When they add up
+  to more, their estimates are used.
 - A parent marked done makes its open subtasks irrelevant (they are not scheduled). A cancelled
-  parent cancels its subtasks.
+  parent cancels its subtasks. Finishing a parent from the planner asks what happens to its open
+  subtasks (finish them too, cancel them, or leave them), and the editor warns about a done parent
+  with open subtasks.
+- When you change a status from the planner, parents follow their subtasks
+  (`planner.parentStatus`, on by default): a to-do parent goes in progress when a subtask starts,
+  is done when its last subtask is done, and reopens when a subtask of a done parent reopens.
 
 ### Ids
 

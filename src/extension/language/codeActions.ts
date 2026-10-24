@@ -5,15 +5,21 @@ import { type Task } from "../../core/model";
 import { type TextEdit } from "../../core/text";
 import { suggestYear } from "../../core/consistency";
 import { nearMissCheckbox } from "../../core/parser/taskLine";
+import { formatHours } from "../../core/duration";
+import { budgetSplit, openSubtasks } from "../../core/rollup";
 import {
   assignMissingIds,
+  insertTasks,
   minimalLineEdit,
   nextId,
   removeDependency,
   setAttr,
   setId,
+  setStatus,
 } from "../../core/writer";
+import { newTaskFrom } from "../../core/writer/entities";
 import { itemAtLine } from "../commands/args";
+import { rollUpParents } from "../commands/status";
 import { type PlanService } from "../planService";
 import { toRange } from "../util";
 
@@ -191,6 +197,80 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
           remove("due");
           break;
         }
+        case "parent-estimate-unscheduled":
+        case "parent-estimate-exceeded": {
+          const { estimated, logged } = budgetSplit(task);
+          const total = formatHours(estimated + logged);
+          if (diagnostic.code === "parent-estimate-unscheduled" && task.est !== undefined) {
+            const rest = formatHours(task.est - estimated - logged);
+            const subtask = newTaskFrom(
+              { title: `${task.title} (remaining work)`, attrs: { est: rest } },
+              nextId(plan)
+            );
+            actions.push(
+              this.fix(
+                `Add a subtask for the remaining ${rest}`,
+                document,
+                insertTasks(file, { kind: "child", task }, [subtask]),
+                diagnostic,
+                true
+              )
+            );
+          }
+          actions.push(
+            this.fix(
+              `Set @est to the subtasks' total (${total})`,
+              document,
+              setAttr(file.lines, task, "est", total),
+              diagnostic,
+              diagnostic.code === "parent-estimate-exceeded"
+            )
+          );
+          actions.push(
+            this.fix(
+              "Remove @est (use the subtasks' total)",
+              document,
+              setAttr(file.lines, task, "est", undefined),
+              diagnostic
+            )
+          );
+          break;
+        }
+        case "done-parent-open-subtasks": {
+          const today = this.service.today();
+          const open = openSubtasks(task);
+          actions.push(
+            this.fix(
+              `Mark the ${open.length === 1 ? "open subtask" : `${open.length} open subtasks`} done`,
+              document,
+              open.flatMap((t) => setStatus(file.lines, t, "done", today)),
+              diagnostic,
+              true
+            )
+          );
+          actions.push(
+            this.fix(
+              "Reopen this task (in progress)",
+              document,
+              setStatus(file.lines, task, "doing", today),
+              diagnostic
+            )
+          );
+          break;
+        }
+        case "open-parent-all-done":
+          actions.push(
+            this.fix(
+              "Mark this task done",
+              document,
+              setStatus(file.lines, task, "done", this.service.today(), {
+                rollUp: rollUpParents(),
+              }),
+              diagnostic,
+              true
+            )
+          );
+          break;
         case "unknown-owner":
           for (const p of plan.people) {
             actions.push(

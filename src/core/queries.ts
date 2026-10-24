@@ -77,10 +77,10 @@ export function milestoneStats(m: Milestone): MilestoneStats {
   let remaining = 0;
   let unestimated = 0;
   for (const l of leaves) {
-    estimate += l.est ?? 0;
+    estimate += estimateHours(l) ?? 0;
     actual += actualHours(l);
     remaining += remainingHours(l);
-    if (l.est === undefined && isOpenTask(l)) unestimated++;
+    if (estimateHours(l) === undefined && isOpenTask(l)) unestimated++;
   }
   return {
     total: leaves.length,

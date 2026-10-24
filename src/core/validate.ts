@@ -4,7 +4,7 @@ import { UNASSIGNED } from "./calendar";
 import { buildDepGraph, cycleDeclarations, type DepGraph } from "./graph";
 import { type Issue, isOpen, type Task, TEST_TYPES } from "./model";
 import { type Plan } from "./resolve";
-import { isEffectivelyDone, isLeaf } from "./rollup";
+import { estimateHours, isEffectivelyDone, isLeaf } from "./rollup";
 import { range, type Range } from "./text";
 import { consistencyIssues } from "./consistency";
 import { attrIssue, depIdRange, lineContentRange, statusRange } from "./issueRanges";
@@ -26,7 +26,7 @@ export function validatePlan(plan: Plan, options: ValidateOptions = {}): Issue[]
 
   for (const t of plan.tasks) {
     checkOwner(plan, t, issues);
-    if (isLeaf(t) && isOpen(t.status) && !isEffectivelyDone(t) && t.est === undefined) {
+    if (isLeaf(t) && isOpen(t.status) && !isEffectivelyDone(t) && estimateHours(t) === undefined) {
       issues.push({
         file: t.file,
         range: lineContentRange(plan, t),

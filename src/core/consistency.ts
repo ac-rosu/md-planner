@@ -1,20 +1,36 @@
 // Checks for plans that read fine but say something the author probably did not mean: status dates
-// that contradict the checkbox, dates outside the project or after the milestone target, and
-// dependencies on cancelled work. Each issue carries what its quick fix needs in `data`.
+// that contradict the checkbox, dates outside the project or after the milestone target,
+// dependencies on cancelled work, and parents whose estimate or status disagrees with their
+// subtasks. Each issue carries what its quick fix needs in `data`.
 import { parseDate } from "./dates";
+import { formatHours } from "./duration";
 import { isSchedulableTask } from "./graph";
 import { attrIssue, depIdRange, statusRange } from "./issueRanges";
 import { type Issue, isOpen, type Task } from "./model";
 import { type Plan } from "./resolve";
-import { hasLoggedWork, isEffectivelyCancelled, isEffectivelyDone, isLeaf } from "./rollup";
+import {
+  activeChildren,
+  budgetSplit,
+  hasLoggedWork,
+  isEffectivelyCancelled,
+  isEffectivelyDone,
+  isLeaf,
+  openSubtasks,
+} from "./rollup";
+
+/** Differences below a minute are rounding. */
+const EPS = 0.01;
+const h = formatHours;
 
 export function consistencyIssues(plan: Plan): Issue[] {
   const issues: Issue[] = [];
   for (const t of [...plan.tasks, ...plan.punch]) statusDates(t, issues);
   for (const t of plan.tasks) {
+    parentStatus(t, issues);
     if (!isOpen(t.status) || isEffectivelyDone(t) || isEffectivelyCancelled(t)) continue;
     dates(plan, t, issues);
     cancelledDeps(plan, t, issues);
+    parentEstimate(t, issues);
   }
   milestoneTargets(plan, issues);
   return issues;
@@ -140,6 +156,69 @@ function cancelledDeps(plan: Plan, t: Task, issues: Issue[]): void {
       code: "cancelled-dep",
       message: `${why}, so this dependency is ignored.`,
       data: { depId: d.id },
+    });
+  }
+}
+
+/**
+ * A parent's `@est` is the budget of its subtasks. When every subtask has its own estimate, a
+ * difference cannot be shared out: part of the estimate is not scheduled, or the subtasks need more.
+ */
+function parentEstimate(t: Task, issues: Issue[]): void {
+  if (t.est === undefined || isLeaf(t)) return;
+  const { estimated, logged, unestimated } = budgetSplit(t);
+  const used = estimated + logged;
+  const plus = logged > 0 ? ` (plus ${h(logged)} logged on the task itself)` : "";
+  if (unestimated.length === 0 && t.est - used > EPS) {
+    issues.push(
+      attrIssue(
+        t,
+        "est",
+        "warning",
+        "parent-estimate-unscheduled",
+        `This task's @est is ${h(t.est)}, but its subtasks add up to ${h(estimated)}${plus}: ${h(t.est - used)} is not scheduled. Add a subtask for the rest, or set @est to the subtasks' total.`,
+        { remaining: h(t.est - used), total: h(used) }
+      )
+    );
+  } else if (used - t.est > EPS) {
+    issues.push(
+      attrIssue(
+        t,
+        "est",
+        "info",
+        "parent-estimate-exceeded",
+        `The subtasks add up to ${h(estimated)}${plus}, more than this task's @est ${h(t.est)}; their estimates are used${unestimated.length ? ", and the subtasks without an estimate get 0 hours" : ""}.`,
+        { total: h(used) }
+      )
+    );
+  }
+}
+
+/** A parent whose checkbox disagrees with its subtasks. */
+function parentStatus(t: Task, issues: Issue[]): void {
+  if (isLeaf(t) || isEffectivelyCancelled(t)) return;
+  if (t.status === "done") {
+    const open = openSubtasks(t);
+    if (open.length === 0) return;
+    const names = open.map((s) => s.id ?? s.title);
+    issues.push({
+      file: t.file,
+      range: statusRange(t),
+      severity: "warning",
+      code: "done-parent-open-subtasks",
+      message: `Done, but ${open.length === 1 ? "1 subtask is" : `${open.length} subtasks are`} still open (${names.slice(0, 5).join(", ")}${names.length > 5 ? ", …" : ""}); they are no longer scheduled.`,
+    });
+    return;
+  }
+  if (t.status === "blocked" || isEffectivelyDone(t)) return;
+  const kids = activeChildren(t);
+  if (kids.length > 0 && kids.every((c) => c.status === "done")) {
+    issues.push({
+      file: t.file,
+      range: statusRange(t),
+      severity: "info",
+      code: "open-parent-all-done",
+      message: "All subtasks are done, but this task is still open.",
     });
   }
 }

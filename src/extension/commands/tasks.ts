@@ -4,10 +4,18 @@ import { parseDuration } from "../../core/duration";
 import { STATUS_LABEL, STATUSES, type Status, type Task } from "../../core/model";
 import { blockedTasks, overdueTasks } from "../../core/queries";
 import { type ParsedFile } from "../../core/model";
-import { assignMissingIds, type FileEdit, nextStatus, setAttr, setStatus } from "../../core/writer";
+import {
+  assignMissingIds,
+  type FileEdit,
+  nextStatus,
+  setAttr,
+  setStatus,
+  type SubtaskChoice,
+} from "../../core/writer";
 import { type PlanService } from "../planService";
 import { toRange } from "../util";
 import { resolveTask, stringArg, type TaskArg } from "./args";
+import { statusEffects, SUBTASK_CHOICES } from "./status";
 
 export function registerTaskCommands(service: PlanService): vscode.Disposable[] {
   const reg = vscode.commands.registerCommand;
@@ -17,13 +25,16 @@ export function registerTaskCommands(service: PlanService): vscode.Disposable[] 
       revealMilestone(service, typeof arg === "string" ? arg : (arg?.milestone?.id ?? ""))
     ),
     // Menus may pass more tree nodes after the first: only strings are taken as values.
-    reg("planner.setStatus", (arg: TaskArg, status?: unknown, reason?: unknown) =>
-      changeStatus(
-        service,
-        arg,
-        STATUSES.find((s) => s === status),
-        stringArg(reason)
-      )
+    reg(
+      "planner.setStatus",
+      (arg: TaskArg, status?: unknown, reason?: unknown, subtasks?: unknown) =>
+        changeStatus(
+          service,
+          arg,
+          STATUSES.find((s) => s === status),
+          stringArg(reason),
+          SUBTASK_CHOICES.find((c) => c === subtasks)
+        )
     ),
     ...STATUSES.map((s) =>
       reg(`planner.status.${s}`, (arg: TaskArg) => changeStatus(service, arg, s))
@@ -91,7 +102,8 @@ export async function changeStatus(
   service: PlanService,
   arg: TaskArg,
   status?: Status,
-  reason?: string
+  reason?: string,
+  subtasks?: SubtaskChoice
 ): Promise<boolean> {
   const r = resolveTask(service, arg);
   if (!r) {
@@ -112,7 +124,13 @@ export async function changeStatus(
     if (blockedReason === undefined) return false;
     if (blockedReason === "") blockedReason = undefined;
   }
-  const edits = setStatus(fileOf(service, t).lines, t, next, service.today(), { blockedReason });
+  const effects = await statusEffects(t, next, subtasks);
+  if (!effects) return false;
+  const current = resolveTask(service, t.id ?? { file: t.file, line: t.line })?.task ?? t;
+  const edits = setStatus(fileOf(service, current).lines, current, next, service.today(), {
+    blockedReason,
+    ...effects,
+  });
   return service.apply([{ path: t.file, edits }], { source: r.fromEditor ? "editor" : "view" });
 }
 
@@ -120,7 +138,11 @@ export async function cycleStatus(service: PlanService, arg: TaskArg): Promise<b
   const r = resolveTask(service, arg);
   if (!r) return false;
   const t = r.task;
-  const edits = setStatus(fileOf(service, t).lines, t, nextStatus(t.status), service.today());
+  const next = nextStatus(t.status);
+  const effects = await statusEffects(t, next);
+  if (!effects) return false;
+  const current = resolveTask(service, t.id ?? { file: t.file, line: t.line })?.task ?? t;
+  const edits = setStatus(fileOf(service, current).lines, current, next, service.today(), effects);
   return service.apply([{ path: t.file, edits }], { source: r.fromEditor ? "editor" : "view" });
 }
 

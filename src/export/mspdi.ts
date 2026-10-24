@@ -334,8 +334,9 @@ function progressAll(plan: Plan): number {
   let done = 0;
   for (const t of plan.tasks) {
     if (!isLeaf(t) || t.status === "cancelled") continue;
-    total += t.est ?? 0;
-    done += (t.est ?? 0) * progressOf(t);
+    const est = estimateHours(t) ?? 0;
+    total += est;
+    done += est * progressOf(t);
   }
   return total > 0 ? done / total : 0;
 }

@@ -4,8 +4,9 @@ import * as vscode from "vscode";
 import { type Task } from "../core/model";
 import { findTaskByKey, taskKey } from "../core/scheduler";
 import { addActual, formatElapsed, parseLoggedTime, roundMinutes } from "../core/time";
-import { applyStatus, editTaskLine } from "../core/writer";
+import { editTaskLine, setStatus } from "../core/writer";
 import { resolveTask, type TaskArg } from "./commands/args";
+import { rollUpParents } from "./commands/status";
 import { type PlanService } from "./planService";
 import { config } from "./util";
 
@@ -16,6 +17,8 @@ export interface RunningTimer {
   startedAt: number;
   /** The timer moved the task from to do to in progress (undone when nothing is logged). */
   startedTask?: boolean;
+  /** Keys of the parents that followed the task to in progress (undone along with it). */
+  startedParents?: string[];
 }
 
 const STATE_KEY = "planner.timer";
@@ -53,18 +56,20 @@ export class TimerService implements vscode.Disposable {
     }
     if (this.running) await this.stop();
     const t = r.task;
+    // Starting work on a task that is still "to do" moves it (and its to-do parents) to "in progress".
+    const rollUp = t.status === "todo" && rollUpParents();
+    const parents: string[] = [];
+    for (let p = t.parent; rollUp && p?.status === "todo"; p = p.parent) parents.push(taskKey(p));
     await this.memento.update(STATE_KEY, {
       key: taskKey(t),
       title: t.title,
       startedAt: this.now(),
       startedTask: t.status === "todo",
+      startedParents: parents.length ? parents : undefined,
     } satisfies RunningTimer);
-    // Starting work on a task that is still "to do" moves it to "in progress".
     if (t.status === "todo") {
       const file = this.service.plan.file(t.file)!;
-      const edits = editTaskLine(file.lines, t, (e) =>
-        applyStatus(e, t, "doing", this.service.today())
-      );
+      const edits = setStatus(file.lines, t, "doing", this.service.today(), { rollUp });
       await this.service.apply([{ path: t.file, edits }], { source: "view" });
     }
     this.render();
@@ -79,13 +84,16 @@ export class TimerService implements vscode.Disposable {
     this.render();
     const minutes = (this.now() - running.startedAt) / 60_000;
     if (minutes < 1) {
-      // Started by mistake: put a task the timer moved to in progress back to to do.
+      // Started by mistake: put a task the timer moved to in progress back to to do, with the
+      // parents that followed it.
       const t = running.startedTask ? findTaskByKey(this.service.plan, running.key) : undefined;
       if (t?.status === "doing") {
-        const file = this.service.plan.file(t.file)!;
-        const edits = editTaskLine(file.lines, t, (e) =>
-          applyStatus(e, t, "todo", this.service.today())
-        );
+        const plan = this.service.plan;
+        const back = [t, ...(running.startedParents ?? []).map((k) => findTaskByKey(plan, k))];
+        const file = plan.file(t.file)!;
+        const edits = back
+          .filter((x): x is Task => x?.status === "doing" && x.file === t.file)
+          .flatMap((x) => setStatus(file.lines, x, "todo", this.service.today()));
         await this.service.apply([{ path: t.file, edits }], { source: "view" });
       }
       void vscode.window.showInformationMessage(

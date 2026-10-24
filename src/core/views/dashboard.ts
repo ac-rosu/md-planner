@@ -18,7 +18,7 @@ import {
 import { type Task } from "../model";
 import { milestoneStats, deadlineOf } from "../queries";
 import { type Plan } from "../resolve";
-import { ownerOf } from "../rollup";
+import { estimateHours, ownerOf } from "../rollup";
 import { taskOvertime } from "../load";
 import { type Schedule, taskKey } from "../scheduler";
 import { buildResourcesModel, plannedOvertime } from "./resources";
@@ -90,6 +90,10 @@ export function buildDashboardModel(
     title: t.title,
     detail,
   });
+  const hoursText = (t: Task) => {
+    const h = estimateHours(t);
+    return h !== undefined ? ` · ${formatHours(h)}` : "";
+  };
   const owner = (t: Task) => {
     const o = ownerOf(t);
     return o ? (plan.personById(o)?.name ?? o) : "unassigned";
@@ -149,14 +153,9 @@ export function buildDashboardModel(
       ),
       startingThisWeek: lists.startingThisWeek.map((t) => {
         const ts = schedule.tasks.get(t)!;
-        return item(
-          t,
-          `${formatDate(ts.start!)} · ${owner(t)}${t.est !== undefined ? ` · ${formatHours(t.est)}` : ""}`
-        );
+        return item(t, `${formatDate(ts.start!)} · ${owner(t)}${hoursText(t)}`);
       }),
-      unassigned: lists.unassigned.map((t) =>
-        item(t, `${t.milestoneId ?? ""}${t.est !== undefined ? ` · ${formatHours(t.est)}` : ""}`)
-      ),
+      unassigned: lists.unassigned.map((t) => item(t, `${t.milestoneId ?? ""}${hoursText(t)}`)),
       unestimated: lists.unestimated.map((t) => item(t, `${t.milestoneId ?? ""} · ${owner(t)}`)),
       overtime: overtimeTasks(schedule).map(({ task, hours, weeks }) =>
         item(task, `${Math.round(hours * 10) / 10} h · ${owner(task)} · ${weeks.join(", ")}`)
