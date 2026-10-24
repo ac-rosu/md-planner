@@ -138,6 +138,15 @@ export function statusSideEdits(
   return edits;
 }
 
+/** True when the change starts work on a task that has not been started yet (or finishes it). */
+export function startsWork(task: Task, status: Status): boolean {
+  const notStarted =
+    task.status === "todo" ||
+    task.status === "cancelled" ||
+    (task.status === "blocked" && !task.started);
+  return notStarted && (status === "doing" || status === "review" || status === "done");
+}
+
 /** The status dates a new item with this status gets (as applyStatus would write them). */
 export function statusDateAttrs(
   status: Status | undefined,

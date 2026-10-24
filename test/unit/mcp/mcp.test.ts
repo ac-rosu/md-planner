@@ -128,10 +128,18 @@ describe("MCP server", () => {
 
   it("update_task writes a minimal edit and returns the changed line", async () => {
     const before = file("milestones/M2-backend.md");
+    // M2 depends on M1, which is not finished: starting work in M2 needs startEarly.
+    const early = await call("update_task", { id: "T104", status: "doing" });
+    expect(early.isError).toBe(true);
+    expect(early.text).toMatch(
+      /T104: M2 waits for M1 \(\d+ open tasks: .*\)\. If the work really started, pass startEarly: true\./
+    );
+    expect(file("milestones/M2-backend.md")).toBe(before);
     const r = (
       await call("update_task", {
         id: "T104",
         status: "doing",
+        startEarly: true,
         owner: "priya",
         addTags: ["backend"],
       })

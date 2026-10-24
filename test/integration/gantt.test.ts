@@ -82,6 +82,7 @@ describe("scheduler integration and Gantt", () => {
     const api = await getApi();
     const panel = await openGantt();
     assert.equal(panel.viewOptions.grouping, "milestone");
+    assert.equal(panel.viewOptions.order, "schedule", "rows follow the schedule by default");
     await panel.receive({ type: "move", key: "T104", start: "2026-11-07" }); // Saturday
     assert.equal(line(M2, "T104"), "  - [ ] Order events schema @est:6h @start:2026-11-09 ^T104");
     await waitFor(() => api.state.plan.taskById("T104")?.start === "2026-11-09", "index");

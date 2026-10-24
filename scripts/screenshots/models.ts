@@ -33,6 +33,7 @@ const messages: Record<string, unknown[]> = {
       type: "model",
       model: buildGanttModel(plan, schedule, {
         grouping: "milestone",
+        order: DEFAULT_GANTT_OPTIONS.order,
         baseline: baseline ? baselineLookup(baseline) : undefined,
       }),
       options: { ...DEFAULT_GANTT_OPTIONS },

@@ -28,6 +28,9 @@ writeFileSync(
   JSON.stringify({
     "workbench.startupEditor": "none",
     "workbench.welcomePage.walkthroughs.openOnInstall": false,
+    // In the sample, M1 is still open while M2 is under way: the question before starting M2 work
+    // is a modal dialog that tests cannot answer. The test that covers it turns it back on.
+    "planner.confirmEarlyStart": false,
   })
 );
 

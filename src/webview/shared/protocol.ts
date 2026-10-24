@@ -2,7 +2,7 @@
 // Webviews never touch files: every change is a message that the host turns into a WorkspaceEdit.
 import { type TaskFilter } from "../../core/filter";
 import { type Priority, type Status } from "../../core/model";
-import { type GanttGrouping, type GanttModel } from "../../core/views/gantt";
+import { type GanttGrouping, type GanttModel, type GanttOrder } from "../../core/views/gantt";
 import { type DashboardModel } from "../../core/views/dashboard";
 import { type ResourcesModel } from "../../core/views/resources";
 import { type RunnerModel } from "../../core/views/testRunner";
@@ -31,6 +31,8 @@ export type GanttZoom = "day" | "week" | "month" | "quarter";
 
 export interface GanttViewOptions {
   grouping: GanttGrouping;
+  /** Rows by scheduled start (a cascade) or as in the files. */
+  order: GanttOrder;
   color: GanttColorMode;
   zoom: GanttZoom;
   /** Set by "fit to project"; overrides the zoom's default pixels per day. */
@@ -44,6 +46,7 @@ export interface GanttViewOptions {
 
 export const DEFAULT_GANTT_OPTIONS: GanttViewOptions = {
   grouping: "milestone",
+  order: "schedule",
   color: "owner",
   zoom: "week",
   showCritical: true,

@@ -190,7 +190,15 @@ are. Notes and free text are edited in the file: **More → Open in editor**.
 
 **Add a milestone** with the milestone button in the Milestones toolbar: type the name, then press
 Enter to create it or set the target date, status and dependencies first. The planner proposes the
-next free id (`M6`) and creates `milestones/M6-documentation.md`.
+next free id (`M6`) and creates `milestones/M6-documentation.md`. **Depends on** starts with the
+last milestone of the plan, so milestones follow each other: the new one's tasks are planned after
+it is finished. Clear the field for a milestone that runs in parallel.
+
+**One milestone after the other.** A milestone with `depends:` never has work planned before the
+milestones it depends on are finished. Starting one of its tasks anyway (status, Kanban, timer)
+asks first, and the editor marks work that started early (`planner.confirmEarlyStart` turns the
+question off). A milestone that nothing ties to the one before it, but whose work starts before
+that one finishes, gets a note with a quick fix **Add depends: M3**.
 
 **Edit a milestone** with ✎ on its row or **Edit milestone** above its heading:
 

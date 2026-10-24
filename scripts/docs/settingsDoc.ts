@@ -25,7 +25,9 @@ const GROUPS: Array<[string, (key: string) => boolean]> = [
   [
     "General",
     (k) =>
-      /^planner\.(planFolder|me|autoSave|autoAssignIds\w*|parentStatus|templatesFolder)$/.test(k),
+      /^planner\.(planFolder|me|autoSave|autoAssignIds\w*|confirmEarlyStart|parentStatus|templatesFolder)$/.test(
+        k
+      ),
   ],
   ["Editor", (k) => /^planner\.(editor|codeLens)\./.test(k)],
   ["Scheduling and diagnostics", (k) => /^planner\.(scheduling|diagnostics)\./.test(k)],

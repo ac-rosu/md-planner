@@ -38,6 +38,12 @@ Save the plan files after an edit made from a view (tree, Gantt, Kanban …). Ed
 
 Type: boolean · default: `true`
 
+### `planner.confirmEarlyStart`
+
+Ask before a task is started or finished while a milestone its milestone depends on (`depends:`) is not finished. Turn off if your milestones often overlap; the editor still points out work started early.
+
+Type: boolean · default: `true`
+
 ### `planner.parentStatus`
 
 How a parent task's status follows its subtasks when a status is changed from the planner (commands, checkbox hover, Kanban, timer, task form, MCP). Finishing a task with open subtasks always asks whether to finish them too, cancel them or keep them open.

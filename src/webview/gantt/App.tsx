@@ -262,6 +262,18 @@ export function App() {
             <option value="tag">Tag</option>
           </select>
         </label>
+        <label title="Schedule: tasks in the order they start, so the chart reads as a cascade. Files: as written in the plan files.">
+          Order
+          <select
+            value={options.order}
+            onChange={(e) =>
+              updateOptions({ order: e.currentTarget.value as GanttViewOptions["order"] })
+            }
+          >
+            <option value="schedule">Schedule</option>
+            <option value="file">Files</option>
+          </select>
+        </label>
         <label>
           Colour
           <select

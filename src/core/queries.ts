@@ -46,6 +46,57 @@ export function isOpenTask(t: Task): boolean {
   return isOpen(t.status) && !isEffectivelyCancelled(t) && !isEffectivelyDone(t);
 }
 
+/**
+ * The milestones a milestone depends on (`depends:`) that still have open tasks, with those tasks:
+ * its work should wait until they are finished.
+ */
+export function unfinishedMilestoneDeps(
+  plan: Plan,
+  milestoneId: string | undefined
+): Array<{ id: string; open: Task[] }> {
+  const out: Array<{ id: string; open: Task[] }> = [];
+  for (const id of plan.milestoneById(milestoneId)?.depends ?? []) {
+    const m = plan.milestoneById(id);
+    if (!m || m.status === "cancelled") continue;
+    const open = plan.tasks.filter((t) => t.milestoneId === m.id && isLeaf(t) && isOpenTask(t));
+    if (open.length) out.push({ id: m.id, open });
+  }
+  return out;
+}
+
+/** The milestone before `m` in plan order (cancelled ones skipped). */
+export function previousMilestone(plan: Plan, m: Milestone): Milestone | undefined {
+  const list = plan.milestones.filter((x) => x.status !== "cancelled" || x === m);
+  const i = list.indexOf(m);
+  return i > 0 ? list[i - 1] : undefined;
+}
+
+/**
+ * True when nothing ties a milestone to other milestones: no `depends:`, and none of its tasks
+ * depends on a task elsewhere. Its work starts as soon as possible, in parallel with the rest.
+ */
+export function isFloatingMilestone(plan: Plan, m: Milestone): boolean {
+  if (m.depends.length) return false;
+  return !plan.tasks.some(
+    (t) =>
+      t.milestoneId === m.id &&
+      t.deps.some((d) => {
+        const x = plan.taskById(d.id);
+        return !!x && x.milestoneId !== m.id;
+      })
+  );
+}
+
+/** "M1 (6 open tasks: T011, T012, …)" for messages. */
+export function describeUnfinished(list: Array<{ id: string; open: Task[] }>): string {
+  return list
+    .map(({ id, open }) => {
+      const names = open.map((t) => t.id ?? t.title);
+      return `${id} (${open.length} open task${open.length === 1 ? "" : "s"}: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ", …" : ""})`;
+    })
+    .join(" and ");
+}
+
 /** Open leaf tasks assigned (directly or inherited) to a person; `unassigned` for none. */
 export function openTasksOf(plan: Plan, personId: string): Task[] {
   const id = personId.toLowerCase();

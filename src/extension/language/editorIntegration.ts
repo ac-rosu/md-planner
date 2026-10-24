@@ -72,7 +72,7 @@ async function onSelection(
   const task = itemAtLine(service.plan, rel, pos.line);
   if (!task || task.line !== pos.line) return;
   const next = nextStatus(task.status);
-  const effects = await statusEffects(task, next);
+  const effects = await statusEffects(service.plan, task, next);
   const file = service.fileFor(doc);
   const current = itemAtLine(service.plan, rel, pos.line);
   if (!effects || !file || current?.line !== pos.line) return;

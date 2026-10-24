@@ -176,12 +176,12 @@ Services and APIs for accounts, checkout and billing.
 Free text is allowed anywhere and is preserved.
 ```
 
-| Property  | Example                                  | Meaning                                                                                    |
-| --------- | ---------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `id`      | `M2`                                     | Milestone id. Default: the `M<n>` prefix of the file name, else the file name.             |
-| `target`  | `2026-12-15`                             | Due date. The milestone is _late_ when its forecast (last task finish) is after it.        |
-| `status`  | `planned`, `active`, `done`, `cancelled` | `active` milestones show a blue icon. `cancelled` cancels all its tasks.                   |
-| `depends` | `M1` or `M1, M3`                         | Every task of this milestone starts only after all tasks of these milestones are finished. |
+| Property  | Example                                  | Meaning                                                                                                                     |
+| --------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `id`      | `M2`                                     | Milestone id. Default: the `M<n>` prefix of the file name, else the file name.                                              |
+| `target`  | `2026-12-15`                             | Due date. The milestone is _late_ when its forecast (last task finish) is after it.                                         |
+| `status`  | `planned`, `active`, `done`, `cancelled` | `active` milestones show a blue icon. `cancelled` cancels all its tasks.                                                    |
+| `depends` | `M1` or `M1, M3`                         | Every task of this milestone starts only after all tasks of these milestones are finished. Starting one earlier asks first. |
 
 - Tasks can sit directly under the milestone heading, or under `##` **sections** (work packages such
   as features or components). `###` and deeper headings belong to the enclosing section.

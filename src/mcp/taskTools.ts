@@ -17,10 +17,12 @@ import {
   moveTask as moveTaskEdits,
   renameTaskId as renameTaskIdEdits,
   setNotes,
+  startsWork,
   statusSideEdits,
   type SubtaskChoice,
 } from "../core/writer";
 import { deleteTaskWithLinks } from "../core/writer/entities";
+import { describeUnfinished, unfinishedMilestoneDeps } from "../core/queries";
 import { openSubtasks } from "../core/rollup";
 import { placeTask } from "../core/writer/structure";
 import { milestoneOf } from "./milestoneTools";
@@ -127,6 +129,8 @@ export interface TaskUpdate {
   blocked?: string;
   /** Finishing a task with open subtasks: finish them too, cancel them, or keep them open. */
   subtasks?: SubtaskChoice;
+  /** Start (or finish) it although a milestone its milestone depends on is not finished. */
+  startEarly?: boolean;
   estimate?: string;
   actual?: string;
   /** Person id or name; "" removes the owner. */
@@ -148,7 +152,15 @@ export interface TaskUpdate {
 }
 
 /** Stages one task update against the staged plan. */
-export function stageTaskUpdate(st: Staging, u: TaskUpdate, today: string, rollUp = true): string {
+export function stageTaskUpdate(
+  st: Staging,
+  u: TaskUpdate,
+  today: string,
+  options: { rollUp: boolean; confirmEarlyStart: boolean } = {
+    rollUp: true,
+    confirmEarlyStart: true,
+  }
+): string {
   const plan = st.plan;
   const t = findTask(plan, u.id);
   if (!t) throw new ToolError(`Unknown task "${u.id}".`);
@@ -196,6 +208,14 @@ export function stageTaskUpdate(st: Staging, u: TaskUpdate, today: string, rollU
       false,
       `has ${open.length} open subtask${open.length === 1 ? "" : "s"} (${open.map((x) => x.id ?? x.title).join(", ")}): pass subtasks "done" to finish them too, "cancelled" to cancel them, or "keep" to leave them open (they are no longer scheduled).`
     );
+  if (statusChange && options.confirmEarlyStart && !u.startEarly && startsWork(t, statusChange)) {
+    const waiting = unfinishedMilestoneDeps(plan, t.milestoneId);
+    if (waiting.length)
+      check(
+        false,
+        `${t.milestoneId} waits for ${describeUnfinished(waiting)}. If the work really started, pass startEarly: true.`
+      );
+  }
   if (errors.length) throw new ToolError(errors.join("\n"));
 
   let deps: string[] | undefined;
@@ -234,7 +254,10 @@ export function stageTaskUpdate(st: Staging, u: TaskUpdate, today: string, rollU
   });
   if (statusChange)
     edits.push(
-      ...statusSideEdits(file.lines, t, statusChange, today, { subtasks: u.subtasks, rollUp })
+      ...statusSideEdits(file.lines, t, statusChange, today, {
+        subtasks: u.subtasks,
+        rollUp: options.rollUp,
+      })
     );
   if (u.notes !== undefined) edits.push(...setNotes(file.lines, t, [u.notes].flat()));
   st.apply({ path: file.path, edits });
@@ -244,8 +267,12 @@ export function stageTaskUpdate(st: Staging, u: TaskUpdate, today: string, rollU
 export function updateTasks(tools: PlannerTools, args: { updates: TaskUpdate[] }) {
   if (!args.updates?.length) throw new ToolError("No updates given.");
   const st = tools.stage();
-  const rollUp = workspaceSettings(tools.workspaceDir).parentStatus !== "off";
-  const ids = args.updates.map((u) => stageTaskUpdate(st, u, tools.today, rollUp));
+  const settings = workspaceSettings(tools.workspaceDir);
+  const options = {
+    rollUp: settings.parentStatus !== "off",
+    confirmEarlyStart: settings.confirmEarlyStart !== false,
+  };
+  const ids = args.updates.map((u) => stageTaskUpdate(st, u, tools.today, options));
   return { updated: ids, changed: tools.commit(st) };
 }
 

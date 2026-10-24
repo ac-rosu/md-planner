@@ -130,6 +130,12 @@ const taskUpdate = {
     .describe(
       "Required when status 'done' leaves open subtasks: finish them too, cancel them, or keep them open (no longer scheduled)"
     ),
+  startEarly: z
+    .boolean()
+    .optional()
+    .describe(
+      "Required to start or finish a task while a milestone its milestone depends on is not finished (only if the work really started)"
+    ),
   estimate: z.string().optional(),
   actual: z.string().optional(),
   owner: z.string().optional().describe("Person id or name; '' removes the owner"),

@@ -281,6 +281,15 @@ export function nextMilestoneId(plan: Plan): string {
   return `M${max + 1}`;
 }
 
+/**
+ * The dependency a new milestone starts with: the last milestone of the plan that is not cancelled,
+ * so milestones run one after the other unless someone says otherwise.
+ */
+export function defaultMilestoneDepends(plan: Plan): string[] {
+  const last = [...plan.milestones].reverse().find((m) => m.status !== "cancelled");
+  return last ? [last.id] : [];
+}
+
 /** File name of a new milestone: `milestones/M6-documentation.md`. */
 export function milestoneFileName(id: string, name: string): string {
   const slug = name

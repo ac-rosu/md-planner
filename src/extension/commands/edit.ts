@@ -23,6 +23,7 @@ import {
   statusSideEdits,
 } from "../../core/writer";
 import {
+  defaultMilestoneDepends,
   addTask,
   appendSectionTo,
   changeMilestone,
@@ -766,7 +767,7 @@ export async function editTaskCommand(
   }
   // Finishing a task with open subtasks asks what happens to them; parents follow.
   const status = edit.status !== undefined && edit.status !== t.status ? edit.status : undefined;
-  const effects = status ? await statusEffects(t, status) : {};
+  const effects = status ? await statusEffects(state.plan, t, status) : {};
   if (!effects) return false;
   const current = resolveTask(service, t.id ?? { file: t.file, line: t.line })?.task ?? t;
   const file = service.plan.file(current.file);
@@ -997,7 +998,7 @@ function milestoneFields(
       icon: "references",
       label: "Depends on",
       value: (s) => (s.depends.length ? s.depends.join(", ") : undefined),
-      detail: "Its tasks start after these milestones are finished",
+      detail: "Its tasks start after these milestones are finished; none = in parallel with them",
       changed: changed("depends"),
       edit: async (s) => {
         const v = await askMilestones(
@@ -1037,7 +1038,8 @@ export async function addMilestoneCommand(
       name,
       target: "",
       status: "planned",
-      depends: [],
+      // Milestones follow each other unless the user clears this (then they run in parallel).
+      depends: defaultMilestoneDepends(state.plan),
     };
     const action = await showForm({
       title: `Add milestone ${form.id} – ${name}`,

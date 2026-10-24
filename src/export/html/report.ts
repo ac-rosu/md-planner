@@ -136,7 +136,7 @@ export function renderStatusReport(plan: Plan, schedule: Schedule, o: StatusRepo
   }
 
   if (has("gantt")) {
-    const model = buildGanttModel(plan, schedule, { grouping: "milestone" });
+    const model = buildGanttModel(plan, schedule, { grouping: "milestone", order: "schedule" });
     body.push(
       el(
         "section",

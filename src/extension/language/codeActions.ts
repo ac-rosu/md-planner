@@ -15,8 +15,10 @@ import {
   removeDependency,
   setAttr,
   setId,
+  setProperty,
   setStatus,
 } from "../../core/writer";
+import { previousMilestone } from "../../core/queries";
 import { newTaskFrom } from "../../core/writer/entities";
 import { siblingsOf } from "../../core/writer/structure";
 import { itemAtLine } from "../commands/args";
@@ -51,6 +53,32 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
           actions.push(
             this.fix(`Make it a task: ${near.fixed.trim()}`, document, [edit], diagnostic, true)
           );
+        continue;
+      }
+      const milestone = plan.milestones.find((m) => m.file === rel);
+      if (milestone && diagnostic.code === "floating-milestone") {
+        const prev = previousMilestone(plan, milestone);
+        if (prev)
+          actions.push(
+            this.fix(
+              `Add depends: ${prev.id} (start after ${prev.id} is finished)`,
+              document,
+              setProperty(file.lines, milestone.props, "depends", prev.id),
+              diagnostic,
+              true
+            )
+          );
+        continue;
+      }
+      if (milestone && diagnostic.code === "milestone-started-early") {
+        actions.push(
+          this.fix(
+            "Set the milestone status to planned",
+            document,
+            setProperty(file.lines, milestone.props, "status", "planned"),
+            diagnostic
+          )
+        );
         continue;
       }
       const task = itemAtLine(plan, rel, lineNo);
@@ -287,6 +315,16 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
           );
           break;
         }
+        case "started-early":
+          actions.push(
+            this.fix(
+              "Put it back to To do",
+              document,
+              setStatus(file.lines, task, "todo", this.service.today()),
+              diagnostic
+            )
+          );
+          break;
         case "open-parent-all-done":
           actions.push(
             this.fix(

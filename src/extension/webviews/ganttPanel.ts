@@ -75,6 +75,7 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
     this.panel.title = `Gantt – ${state.plan.project.name}`;
     const model = buildGanttModel(state.plan, state.schedule, {
       grouping: this.options.grouping,
+      order: this.options.order,
       hideDone: this.options.hideDone,
       baseline: this.options.showBaseline
         ? this.baselines?.lookup(this.options.baseline)

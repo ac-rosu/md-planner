@@ -47,6 +47,7 @@ function gantt(patch: Partial<GanttViewOptions> = {}): unknown[] {
       type: "model",
       model: buildGanttModel(plan, schedule, {
         grouping: options.grouping,
+        order: options.order,
         hideDone: options.hideDone,
         baseline: options.showBaseline && baseline ? baselineLookup(baseline) : undefined,
       }),

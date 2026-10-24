@@ -176,7 +176,7 @@ export class KanbanPanel extends WebviewPanelHost<HostToKanban, KanbanToHost> {
     if (prio) parts.push(`priority ${prio}`);
     // Finishing a card with open subtasks asks what happens to them; parents follow. The card is
     // looked up again after the question, in case its file changed meanwhile.
-    const effects = statusChange ? await statusEffects(t, m.status) : {};
+    const effects = statusChange ? await statusEffects(plan, t, m.status) : {};
     if (!effects) return false;
     const card = statusChange ? this.task(m.key) : t;
     const cardLines = statusChange ? this.lines(card) : lines;

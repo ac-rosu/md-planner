@@ -41,6 +41,12 @@ Safer editing, from the pilot users' feedback.
   context menu.
 - A hint points out dependencies that another dependency in the list already covers, with a quick
   fix to remove them; a task without an estimate offers to make the next task its subtask.
+- Milestones follow each other: a new milestone depends on the last one (clear it for parallel
+  work), starting work while a milestone it depends on is not finished asks first
+  (`planner.confirmEarlyStart`), and the editor points out work started early and milestones that
+  nothing ties to the one before.
+- The Gantt shows tasks in the order they start, as a cascade (**Order: Schedule**, the default;
+  **Files** keeps the order of the plan files, which are never reordered).
 
 ## 1.0.0
 

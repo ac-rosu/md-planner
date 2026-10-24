@@ -1626,6 +1626,11 @@
           "default": true,
           "markdownDescription": "**Alt+Up** / **Alt+Down** on a task line move the task with its notes and subtasks past the task above or below it at the same level. VS Code's own Move Line Up/Down moves only the line, which hands subtasks to another task. Other lines move as usual."
         },
+        "planner.confirmEarlyStart": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Ask before a task is started or finished while a milestone its milestone depends on (`depends:`) is not finished. Turn off if your milestones often overlap; the editor still points out work started early."
+        },
         "planner.parentStatus": {
           "type": "string",
           "enum": [

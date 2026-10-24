@@ -1,6 +1,15 @@
 import * as assert from "node:assert/strict";
 import * as vscode from "vscode";
-import { docText, getApi, openPlanFile, positionOf, restorePlan, TODAY } from "./helpers";
+import {
+  docText,
+  getApi,
+  openPlanFile,
+  planUri,
+  positionOf,
+  restorePlan,
+  TODAY,
+  waitFor,
+} from "./helpers";
 
 const M2 = "milestones/M2-backend.md";
 
@@ -87,6 +96,33 @@ describe("subtasks and reorganizing", () => {
     );
     assert.equal(line("T104"), "  - [-] Order events schema @est:6h ^T104");
     assert.match(line("T102"), /^- \[x\] /);
+  });
+
+  it("starts work while an earlier milestone is open only when told to, and shows it", async () => {
+    const config = vscode.workspace.getConfiguration("planner");
+    await config.update("confirmEarlyStart", true, vscode.ConfigurationTarget.Workspace);
+    try {
+      // M2 depends on M1, which still has open tasks; `true` answers "Start anyway".
+      await vscode.commands.executeCommand(
+        "planner.setStatus",
+        "T121",
+        "doing",
+        undefined,
+        undefined,
+        true
+      );
+      assert.match(line("T121"), /^- \[\/\] Shared API library/);
+      const diag = await waitFor(
+        () =>
+          vscode.languages
+            .getDiagnostics(planUri(M2))
+            .find((d) => d.code === "started-early" && d.range.start.line === 13),
+        "started-early"
+      );
+      assert.match(diag.message, /^Started while M1 \(\d+ open tasks: .*\) is not finished\./);
+    } finally {
+      await config.update("confirmEarlyStart", undefined, vscode.ConfigurationTarget.Workspace);
+    }
   });
 
   it("can leave parents alone with planner.parentStatus off", async () => {

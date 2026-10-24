@@ -20,6 +20,8 @@ import { type Schedule, taskKey } from "../scheduler";
 import { milestoneColor, NEUTRAL, personColor, statusColor } from "./colors";
 
 export type GanttGrouping = "milestone" | "section" | "owner" | "tag";
+/** Row order within each group: as in the files, or by scheduled start (a cascade). */
+export type GanttOrder = "file" | "schedule";
 
 export interface GanttRow {
   /** Unique row key. Task rows use the task key. */
@@ -97,6 +99,8 @@ export interface GanttOptions {
   baseline?: BaselineLookup;
   /** Hide done tasks (default false). */
   hideDone?: boolean;
+  /** Row order (default: as in the files). */
+  order?: GanttOrder;
 }
 
 export function buildGanttModel(plan: Plan, schedule: Schedule, options: GanttOptions): GanttModel {
@@ -206,11 +210,35 @@ export function buildGanttModel(plan: Plan, schedule: Schedule, options: GanttOp
   const visible = (t: Task) =>
     t.status !== "cancelled" && !(options.hideDone && t.status === "done");
 
+  // Schedule order: by scheduled start, then finish, then file order; unscheduled rows last. The
+  // files are not touched, so the task tree and the Markdown keep their own order.
+  const bySchedule = options.order === "schedule";
+  const startOf = (t: Task) =>
+    (isLeaf(t) ? schedule.tasks.get(t)?.start : schedule.parents.get(t)?.start) ?? Infinity;
+  const finishOf = (t: Task) =>
+    (isLeaf(t) ? schedule.tasks.get(t)?.finish : schedule.parents.get(t)?.finish) ?? Infinity;
+  const cmp = (a: number, b: number) => (a === b ? 0 : a < b ? -1 : 1);
+  const ordered = (tasks: Task[]): Task[] =>
+    bySchedule
+      ? [...tasks].sort(
+          (a, b) =>
+            cmp(startOf(a), startOf(b)) || cmp(finishOf(a), finishOf(b)) || a.order - b.order
+        )
+      : tasks;
+  const orderedBy = <T>(items: T[], start: (x: T) => number | undefined): T[] =>
+    bySchedule
+      ? items
+          .map((x, i) => ({ x, i, s: start(x) ?? Infinity }))
+          .sort((a, b) => cmp(a.s, b.s) || a.i - b.i)
+          .map((e) => e.x)
+      : items;
+  const milestones = orderedBy(plan.milestones, (m) => schedule.milestones.get(m.id)?.start);
+
   const addTaskTree = (t: Task, level: number, parent: string | undefined) => {
     if (!visible(t)) return;
     const row = taskRow(t, level, parent);
     rows.push(row);
-    for (const c of t.children) addTaskTree(c, level + 1, row.key);
+    for (const c of ordered(t.children)) addTaskTree(c, level + 1, row.key);
   };
 
   const milestoneRow = (m: Milestone, level: number, key: string): GanttRow => {
@@ -251,12 +279,12 @@ export function buildGanttModel(plan: Plan, schedule: Schedule, options: GanttOp
 
   switch (options.grouping) {
     case "milestone":
-      for (const m of plan.milestones) {
+      for (const m of milestones) {
         if (m.status === "cancelled") continue;
         const mKey = `milestone:${m.id}`;
         rows.push(milestoneRow(m, 0, mKey));
-        for (const t of m.rootTasks) addTaskTree(t, 1, mKey);
-        for (const s of m.sections) {
+        for (const t of ordered(m.rootTasks)) addTaskTree(t, 1, mKey);
+        for (const s of orderedBy(m.sections, (x) => schedule.sections.get(x)?.start)) {
           if (!s.tasks.some(visible)) continue;
           const sKey = `section:${m.id}:${s.line}`;
           const roll = schedule.sections.get(s);
@@ -281,12 +309,12 @@ export function buildGanttModel(plan: Plan, schedule: Schedule, options: GanttOp
               `${Math.round((roll?.progress ?? 0) * 100)}% complete`,
             ],
           });
-          for (const t of s.tasks) addTaskTree(t, 2, sKey);
+          for (const t of ordered(s.tasks)) addTaskTree(t, 2, sKey);
         }
       }
       break;
     case "section":
-      for (const m of plan.milestones) {
+      for (const m of milestones) {
         if (m.status === "cancelled") continue;
         const groups: Array<{ key: string; title: string; tasks: Task[] }> = [];
         if (m.rootTasks.length)
@@ -297,14 +325,14 @@ export function buildGanttModel(plan: Plan, schedule: Schedule, options: GanttOp
             title: `${m.id} › ${s.title}`,
             tasks: s.tasks,
           });
-        for (const g of groups) {
+        for (const g of orderedBy(groups, (x) => Math.min(...x.tasks.map(startOf)))) {
           const leaves = g.tasks
             .filter(visible)
             .flatMap((t) => leavesOf(t))
             .filter(visible);
           if (leaves.length === 0) continue;
           rows.push(groupRow(g.key, g.title, leaves, m.id));
-          for (const t of g.tasks) addTaskTree(t, 1, g.key);
+          for (const t of ordered(g.tasks)) addTaskTree(t, 1, g.key);
         }
       }
       break;
@@ -347,7 +375,7 @@ export function buildGanttModel(plan: Plan, schedule: Schedule, options: GanttOp
         if (b.tasks.length === 0) continue;
         const gKey = `${options.grouping}:${k}`;
         rows.push(groupRow(gKey, b.title, b.tasks, undefined));
-        for (const t of b.tasks) rows.push(taskRow(t, 1, gKey));
+        for (const t of ordered(b.tasks)) rows.push(taskRow(t, 1, gKey));
       }
       break;
     }

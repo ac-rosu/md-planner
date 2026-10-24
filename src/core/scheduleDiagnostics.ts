@@ -1,10 +1,12 @@
 // Diagnostics that need a schedule: tasks finishing after their deadline, unschedulable tasks and
 // (with a demand schedule) overbooked people.
-import { formatDate } from "./dates";
+import { type DayNumber, formatDate } from "./dates";
 import { describeLateCause, lateCause } from "./lateCause";
 import { loadLevel, weeklyLoad } from "./load";
 import { type Issue } from "./model";
+import { isFloatingMilestone, previousMilestone } from "./queries";
 import { type Plan } from "./resolve";
+import { range } from "./text";
 import { type Schedule } from "./scheduler";
 import { lineContentRange } from "./validate";
 
@@ -46,8 +48,43 @@ export function scheduleDiagnostics(plan: Plan, schedule: Schedule, demand?: Sch
       });
     }
   }
+  issues.push(...floatingMilestones(plan, schedule));
   if (demand) issues.push(...overbookedDiagnostics(plan, demand));
   return issues;
+}
+
+/**
+ * Info on a milestone that nothing ties to earlier milestones and whose work starts before the
+ * milestone before it finishes: often a milestone added without `depends:`.
+ */
+function floatingMilestones(plan: Plan, schedule: Schedule): Issue[] {
+  const issues: Issue[] = [];
+  for (const m of plan.milestones) {
+    if (m.status === "done" || m.status === "cancelled" || !isFloatingMilestone(plan, m)) continue;
+    const prev = previousMilestone(plan, m);
+    const start = openStart(plan, schedule, m.id);
+    const finish = prev ? schedule.milestones.get(prev.id)?.forecast : undefined;
+    if (!prev || start === undefined || finish === undefined || start > finish) continue;
+    const line = Math.max(0, m.headingLine);
+    issues.push({
+      file: m.file,
+      range: range(line, 0, plan.file(m.file)?.lines.line(line).length ?? 0),
+      severity: "info",
+      code: "floating-milestone",
+      message: `${m.id} does not depend on an earlier milestone, so its work starts ${formatDate(start)}, before ${prev.id} finishes (${formatDate(finish)}). Add depends: ${prev.id} if it should wait.`,
+      data: { previous: prev.id },
+    });
+  }
+  return issues;
+}
+
+/** First scheduled day of a milestone's open work. */
+function openStart(plan: Plan, schedule: Schedule, id: string): DayNumber | undefined {
+  let start: DayNumber | undefined;
+  for (const ts of schedule.tasks.values())
+    if (ts.task.milestoneId === id && !ts.done && ts.start !== undefined)
+      start = start === undefined ? ts.start : Math.min(start, ts.start);
+  return start;
 }
 
 function deadlineSource(plan: Plan, t: Plan["tasks"][number]): string {

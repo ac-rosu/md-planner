@@ -6,7 +6,7 @@ import { findTaskByKey, taskKey } from "../core/scheduler";
 import { addActual, formatElapsed, parseLoggedTime, roundMinutes } from "../core/time";
 import { editTaskLine, setStatus } from "../core/writer";
 import { resolveTask, type TaskArg } from "./commands/args";
-import { rollUpParents } from "./commands/status";
+import { confirmEarlyStart, rollUpParents } from "./commands/status";
 import { type PlanService } from "./planService";
 import { config } from "./util";
 
@@ -54,8 +54,10 @@ export class TimerService implements vscode.Disposable {
       void vscode.window.showWarningMessage("Planner: select a task to time.");
       return false;
     }
+    // Timing a to-do task starts it: ask first when an earlier milestone is not finished.
+    if (!(await confirmEarlyStart(this.service.plan, r.task, "doing"))) return false;
     if (this.running) await this.stop();
-    const t = r.task;
+    const t = resolveTask(this.service, taskKey(r.task))?.task ?? r.task;
     // Starting work on a task that is still "to do" moves it (and its to-do parents) to "in progress".
     const rollUp = t.status === "todo" && rollUpParents();
     const parents: string[] = [];

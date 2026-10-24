@@ -7,6 +7,7 @@ import { formatHours } from "./duration";
 import { isSchedulableTask } from "./graph";
 import { attrIssue, depIdRange, statusRange } from "./issueRanges";
 import { type Issue, isOpen, type Task } from "./model";
+import { describeUnfinished, unfinishedMilestoneDeps } from "./queries";
 import { type Plan } from "./resolve";
 import {
   activeChildren,
@@ -27,6 +28,7 @@ export function consistencyIssues(plan: Plan): Issue[] {
   for (const t of [...plan.tasks, ...plan.punch]) statusDates(t, issues);
   for (const t of plan.tasks) {
     parentStatus(t, issues);
+    startedEarly(plan, t, issues);
     if (!isOpen(t.status) || isEffectivelyDone(t) || isEffectivelyCancelled(t)) continue;
     dates(plan, t, issues);
     cancelledDeps(plan, t, issues);
@@ -34,7 +36,39 @@ export function consistencyIssues(plan: Plan): Issue[] {
     parentEstimate(t, issues);
   }
   milestoneTargets(plan, issues);
+  milestonesStartedEarly(plan, issues);
   return issues;
+}
+
+/** Work under way in a milestone while a milestone it depends on is not finished. */
+function startedEarly(plan: Plan, t: Task, issues: Issue[]): void {
+  if (t.kind !== "task" || !isLeaf(t) || (t.status !== "doing" && t.status !== "review")) return;
+  const waiting = unfinishedMilestoneDeps(plan, t.milestoneId);
+  if (waiting.length === 0) return;
+  issues.push({
+    file: t.file,
+    range: statusRange(t),
+    severity: "info",
+    code: "started-early",
+    message: `Started while ${describeUnfinished(waiting)} ${waiting.length === 1 ? "is" : "are"} not finished. ${t.milestoneId} depends on ${waiting.length === 1 ? "it" : "them"}, so the rest of this work is scheduled after ${waiting.length === 1 ? "it" : "them"}.`,
+  });
+}
+
+/** A milestone marked active while a milestone it depends on is not finished. */
+function milestonesStartedEarly(plan: Plan, issues: Issue[]): void {
+  for (const m of plan.milestones) {
+    if (m.status !== "active") continue;
+    const waiting = unfinishedMilestoneDeps(plan, m.id);
+    const entry = m.props.entries.find((e) => e.key.toLowerCase() === "status");
+    if (waiting.length === 0 || !entry) continue;
+    issues.push({
+      file: m.file,
+      range: entry.valueRange,
+      severity: "info",
+      code: "milestone-started-early",
+      message: `Active, but it depends on ${describeUnfinished(waiting)}, which ${waiting.length === 1 ? "is" : "are"} not finished.`,
+    });
+  }
 }
 
 /** `@started` / `@done` that disagree with the checkbox. */
