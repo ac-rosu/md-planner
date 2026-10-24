@@ -107,8 +107,8 @@ describe("scheduler integration and Gantt", () => {
       posted.push(m);
       post(m);
     };
-    // T121 (Sam, 40 h/week) is scheduled 2026-10-21 → 10-23; ending on Monday 10-26 = 4 working days.
-    await panel.receive({ type: "resize", key: "T121", finish: "2026-10-26" });
+    // T121 (Sam, 40 h/week) is scheduled 2026-10-20 → 10-22; ending on Friday 10-23 = 4 working days.
+    await panel.receive({ type: "resize", key: "T121", finish: "2026-10-23" });
     assert.equal(
       line(M2, "T121"),
       "- [ ] Shared API library (auth, validation, logging) @est:32h @owner:sam #backend ^T121"

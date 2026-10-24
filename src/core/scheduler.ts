@@ -6,8 +6,9 @@
 //  2. Done tasks are fixed at @started → @done; cancelled tasks are ignored.
 //  3. Walk days from max(today, project start). Per person, tasks are ready when their
 //     dependencies have finished (plus lag) and their @start has been reached.
-//  4. Ready tasks are ordered: fixed @start first, then @prio, then least slack against @due or
-//     milestone target, then file order.
+//  4. Ready tasks are ordered: fixed @start first, then @prio, then the latest day they can start
+//     without making anything late (their own @due or milestone target, their owner's last
+//     working day, and the tasks that wait for them), then file order.
 //  5. The person's free hours of the day go to tasks in that order; tasks span days and share days.
 //  6. A task finishes on the day its remaining hours reach 0.
 //  7. Per task start/finish and per person-day allocations are recorded.
@@ -305,16 +306,29 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
     if (resolveCycleWait(leaf)) tasks.get(leaf)!.unscheduled = "blocked-by-cycle";
   }
 
+  const pending = new Set([...remaining.keys()].filter((t) => !tasks.get(t)!.unscheduled));
+  const groupsOf = new Map<Task, DepNode[]>();
+  for (const g of graph.groups.values()) {
+    for (const m of g.members) {
+      const list = groupsOf.get(m);
+      if (list) list.push(g);
+      else groupsOf.set(m, [g]);
+    }
+  }
+  const latestStart = latestStarts(plan, graph, groupsOf, pending, tasks, remaining, {
+    calendar,
+    start,
+    hpd,
+    deadlineIdx,
+  });
+
   // --- Simulation ------------------------------------------------------------------------------
   // Per resource: `future` holds released tasks by earliest day, `ready` holds eligible tasks by
-  // priority. The priority key is independent of the day (the slack term only differs by the
-  // current day index, which is the same for all candidates), so heaps keep the order.
-  const pending = new Set([...remaining.keys()].filter((t) => !tasks.get(t)!.unscheduled));
+  // priority. The priority key does not change over time (the latest start is computed once, so a
+  // task in progress keeps its place), so heaps keep the order.
   const keyOf = new Map<Task, number[]>();
   const priorityKey = (t: Task): number[] => {
-    const di = deadlineIdx.get(t);
-    const slack = di === undefined ? Number.POSITIVE_INFINITY : di - remaining.get(t)! / hpd;
-    const key = [fixedStart.has(t) ? 0 : 1, PRIORITY_RANK[t.prio], slack, t.order];
+    const key = [fixedStart.has(t) ? 0 : 1, PRIORITY_RANK[t.prio], latestStart.get(t)!, t.order];
     keyOf.set(t, key);
     return key;
   };
@@ -340,14 +354,6 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
     }
     return q;
   };
-  const groupsOf = new Map<Task, DepNode[]>();
-  for (const g of graph.groups.values()) {
-    for (const m of g.members) {
-      const list = groupsOf.get(m);
-      if (list) list.push(g);
-      else groupsOf.set(m, [g]);
-    }
-  }
 
   const released = new Set<Task>();
   const finishTask = (t: Task, day: DayNumber) => {
@@ -469,6 +475,72 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
   rollUp(plan, schedule);
   computeCriticalPath(plan, schedule);
   return schedule;
+}
+
+/**
+ * The latest working-day index each open leaf can start without making anything late. It has to
+ * finish by its own deadline, by its owner's last working day (`capacityFrom: … 0h`), and in time
+ * for every task that waits for it (that task's latest start, a day earlier when another person
+ * takes over, minus the lag). A backward pass like CPM's on the estimated durations, so work that
+ * others wait for goes first. Infinity when nothing bounds it.
+ */
+function latestStarts(
+  plan: Plan,
+  graph: DepGraph,
+  groupsOf: Map<Task, DepNode[]>,
+  pending: Set<Task>,
+  tasks: Map<Task, TaskSchedule>,
+  remaining: Map<Task, number>,
+  ctx: { calendar: Calendar; start: DayNumber; hpd: number; deadlineIdx: Map<Task, number> }
+): Map<Task, number> {
+  const { calendar, start, hpd, deadlineIdx } = ctx;
+  const capacityEnd = new Map<string, number>();
+  for (const p of plan.people) {
+    const last = p.capacityChanges[p.capacityChanges.length - 1];
+    if (last?.hours === 0)
+      capacityEnd.set(p.id.toLowerCase(), workIndex(calendar, start, last.from - 1));
+  }
+  const waiters = new Map<Task, Array<{ task: Task; gap: number }>>();
+  const indegree = new Map<Task, number>();
+  for (const t of pending) indegree.set(t, 0);
+  for (const t of pending) {
+    const own = tasks.get(t)!.resource;
+    const list: Array<{ task: Task; gap: number }> = [];
+    for (const n of [graph.leafNode.get(t)!, ...(groupsOf.get(t) ?? [])])
+      for (const dep of graph.dependents.get(n) ?? []) {
+        if (!pending.has(dep)) continue;
+        for (const r of graph.requirements.get(dep) ?? []) {
+          if (r.node !== n) continue;
+          const handOver = tasks.get(dep)!.resource === own ? 0 : 1;
+          list.push({ task: dep, gap: handOver + Math.ceil(r.lagHours / hpd - EPS) });
+          indegree.set(dep, indegree.get(dep)! + 1);
+        }
+      }
+    waiters.set(t, list);
+  }
+  // Kahn's order from the first tasks to the last; walked backwards, every waiter comes first.
+  const order = [...pending].filter((t) => indegree.get(t) === 0);
+  for (let i = 0; i < order.length; i++)
+    for (const w of waiters.get(order[i])!) {
+      const d = indegree.get(w.task)! - 1;
+      indegree.set(w.task, d);
+      if (d === 0) order.push(w.task);
+    }
+  const latest = new Map<Task, number>();
+  const own = (t: Task) =>
+    Math.min(
+      deadlineIdx.get(t) ?? Number.POSITIVE_INFINITY,
+      capacityEnd.get(tasks.get(t)!.resource) ?? Number.POSITIVE_INFINITY
+    );
+  for (let i = order.length - 1; i >= 0; i--) {
+    const t = order[i];
+    let finishBy = own(t);
+    for (const w of waiters.get(t)!) finishBy = Math.min(finishBy, latest.get(w.task)! - w.gap);
+    latest.set(t, finishBy - remaining.get(t)! / hpd);
+  }
+  // Only tasks around a cycle the graph did not flag are left: they keep their own bounds.
+  for (const t of pending) if (!latest.has(t)) latest.set(t, own(t) - remaining.get(t)! / hpd);
+  return latest;
 }
 
 /**

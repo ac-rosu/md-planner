@@ -20,9 +20,9 @@
       "title": "M1 – Discovery & Design",
       "target": "2026-10-30",
       "start": "2026-10-01",
-      "forecast": "2026-10-20",
+      "forecast": "2026-10-19",
       "late": false,
-      "variance": -8,
+      "variance": -9,
       "progress": 0.62
     },
     {
@@ -39,10 +39,10 @@
       "id": "M3",
       "title": "M3 – Frontend",
       "target": "2027-01-22",
-      "start": "2026-10-21",
-      "forecast": "2026-11-11",
+      "start": "2026-10-20",
+      "forecast": "2026-11-09",
       "late": false,
-      "variance": -50,
+      "variance": -52,
       "progress": 0
     },
     {
@@ -126,9 +126,9 @@
       "owner": "alex",
       "status": "review",
       "start": "2026-10-08",
-      "finish": "2026-10-15",
+      "finish": "2026-10-16",
       "hours": 6,
-      "slack": 11,
+      "slack": 10,
       "critical": false,
       "late": false,
       "deadline": "2026-10-30"
@@ -153,9 +153,9 @@
       "owner": "alex",
       "status": "doing",
       "start": "2026-10-12",
-      "finish": "2026-10-16",
+      "finish": "2026-10-15",
       "hours": 8,
-      "slack": 8,
+      "slack": 9,
       "critical": false,
       "late": false,
       "deadline": "2026-10-30"
@@ -194,10 +194,10 @@
       "milestone": "M1",
       "owner": "sam",
       "status": "todo",
-      "start": "2026-10-19",
-      "finish": "2026-10-19",
+      "start": "2026-10-16",
+      "finish": "2026-10-16",
       "hours": 4,
-      "slack": 8,
+      "slack": 9,
       "critical": false,
       "late": false,
       "deadline": "2026-10-30"
@@ -208,10 +208,10 @@
       "milestone": "M1",
       "owner": "alex",
       "status": "todo",
-      "start": "2026-10-20",
-      "finish": "2026-10-20",
+      "start": "2026-10-19",
+      "finish": "2026-10-19",
       "hours": 4,
-      "slack": 8,
+      "slack": 9,
       "critical": false,
       "late": false,
       "deadline": "2026-10-30"
@@ -235,10 +235,10 @@
       "milestone": "M2",
       "owner": "sam",
       "status": "todo",
-      "start": "2026-10-21",
-      "finish": "2026-10-23",
+      "start": "2026-10-20",
+      "finish": "2026-10-22",
       "hours": 24,
-      "slack": 21,
+      "slack": 22,
       "critical": false,
       "late": false,
       "deadline": "2026-12-15"
@@ -249,13 +249,14 @@
       "milestone": "M2",
       "owner": "sam",
       "status": "todo",
-      "start": "2026-10-30",
-      "finish": "2026-11-05",
+      "start": "2026-11-03",
+      "finish": "2026-11-04",
       "hours": 12,
-      "slack": 28,
+      "slack": 29,
       "critical": false,
       "late": false,
-      "deadline": "2026-12-15"
+      "deadline": "2026-12-15",
+      "overtime": 1.6
     },
     {
       "id": "T101",
@@ -289,10 +290,10 @@
       "milestone": "M2",
       "owner": "sam",
       "status": "todo",
-      "start": "2026-11-04",
-      "finish": "2026-11-04",
+      "start": "2026-10-23",
+      "finish": "2026-10-23",
       "hours": 6,
-      "slack": 20,
+      "slack": 28,
       "critical": false,
       "late": false,
       "deadline": "2026-12-15"
@@ -318,10 +319,10 @@
       "milestone": "M2",
       "owner": "priya",
       "status": "blocked",
-      "start": "2026-10-21",
-      "finish": "2026-10-21",
+      "start": "2026-10-20",
+      "finish": "2026-10-20",
       "hours": 6,
-      "slack": 39,
+      "slack": 40,
       "critical": false,
       "late": false,
       "deadline": "2026-12-15"
@@ -360,10 +361,10 @@
       "milestone": "M2",
       "owner": "alex",
       "status": "todo",
-      "start": "2026-10-26",
-      "finish": "2026-10-30",
+      "start": "2026-10-23",
+      "finish": "2026-10-29",
       "hours": 32,
-      "slack": 21,
+      "slack": 22,
       "critical": false,
       "late": false,
       "deadline": "2026-12-15"
@@ -374,10 +375,10 @@
       "milestone": "M2",
       "owner": "alex",
       "status": "todo",
-      "start": "2026-11-02",
-      "finish": "2026-11-05",
+      "start": "2026-10-30",
+      "finish": "2026-11-04",
       "hours": 24,
-      "slack": 21,
+      "slack": 22,
       "critical": false,
       "late": false,
       "deadline": "2026-12-04"
@@ -388,10 +389,10 @@
       "milestone": "M2",
       "owner": "unassigned",
       "status": "todo",
-      "start": "2026-11-06",
-      "finish": "2026-11-09",
+      "start": "2026-11-05",
+      "finish": "2026-11-06",
       "hours": 12,
-      "slack": 26,
+      "slack": 27,
       "critical": false,
       "late": false,
       "deadline": "2026-12-15",
@@ -405,10 +406,10 @@
       "milestone": "M2",
       "owner": "sam",
       "status": "todo",
-      "start": "2026-10-26",
-      "finish": "2026-11-02",
+      "start": "2026-10-23",
+      "finish": "2026-10-30",
       "hours": 40,
-      "slack": 28,
+      "slack": 30,
       "critical": false,
       "late": false,
       "deadline": "2026-12-15"
@@ -419,14 +420,14 @@
       "milestone": "M2",
       "owner": "sam",
       "status": "todo",
-      "start": "2026-11-02",
-      "finish": "2026-11-05",
+      "start": "2026-10-30",
+      "finish": "2026-11-03",
       "hours": 16,
-      "slack": 28,
+      "slack": 30,
       "critical": false,
       "late": false,
       "deadline": "2026-12-15",
-      "overtime": 4.8
+      "overtime": 1.6
     },
     {
       "id": "T201",
@@ -434,10 +435,10 @@
       "milestone": "M3",
       "owner": "priya",
       "status": "todo",
-      "start": "2026-10-21",
-      "finish": "2026-10-26",
+      "start": "2026-10-20",
+      "finish": "2026-10-22",
       "hours": 16,
-      "slack": 45,
+      "slack": 51,
       "critical": false,
       "late": false,
       "deadline": "2027-01-22"
@@ -448,10 +449,10 @@
       "milestone": "M3",
       "owner": "priya",
       "status": "todo",
-      "start": "2026-10-23",
-      "finish": "2026-10-23",
+      "start": "2026-11-05",
+      "finish": "2026-11-06",
       "hours": 8,
-      "slack": 63,
+      "slack": 53,
       "critical": false,
       "late": false,
       "deadline": "2027-01-22"
@@ -462,10 +463,10 @@
       "milestone": "M3",
       "owner": "priya",
       "status": "todo",
-      "start": "2026-10-26",
-      "finish": "2026-10-30",
+      "start": "2026-10-22",
+      "finish": "2026-10-27",
       "hours": 24,
-      "slack": 45,
+      "slack": 51,
       "critical": false,
       "late": false,
       "deadline": "2027-01-22"
@@ -476,10 +477,10 @@
       "milestone": "M3",
       "owner": "priya",
       "status": "todo",
-      "start": "2026-10-29",
-      "finish": "2026-11-10",
+      "start": "2026-10-30",
+      "finish": "2026-11-05",
       "hours": 12,
-      "slack": 51,
+      "slack": 54,
       "critical": false,
       "late": false,
       "deadline": "2027-01-22"
@@ -490,10 +491,10 @@
       "milestone": "M3",
       "owner": "priya",
       "status": "todo",
-      "start": "2026-10-30",
-      "finish": "2026-11-09",
+      "start": "2026-10-27",
+      "finish": "2026-10-30",
       "hours": 24,
-      "slack": 45,
+      "slack": 51,
       "critical": false,
       "late": false,
       "deadline": "2027-01-22"
@@ -504,10 +505,10 @@
       "milestone": "M3",
       "owner": "sam",
       "status": "todo",
-      "start": "2026-11-05",
-      "finish": "2026-11-11",
+      "start": "2026-11-04",
+      "finish": "2026-11-09",
       "hours": 24,
-      "slack": 50,
+      "slack": 52,
       "critical": false,
       "late": false,
       "deadline": "2027-01-22",
@@ -519,10 +520,10 @@
       "milestone": "M3",
       "owner": "priya",
       "status": "todo",
-      "start": "2026-11-03",
-      "finish": "2026-11-05",
+      "start": "2026-11-02",
+      "finish": "2026-11-03",
       "hours": 16,
-      "slack": 54,
+      "slack": 56,
       "critical": false,
       "late": false,
       "deadline": "2027-01-22"
@@ -534,9 +535,9 @@
       "owner": "priya",
       "status": "todo",
       "start": "2026-11-06",
-      "finish": "2026-11-06",
+      "finish": "2026-11-09",
       "hours": 8,
-      "slack": 53,
+      "slack": 52,
       "critical": false,
       "late": false,
       "deadline": "2027-01-22"
@@ -547,10 +548,10 @@
       "milestone": "M3",
       "owner": "unassigned",
       "status": "todo",
-      "start": "2026-10-21",
-      "finish": "2026-10-22",
+      "start": "2026-10-20",
+      "finish": "2026-10-21",
       "hours": 12,
-      "slack": 64,
+      "slack": 65,
       "critical": false,
       "late": false,
       "deadline": "2027-01-22",
@@ -738,7 +739,7 @@
     {
       "person": "alex",
       "week": "2026-W43",
-      "hours": 4,
+      "hours": 10.4,
       "capacity": 32
     },
     {
@@ -750,7 +751,7 @@
     {
       "person": "alex",
       "week": "2026-W45",
-      "hours": 24,
+      "hours": 17.6,
       "capacity": 32
     },
     {
@@ -785,8 +786,14 @@
     },
     {
       "person": "sam",
+      "week": "2026-W42",
+      "hours": 4,
+      "capacity": 40
+    },
+    {
+      "person": "sam",
       "week": "2026-W43",
-      "hours": 28,
+      "hours": 32,
       "capacity": 40
     },
     {
@@ -805,9 +812,9 @@
     {
       "person": "sam",
       "week": "2026-W46",
-      "hours": 26,
+      "hours": 18,
       "capacity": 48,
-      "overtime": 3.2
+      "overtime": 1.6
     },
     {
       "person": "sam",
@@ -848,7 +855,7 @@
     {
       "person": "priya",
       "week": "2026-W43",
-      "hours": 24,
+      "hours": 32,
       "capacity": 40
     },
     {
@@ -866,7 +873,7 @@
     {
       "person": "priya",
       "week": "2026-W46",
-      "hours": 10,
+      "hours": 2,
       "capacity": 40
     },
     {
@@ -957,13 +964,7 @@
     {
       "person": "unassigned",
       "week": "2026-W45",
-      "hours": 8,
-      "capacity": 40
-    },
-    {
-      "person": "unassigned",
-      "week": "2026-W46",
-      "hours": 4,
+      "hours": 12,
       "capacity": 40
     }
   ]

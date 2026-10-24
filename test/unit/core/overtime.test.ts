@@ -211,10 +211,10 @@ describe("overtime in the sample project", () => {
       {
         id: "sam",
         name: "Sam",
-        hours: 11.2,
+        hours: 9.6,
         weeks: [
           { week: "2026-W45", hours: 8 },
-          { week: "2026-W46", hours: 3.2 },
+          { week: "2026-W46", hours: 1.6 },
         ],
       },
       { id: "maria", name: "Maria", hours: 4, weeks: [{ week: "2026-W48", hours: 4 }] },
@@ -223,9 +223,9 @@ describe("overtime in the sample project", () => {
 
   it("shows the planned overtime on the dashboard", () => {
     expect(buildDashboardModel(plan, schedule).overtime).toEqual({
-      hours: 15.2,
+      hours: 13.6,
       byPerson: [
-        { name: "Sam", hours: 11.2, weeks: ["2026-W45", "2026-W46"] },
+        { name: "Sam", hours: 9.6, weeks: ["2026-W45", "2026-W46"] },
         { name: "Maria", hours: 4, weeks: ["2026-W48"] },
       ],
     });
@@ -248,18 +248,19 @@ describe("overtime in the sample project", () => {
     const o = taskOvertime(schedule);
     const summary = [...o].map(([key, t]) => [key, Math.round(t.hours * 10) / 10]);
     expect(summary).toEqual([
-      ["T114", 4.8],
+      ["T114", 1.6],
+      ["T122", 1.6],
       ["T206", 4.8],
       ["T105", 1.6],
       ["T303", 4],
     ]);
-    expect(o.get("T114")!.days.map((d) => formatDate(d.day))).toEqual([
-      "2026-11-02",
-      "2026-11-03",
+    expect(o.get("T206")!.days.map((d) => formatDate(d.day))).toEqual([
       "2026-11-04",
+      "2026-11-05",
+      "2026-11-06",
     ]);
-    expect(describeOvertime(o.get("T114")!, formatDate)).toBe(
-      "4.8 h overtime on 2026-11-02, 2026-11-03, 2026-11-04"
+    expect(describeOvertime(o.get("T206")!, formatDate)).toBe(
+      "4.8 h overtime on 2026-11-04, 2026-11-05, 2026-11-06"
     );
     expect(describeOvertime(o.get("T303")!, formatDate)).toBe(
       "4 h on extra working day 2026-11-27"
@@ -269,15 +270,15 @@ describe("overtime in the sample project", () => {
   it("marks the overtime on Gantt bars, roll-ups, cards and the team load details", () => {
     const gantt = buildGanttModel(plan, schedule, { grouping: "milestone" });
     const row = (key: string) => gantt.rows.find((r) => r.key === key)!;
-    expect(row("T114")).toMatchObject({ overtime: 4.8 });
-    expect(row("T114").overtimeDays!.map(formatDate)).toEqual([
-      "2026-11-02",
-      "2026-11-03",
+    expect(row("T206")).toMatchObject({ overtime: 4.8 });
+    expect(row("T206").overtimeDays!.map(formatDate)).toEqual([
       "2026-11-04",
+      "2026-11-05",
+      "2026-11-06",
     ]);
-    expect(row("T114").tooltip.at(-1)).toBe("4.8 h overtime on 2026-11-02, 2026-11-03, 2026-11-04");
-    expect(row("milestone:M2").overtime).toBe(6.4);
-    expect(row("milestone:M2").tooltip.at(-1)).toBe("Includes 6.4 h of overtime: T105, T114");
+    expect(row("T206").tooltip.at(-1)).toBe("4.8 h overtime on 2026-11-04, 2026-11-05, 2026-11-06");
+    expect(row("milestone:M2").overtime).toBe(4.8);
+    expect(row("milestone:M2").tooltip.at(-1)).toBe("Includes 4.8 h of overtime: T122, T105, T114");
     expect(row("milestone:M3").overtime).toBe(4.8);
     expect(row("T101").overtime).toBeUndefined();
     const kanban = buildKanbanModel(plan, schedule, {
@@ -292,13 +293,15 @@ describe("overtime in the sample project", () => {
     const heat = buildResourcesModel(plan, schedule);
     const w45 = heat.rows.find((r) => r.id === "sam")!.cells.find((c) => c.week === "2026-W45")!;
     expect(w45.tasks.filter((t) => t.overtime).map((t) => [t.id, t.overtime])).toEqual([
-      ["T114", 4.8],
-      ["T206", 3.2],
+      ["T206", 4.8],
+      ["T114", 1.6],
+      ["T122", 1.6],
     ]);
     expect(buildDashboardModel(plan, schedule).lists.overtime.map((i) => [i.id, i.detail])).toEqual(
       [
-        ["T114", "4.8 h · Sam · W45"],
-        ["T206", "4.8 h · Sam · W45, W46"],
+        ["T114", "1.6 h · Sam · W45"],
+        ["T122", "1.6 h · Sam · W45"],
+        ["T206", "4.8 h · Sam · W45"],
         ["T105", "1.6 h · Sam · W46"],
         ["T303", "4 h · Maria · W48"],
       ]

@@ -120,7 +120,7 @@ describe("scheduler basics", () => {
     expect(dates("T3")).toEqual(["2026-10-07", "2026-10-07"]);
   });
 
-  it("orders by priority, then least slack, then file order", () => {
+  it("orders by priority, then the latest possible start, then file order", () => {
     const p = run([
       "- [ ] low @est:8h @owner:ann @prio:low ^T1",
       "- [ ] high @est:8h @owner:ann @prio:high ^T2",
@@ -141,6 +141,56 @@ describe("scheduler basics", () => {
       "2026-10-06",
       "2026-10-07",
     ]);
+  });
+
+  it("does the work that others wait for first", () => {
+    // The review has no deadline of its own, but Ann's build waits for it and is due on Monday.
+    const { dates, get } = run([
+      "- [ ] long job @est:24h @owner:bob @due:2026-10-16 ^T1",
+      "- [ ] review @est:4h @owner:bob ^T2",
+      "- [ ] build @est:40h @owner:ann @dep:T2 @due:2026-10-12 ^T3",
+    ]);
+    expect(dates("T2")).toEqual(["2026-10-05", "2026-10-05"]);
+    expect(dates("T3")).toEqual(["2026-10-06", "2026-10-12"]);
+    expect(get("T3").late).toBe(false);
+    expect(dates("T1")).toEqual(["2026-10-06", "2026-10-13"]);
+  });
+
+  it("does first what a leaving person needs before their last day", () => {
+    const team = md(
+      "# Team",
+      "",
+      "## Ann",
+      "",
+      "capacity: 40h/week",
+      "",
+      "## Bob",
+      "",
+      "capacity: 40h/week",
+      "capacityFrom: 2026-10-10 0h/week"
+    );
+    const { dates, get } = run(
+      [
+        "- [ ] other work @est:16h @owner:ann @due:2026-10-09 ^T1",
+        "- [ ] spec @est:8h @owner:ann ^T2",
+        "- [ ] implement @est:24h @owner:bob @dep:T2 ^T3",
+      ],
+      {},
+      { "team.md": team }
+    );
+    expect(dates("T2")).toEqual(["2026-10-05", "2026-10-05"]);
+    expect(dates("T3")).toEqual(["2026-10-06", "2026-10-08"]);
+    expect(get("T3").unscheduled).toBeUndefined();
+    expect(dates("T1")).toEqual(["2026-10-06", "2026-10-07"]);
+  });
+
+  it("keeps a started task going instead of switching between equal tasks", () => {
+    const { dates } = run([
+      "- [ ] first @est:16h @owner:ann @due:2026-10-16 ^T1",
+      "- [ ] second @est:16h @owner:ann @due:2026-10-16 ^T2",
+    ]);
+    expect(dates("T1")).toEqual(["2026-10-05", "2026-10-06"]);
+    expect(dates("T2")).toEqual(["2026-10-07", "2026-10-08"]);
   });
 
   it("leaves cycles (and their dependents) unscheduled", () => {

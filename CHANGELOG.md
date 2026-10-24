@@ -32,6 +32,12 @@ Safer editing, from the pilot users' feedback.
   task with its notes and subtasks (`planner.editor.moveTasksAsBlocks`).
 - A move that would make the plan invalid (a dependency loop, a task depending on its new parent)
   asks first.
+- The schedule does the work that others wait for first. Each person takes the task with the
+  latest possible start that is soonest, counted back from its deadline, from the tasks that wait
+  for it, and from its owner's last working day (`capacityFrom: … 0h`). Before, a short review that
+  a colleague waited for could be left to the end because it had no deadline of its own. A task in
+  progress keeps its place, so people no longer switch between tasks of the same urgency and the
+  Gantt bars are shorter.
 - Late tasks say what holds them back, following the dependencies to the cause: "Held back by the
   fixed start 2027-10-19 of T461 (via M1)" or "… by Sam having other work first", in the warning,
   the Gantt tooltip and the hovers.

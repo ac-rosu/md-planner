@@ -444,7 +444,7 @@ describe("create and edit from the user interface", () => {
     // The tasks that use Sam's overtime say so in their CodeLens.
     const m2 = await lensTitles("milestones/M2-backend.md");
     assert.ok(
-      m2.some((l) => l.title.endsWith("· 4.8 h overtime")),
+      m2.some((l) => l.title.endsWith("· 1.6 h overtime")),
       m2.map((l) => l.title).join("\n")
     );
     // CodeLens in team.md and the person's hover description.

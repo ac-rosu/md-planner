@@ -78,11 +78,17 @@ Each day, for each person:
 2. It orders them:
    1. tasks with a fixed `@start` first,
    2. then by priority: `@prio:high`, `med` (default), `low`,
-   3. then by least slack against their deadline (`@due`, an inherited `@due`, or the milestone
-      target), so the tightest deadline goes first,
+   3. then by the latest day the task can start without making anything late, so the tightest
+      task goes first. That day counts back from the task's own deadline (`@due`, an inherited
+      `@due`, or the milestone target), from its owner's last working day (when `capacityFrom`
+      drops to 0h), and from every task that waits for it. A short review that someone else waits
+      for therefore comes before a long task that only has its own deadline.
    4. then in file order (milestones by id, then line by line).
 3. It gives the person's free hours of that day to the tasks in that order. A task can take several
    days and can share a day with other tasks. It finishes on the day its remaining hours reach zero.
+   A task in progress keeps its place in the order, so a person finishes one task before the next
+   one of the same urgency instead of switching between them; only a more urgent task that becomes
+   ready can take over.
 
 A task that never gets capacity within ten years (for example an owner whose capacity drops to zero
 with `capacityFrom`) is reported as **unschedulable**, with whose hours end and when. The tasks that

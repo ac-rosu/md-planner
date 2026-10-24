@@ -98,7 +98,7 @@ describe("HTML status report", () => {
   it("marks planned overtime in the team load and the key figures", () => {
     expect(html).toContain("<small>+8 OT</small>");
     expect(html).toContain(
-      "<b>Planned overtime:</b> Sam 11 h (W45, W46: T114, T206, T105) · Maria 4 h (W48: T303)"
+      "<b>Planned overtime:</b> Sam 10 h (W45, W46: T206, T114, T122, T105) · Maria 4 h (W48: T303)"
     );
     expect(html).toContain("<span>planned overtime</span>");
   });
