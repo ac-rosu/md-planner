@@ -40,7 +40,11 @@ export interface ScheduleOptions extends Partial<CalendarOptions> {
   horizonDays?: number;
 }
 
-export type UnscheduledReason = "cycle" | "blocked-by-cycle" | "horizon";
+/**
+ * Why a task has no dates: a dependency cycle, waiting on one, no capacity for it (`horizon`), or
+ * waiting for a task that itself cannot be scheduled.
+ */
+export type UnscheduledReason = "cycle" | "blocked-by-cycle" | "horizon" | "waits-for-unscheduled";
 
 export interface TaskSchedule {
   task: Task;
@@ -433,7 +437,9 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
       }
     }
   }
-  for (const t of pending) tasks.get(t)!.unscheduled = "horizon";
+  // A task that was never released waited for work that never finished; the others found no capacity.
+  for (const t of pending)
+    tasks.get(t)!.unscheduled = released.has(t) ? "horizon" : "waits-for-unscheduled";
 
   // Tasks under way show their real start (a to-do task's leftover @started is ignored).
   for (const ts of tasks.values()) {

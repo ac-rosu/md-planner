@@ -628,7 +628,7 @@ export function createServer(tools: PlannerTools): McpServer {
   );
   tool(
     "validate_plan",
-    "All diagnostics: invalid values, unknown owners and dependencies, cycles, late and overbooked tasks.",
+    "All diagnostics: invalid values, unknown owners and dependencies, cycles, late tasks, overbooked people.",
     {},
     () => tools.validatePlan(),
     true

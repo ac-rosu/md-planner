@@ -89,3 +89,65 @@ export function describeLateCause(plan: Plan, task: Task, cause: LateCause): str
   const shown = cause.via.slice(0, 3).join(" → ") + (cause.via.length > 3 ? " → …" : "");
   return `Held back by ${root}${cause.via.length ? ` (via ${shown})` : ""}.`;
 }
+
+/**
+ * Why a task has no dates, in words: "JSO has no working hours from 2026-12-24 on (capacityFrom:
+ * 2026-12-24 0h/week)", or for the tasks behind it "it waits for T422, which cannot be scheduled
+ * because JSO has …". Undefined when the task is scheduled.
+ */
+export function unscheduledCause(plan: Plan, schedule: Schedule, task: Task): string | undefined {
+  const ts = schedule.tasks.get(task);
+  switch (ts?.unscheduled) {
+    case undefined:
+      return undefined;
+    case "cycle":
+      return "it is part of a circular dependency";
+    case "blocked-by-cycle":
+      return "it depends on tasks in a circular dependency";
+    case "horizon":
+      return noCapacity(plan, schedule, task);
+    case "waits-for-unscheduled": {
+      const root = unscheduledRoot(schedule, task);
+      if (!root) return "it waits for a task that cannot be scheduled";
+      const why = unscheduledCause(plan, schedule, root);
+      return `it waits for ${root.id ?? `"${root.title}"`}, which cannot be scheduled${why ? ` because ${why}` : ""}`;
+    }
+  }
+}
+
+/** The first task this one (transitively) waits for that cannot be scheduled by itself. */
+function unscheduledRoot(schedule: Schedule, task: Task): Task | undefined {
+  const seen = new Set<Task>([task]);
+  const queue = [task];
+  while (queue.length) {
+    const t = queue.shift()!;
+    for (const r of schedule.graph.requirements.get(t) ?? []) {
+      for (const m of r.node.kind === "leaf" ? [r.node.task] : r.node.members) {
+        if (seen.has(m)) continue;
+        seen.add(m);
+        const reason = schedule.tasks.get(m)?.unscheduled;
+        if (reason === "horizon" || reason === "cycle") return m;
+        if (reason) queue.push(m);
+      }
+    }
+  }
+  return undefined;
+}
+
+/** "JSO has no working hours from 2026-12-24 on (capacityFrom: 2026-12-24 0h/week)". */
+function noCapacity(plan: Plan, schedule: Schedule, task: Task): string {
+  const ts = schedule.tasks.get(task)!;
+  const resource = ts.resource;
+  if (resource === "unassigned") return "the unassigned pool has no capacity for it";
+  const person = plan.personById(resource);
+  const who = person?.name ?? resource;
+  const from = ts.earliest ?? schedule.start;
+  for (let d = from; d < from + 3650; d++)
+    if (schedule.calendar.capacity(resource, d) > 0) return `${who} has no capacity for it`;
+  // No hours at all from the day it could start: say since when, and why if a capacity change did it.
+  const change = person?.capacityChanges
+    .filter((c) => c.hours === 0 && c.from <= from)
+    .sort((a, b) => b.from - a.from)[0];
+  const since = formatDate(change?.from ?? from);
+  return `${who} has no working hours from ${since} on${change ? ` (capacityFrom: ${since} 0h/${change.per})` : ""}`;
+}

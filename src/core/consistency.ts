@@ -37,7 +37,31 @@ export function consistencyIssues(plan: Plan): Issue[] {
   }
   milestoneTargets(plan, issues);
   milestonesStartedEarly(plan, issues);
+  teamDates(plan, issues);
   return issues;
+}
+
+/** Dates in team.md (capacity changes, time off, overtime, extra days) after the project end. */
+function teamDates(plan: Plan, issues: Issue[]): void {
+  const end = plan.project.end;
+  if (!end) return;
+  const keys = new Set(["capacityfrom", "off", "overtime", "workday"]);
+  for (const p of plan.people) {
+    for (const e of p.props.entries) {
+      if (!keys.has(e.key.toLowerCase())) continue;
+      const date = /\d{4}-\d{2}-\d{2}/.exec(e.value)?.[0];
+      if (!date || date <= end) continue;
+      const suggestion = suggestYear(plan, date);
+      issues.push({
+        file: p.file,
+        range: e.valueRange,
+        severity: "warning",
+        code: "date-outside-project",
+        message: `${e.key}: ${date} is after the project end ${end}, so it changes nothing. Is the year right?`,
+        data: { date, ...(suggestion ? { suggestion } : {}) },
+      });
+    }
+  }
 }
 
 /** Work under way in a milestone while a milestone it depends on is not finished. */

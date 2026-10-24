@@ -101,7 +101,7 @@ Type: number · default: `40` · minimum: 0
 
 ### `planner.diagnostics.overbooked`
 
-Show an info diagnostic on tasks in weeks where their owner's demand (ASAP, ignoring capacity) exceeds capacity.
+Show an info diagnostic on each person in `team.md` whose demand (every task as early as possible, ignoring capacity) exceeds their capacity in some weeks, listing those weeks.
 
 Type: boolean · default: `true`
 

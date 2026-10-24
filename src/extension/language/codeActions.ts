@@ -55,6 +55,22 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
           );
         continue;
       }
+      if (file.kind === "team" && diagnostic.code === "date-outside-project") {
+        // A date in a team.md property: the same day a year earlier or later, when that fits.
+        const text = document.lineAt(lineNo).text;
+        const date = /\d{4}-\d{2}-\d{2}/.exec(document.getText(diagnostic.range))?.[0];
+        const suggestion = date ? suggestYear(plan, date) : undefined;
+        const at = date ? text.indexOf(date, diagnostic.range.start.character) : -1;
+        const edit =
+          date && suggestion && at >= 0
+            ? minimalLineEdit(lineNo, text, text.slice(0, at) + suggestion + text.slice(at + 10))
+            : undefined;
+        if (edit)
+          actions.push(
+            this.fix(`Change ${date} to ${suggestion}`, document, [edit], diagnostic, true)
+          );
+        continue;
+      }
       const milestone = plan.milestones.find((m) => m.file === rel);
       if (milestone && diagnostic.code === "floating-milestone") {
         const prev = previousMilestone(plan, milestone);

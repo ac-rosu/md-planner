@@ -1673,7 +1673,7 @@
         "planner.diagnostics.overbooked": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Show an info diagnostic on tasks in weeks where their owner's demand (ASAP, ignoring capacity) exceeds capacity."
+          "markdownDescription": "Show an info diagnostic on each person in `team.md` whose demand (every task as early as possible, ignoring capacity) exceeds their capacity in some weeks, listing those weeks."
         },
         "planner.kanban.wipLimits": {
           "type": "object",

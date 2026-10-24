@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { impliedDeps } from "../../../src/core/consistency";
-import { describeLateCause, lateCause } from "../../../src/core/lateCause";
+import { describeLateCause, lateCause, unscheduledCause } from "../../../src/core/lateCause";
+import { overbookedDiagnostics, scheduleDiagnostics } from "../../../src/core/scheduleDiagnostics";
 import { newErrors, planErrors } from "../../../src/core/newErrors";
 import { schedulePlan } from "../../../src/core/scheduler";
 import { validatePlan } from "../../../src/core/validate";
@@ -119,5 +120,72 @@ describe("new errors", () => {
     expect(newErrors(planErrors(before), planErrors(cyclic))).toEqual([
       "Circular dependency: T2 → T3.",
     ]);
+  });
+});
+
+describe("tasks that cannot be scheduled", () => {
+  it("names who has no hours and since when, and points the tasks behind it to the cause", () => {
+    const p = planFrom({
+      "project.md": PROJECT,
+      "team.md": md(
+        "# Team",
+        "",
+        "## JSO",
+        "",
+        "id: jso",
+        "capacityFrom: 2026-12-24 0h/week",
+        "",
+        "## Sam",
+        "",
+        "capacity: 40h/week"
+      ),
+      "milestones/M1.md": md(
+        "# M1",
+        "",
+        "- [ ] Investigate @est:12w @owner:sam ^T1",
+        "- [ ] Interface @est:3d @owner:jso @dep:T1 ^T2"
+      ),
+      "milestones/M2.md": md("# M2", "", "depends: M1", "", "- [ ] Test @est:1d @owner:sam ^T3"),
+    });
+    const s = schedulePlan(p, { today: "2026-10-14" });
+    expect(s.tasks.get(p.taskById("T2")!)!.unscheduled).toBe("horizon");
+    expect(s.tasks.get(p.taskById("T3")!)!.unscheduled).toBe("waits-for-unscheduled");
+    expect(unscheduledCause(p, s, p.taskById("T2")!)).toBe(
+      "JSO has no working hours from 2026-12-24 on (capacityFrom: 2026-12-24 0h/week)"
+    );
+    expect(unscheduledCause(p, s, p.taskById("T3")!)).toBe(
+      "it waits for T2, which cannot be scheduled because JSO has no working hours from 2026-12-24 on (capacityFrom: 2026-12-24 0h/week)"
+    );
+    const codes = scheduleDiagnostics(p, s).map((i) => `${i.code}:${i.file}`);
+    expect(codes).toContain("unschedulable:milestones/M1.md");
+    expect(codes).toContain("blocked-by-unschedulable:milestones/M2.md");
+  });
+});
+
+describe("overbooked people", () => {
+  it("adds one note per person on their heading, listing the weeks", () => {
+    const p = plan(
+      md(
+        "# M1",
+        "",
+        "- [ ] A @est:5d @owner:sam ^T1",
+        "- [ ] B @est:5d @owner:sam ^T2",
+        "- [ ] C @est:1d @owner:alex ^T3"
+      )
+    );
+    const issues = overbookedDiagnostics(
+      p,
+      schedulePlan(p, { today: "2026-10-14", mode: "demand" })
+    );
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({
+      file: "team.md",
+      range: { start: { line: 2 } },
+      severity: "info",
+      data: { person: "sam" },
+    });
+    expect(issues[0].message).toMatch(
+      /^Sam has more work ready than capacity if everything started as early as possible: 2026-W42 \(\d+h for \d+h\)/
+    );
   });
 });

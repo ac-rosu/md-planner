@@ -2,7 +2,7 @@
 // recomputed once per change and shared by every view.
 import * as vscode from "vscode";
 import { formatDate, parseDate } from "../core/dates";
-import { describeLateCause, lateCause } from "../core/lateCause";
+import { describeLateCause, lateCause, unscheduledCause } from "../core/lateCause";
 import { describeOvertime, formatLoad, loadLevel, taskOvertime, weekLoadAt } from "../core/load";
 import { type Issue, isOpen, type Task } from "../core/model";
 import { type Plan } from "../core/resolve";
@@ -178,7 +178,10 @@ export class PlannerState implements vscode.Disposable {
     const s = this.schedule;
     const ts = s.tasks.get(t);
     if (ts) {
-      if (ts.unscheduled) return [`Not scheduled: ${unscheduledText(ts.unscheduled)}`];
+      if (ts.unscheduled)
+        return [
+          `Not scheduled: ${unscheduledCause(this.plan, s, t) ?? unscheduledText(ts.unscheduled)}`,
+        ];
       if (ts.done || ts.start === undefined || ts.finish === undefined) return [];
       const lines = [`Scheduled: ${formatDate(ts.start)} → ${formatDate(ts.finish)}`];
       if (ts.slack !== undefined)

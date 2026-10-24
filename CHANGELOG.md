@@ -45,6 +45,10 @@ Safer editing, from the pilot users' feedback.
   work), starting work while a milestone it depends on is not finished asks first
   (`planner.confirmEarlyStart`), and the editor points out work started early and milestones that
   nothing ties to the one before.
+- Overload is reported once per person, on their heading in `team.md`, with the weeks, instead
+  of a note on every task. Tasks that cannot be scheduled say whose working hours end and when,
+  and the tasks waiting for them name that task instead of blaming their own owner. Dates in
+  `team.md` after the project end are flagged, with a quick fix for the year.
 - The Gantt shows tasks in the order they start, as a cascade (**Order: Schedule**, the default;
   **Files** keeps the order of the plan files, which are never reordered).
 

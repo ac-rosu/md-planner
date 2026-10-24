@@ -68,13 +68,22 @@ describe("team load, dashboard, baselines and time tracking", () => {
     await panel.receive({ type: "mode", mode: "capacity" });
   });
 
-  it("reports overbooked tasks as info diagnostics", async () => {
+  it("reports overbooked people once, on their heading in team.md", async () => {
     const diags = await waitFor(() => {
-      const d = vscode.languages.getDiagnostics(planUri(M2)).filter((x) => x.code === "overbooked");
+      const d = vscode.languages
+        .getDiagnostics(planUri("team.md"))
+        .filter((x) => x.code === "overbooked");
       return d.length ? d : undefined;
     }, "overbooked diagnostics");
-    assert.ok(diags.some((d) => /Sam is overbooked in 2026-W43/.test(d.message)));
-    assert.equal(diags[0].severity, vscode.DiagnosticSeverity.Information);
+    const sam = diags.filter((d) => d.message.startsWith("Sam "));
+    assert.equal(sam.length, 1);
+    assert.match(
+      sam[0].message,
+      /^Sam has more work ready than capacity if everything started as early as possible: 2026-W\d\d \(\d+h for 40h\), .* Team load → Demand shows these weeks\.$/
+    );
+    assert.equal(sam[0].severity, vscode.DiagnosticSeverity.Information);
+    // Tasks no longer carry the note.
+    assert.ok(!vscode.languages.getDiagnostics(planUri(M2)).some((x) => x.code === "overbooked"));
   });
 
   it("times a task: start moves it to doing, stop adds rounded time to @act", async () => {

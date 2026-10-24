@@ -189,6 +189,30 @@ describe("dates", () => {
     expect(due.data).toEqual({ key: "due", target: "2027-01-15" });
   });
 
+  it("flags team.md dates after the project end, with the year that fits", () => {
+    const list = validatePlan(
+      planFrom({
+        "project.md": PROJECT,
+        "team.md": md(
+          "# Team",
+          "",
+          "## JSO",
+          "",
+          "capacityFrom: 2027-12-24 0h/week",
+          "off: 2026-12-21..2026-12-31",
+          "workday: 2028-02-06"
+        ),
+      })
+    ).filter((i) => i.code === "date-outside-project");
+    expect(list.map((i) => [i.range.start.line, i.data])).toEqual([
+      [4, { date: "2027-12-24", suggestion: "2026-12-24" }],
+      [6, { date: "2028-02-06", suggestion: "2027-02-06" }],
+    ]);
+    expect(list[0].message).toBe(
+      "capacityFrom: 2027-12-24 is after the project end 2027-03-31, so it changes nothing. Is the year right?"
+    );
+  });
+
   it("flags a milestone target after the project end", () => {
     expect(codes(md("# M1", "", "target: 2027-09-01", "", "- [ ] a @est:1h ^T1"))).toEqual([
       "warning:date-outside-project:2",

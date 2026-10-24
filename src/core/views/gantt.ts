@@ -1,6 +1,6 @@
 // Gantt view model: rows (groups, parents, tasks, milestones), bars, dependency links and calendar
 // data. Built from the plan and schedule; rendered by the Gantt webview and the HTML export.
-import { describeLateCause, lateCause } from "../lateCause";
+import { describeLateCause, lateCause, unscheduledCause } from "../lateCause";
 import { UNASSIGNED } from "../calendar";
 import { type DayNumber, isoWeekday, parseDate } from "../dates";
 import { formatHours } from "../duration";
@@ -162,7 +162,10 @@ export function buildGanttModel(plan: Plan, schedule: Schedule, options: GanttOp
     }
     if (t.start)
       tooltip.push(`Fixed start: not before ${t.start} · right-click → Remove fixed start`);
-    if (ts?.unscheduled) tooltip.push(`Not scheduled: ${unscheduledText(ts.unscheduled)}`);
+    if (ts?.unscheduled)
+      tooltip.push(
+        `Not scheduled: ${unscheduledCause(plan, schedule, t) ?? unscheduledText(ts.unscheduled)}`
+      );
     if (t.blocked) tooltip.push(`Blocked: ${t.blocked}`);
     let slip: number | undefined;
     if (b?.finish !== undefined && finish !== undefined) {
@@ -490,6 +493,8 @@ export function unscheduledText(reason: string): string {
       return "circular dependency";
     case "blocked-by-cycle":
       return "depends on a circular dependency";
+    case "waits-for-unscheduled":
+      return "waits for a task that cannot be scheduled";
     default:
       return "no capacity within the horizon";
   }

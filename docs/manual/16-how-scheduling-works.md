@@ -84,8 +84,9 @@ Each day, for each person:
 3. It gives the person's free hours of that day to the tasks in that order. A task can take several
    days and can share a day with other tasks. It finishes on the day its remaining hours reach zero.
 
-A task that never gets capacity within ten years (for example an owner with zero capacity) is
-reported as **unschedulable**.
+A task that never gets capacity within ten years (for example an owner whose capacity drops to zero
+with `capacityFrom`) is reported as **unschedulable**, with whose hours end and when. The tasks that
+wait for it are reported too, naming it, so you know which task to give to someone else.
 
 ## Analysis
 
@@ -97,7 +98,7 @@ reported as **unschedulable**.
   everything is ahead of plan.
 - **Late tasks**: tasks scheduled to finish after their `@due` or their milestone's target.
 - **Demand schedule**: the same plan scheduled as early as possible, ignoring capacity. It shows
-  raw overload in the team-load view and produces the `overbooked` messages.
+  raw overload in the team-load view and produces the `overbooked` messages (one per person).
 
 ## Steering the schedule
 
