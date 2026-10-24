@@ -208,6 +208,10 @@ describe("editor integration", () => {
       planUri(M2),
       diag.range
     );
+    assert.ok(
+      actions.some((a) => a.title === "Make the next task (T112) a subtask of this one"),
+      actions.map((a) => a.title).join("\n")
+    );
     const add = actions.find((a) => a.title === "Add estimate @est:4h")!;
     await vscode.workspace.applyEdit(add.edit!);
     assert.equal(editor.document.lineAt(pos.line).text, "- [ ] Unestimated new task @est:4h");

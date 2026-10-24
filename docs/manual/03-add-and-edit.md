@@ -176,6 +176,9 @@ are. Notes and free text are edited in the file: **More → Open in editor**.
 - **Drag a task in the Milestones view** onto a section or milestone to move it there, or onto a
   task: a list asks whether it goes before it, after it, or as its subtask, so nothing becomes a
   subtask by accident.
+- A move that would make the plan invalid asks first, for example a task that would depend on its
+  own new parent, or a dependency loop through the milestones' `depends:`. **Move anyway** still
+  moves it, and the problem is listed in the Problems panel.
 - **Delete task…** asks first and tells you what else changes:
 
   ![The delete confirmation](images/delete-confirm.png)

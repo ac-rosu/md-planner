@@ -61,6 +61,7 @@ import {
 import { pickMilestoneLocation, type PlanIntoTarget } from "./inbox";
 import { resolveTask, stringArg, type TaskArg, valuesArg } from "./args";
 import { statusEffects } from "./status";
+import { confirmNoNewErrors } from "../guard";
 
 /** Where a new task goes, from a tree node, a Kanban column, a Gantt row or the editor. */
 export interface AddTaskTarget {
@@ -806,7 +807,9 @@ export async function moveTaskCommand(
   const location: InsertLocation = chosen.section
     ? { kind: "section", title: chosen.section }
     : { kind: "root" };
-  const ok = await service.apply(moveTask(source, t, dest, location), { source: "view" });
+  const edits = moveTask(source, t, dest, location);
+  if (!(await confirmNoNewErrors(service, edits, `Moving ${t.id ?? t.title}`))) return undefined;
+  const ok = await service.apply(edits, { source: "view" });
   if (!ok) return undefined;
   service.fireNow();
   message(`Moved ${t.id ?? t.title} to ${locationLabel(m, chosen.section)}`);

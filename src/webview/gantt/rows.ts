@@ -2,6 +2,7 @@
 // working days. Pure functions, unit-tested.
 import { isoWeekday } from "../../core/dates";
 import { type GanttModel, type GanttRow } from "../../core/views/gantt";
+import { dayToX, type Scale } from "./scale";
 
 /** Rows not hidden by a collapsed ancestor. */
 export function visibleRows(rows: GanttRow[], collapsed: Set<string>): GanttRow[] {
@@ -57,6 +58,39 @@ export function vscodeContext(row: GanttRow): string {
         : undefined;
   return JSON.stringify({
     ...(section ? { webviewSection: section, key: row.task ?? row.key } : {}),
+    ...(row.task && row.fixedStart !== undefined ? { pinned: true } : {}),
     preventDefaultContextMenuItems: true,
   });
+}
+
+/** Slack around a bar for dropping a link on it. */
+const LINK_SLACK = 6;
+
+/**
+ * The bar a link drag from `from` ends on at (x, y): another task or parent bar under the pointer,
+ * or right next to it. Releasing anywhere else in a row adds no dependency.
+ */
+export function linkTargetAt(
+  rows: GanttRow[],
+  scale: Scale,
+  from: string,
+  x: number,
+  y: number,
+  rowHeight: number
+): GanttRow | undefined {
+  const target = rows[Math.floor(y / rowHeight)];
+  if (!target || target.key === from || !target.task) return undefined;
+  if (target.kind !== "task" && target.kind !== "parent") return undefined;
+  if (target.start === undefined || target.finish === undefined) return undefined;
+  const left = dayToX(scale, target.start) - LINK_SLACK;
+  const right = dayToX(scale, target.finish + 1) + LINK_SLACK;
+  return x >= left && x <= right ? target : undefined;
+}
+
+/**
+ * Width of the resize handle at the end of a bar `width` pixels wide: at most a third of the bar,
+ * none on bars under 12 px (they can only be moved, so a drag never changes an estimate by accident).
+ */
+export function resizeHandleWidth(width: number): number {
+  return width < 12 ? 0 : Math.min(8, Math.floor(width / 3));
 }

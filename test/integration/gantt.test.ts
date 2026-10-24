@@ -49,6 +49,8 @@ describe("scheduler integration and Gantt", () => {
       return d.find((x) => x.code === "late-task");
     }, "late diagnostic");
     assert.match(diags.message, /after the M5 target 2027-03-26/);
+    // The warning names what holds the task back.
+    assert.match(diags.message, /Held back by /);
   });
 
   it("shows scheduled dates and slack in CodeLens and load in the team view", async () => {
@@ -84,6 +86,15 @@ describe("scheduler integration and Gantt", () => {
     assert.equal(line(M2, "T104"), "  - [ ] Order events schema @est:6h @start:2026-11-09 ^T104");
     await waitFor(() => api.state.plan.taskById("T104")?.start === "2026-11-09", "index");
     await waitFor(() => api.state.schedule.byKey.get("T104")?.start === 20766, "rescheduled");
+  });
+
+  it("removes a fixed start from a pinned bar", async () => {
+    const api = await getApi();
+    await openGantt();
+    assert.match(line(M2, "T105"), /@start:2026-11-10/);
+    await vscode.commands.executeCommand("planner.removeFixedStart", { key: "T105" });
+    assert.doesNotMatch(line(M2, "T105"), /@start/);
+    await waitFor(() => api.state.plan.taskById("T105")?.start === undefined, "index");
   });
 
   it("resizes a bar by writing @est as the remaining hours", async () => {

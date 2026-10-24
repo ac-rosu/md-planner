@@ -67,6 +67,7 @@ export const COMMAND_COVERAGE: Record<string, Coverage> = {
   "planner.addSubtask": { tools: ["create_tasks"] },
   "planner.editTask": { tools: ["update_task"] },
   "planner.moveTask": { tools: ["move_task"] },
+  "planner.removeFixedStart": { tools: ["update_task"] },
   "planner.moveTaskUp": { tools: ["move_task"] },
   "planner.moveTaskDown": { tools: ["move_task"] },
   "planner.indentTask": { tools: ["move_task"] },

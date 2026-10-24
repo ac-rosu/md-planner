@@ -3,7 +3,7 @@
 import * as vscode from "vscode";
 import { type Task } from "../../core/model";
 import { type TextEdit } from "../../core/text";
-import { suggestYear } from "../../core/consistency";
+import { impliedDeps, suggestYear } from "../../core/consistency";
 import { nearMissCheckbox } from "../../core/parser/taskLine";
 import { formatHours } from "../../core/duration";
 import { budgetSplit, openSubtasks } from "../../core/rollup";
@@ -18,6 +18,7 @@ import {
   setStatus,
 } from "../../core/writer";
 import { newTaskFrom } from "../../core/writer/entities";
+import { siblingsOf } from "../../core/writer/structure";
 import { itemAtLine } from "../commands/args";
 import { rollUpParents } from "../commands/status";
 import { type PlanService } from "../planService";
@@ -92,6 +93,20 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
           actions.push(
             this.command("Add estimate…", "planner.addEstimate", [taskArg(task)], diagnostic)
           );
+          {
+            // A task without an estimate is often a group whose tasks were not indented under it.
+            const siblings = siblingsOf(file, task);
+            const next = siblings[siblings.indexOf(task) + 1];
+            if (next && task.children.length === 0)
+              actions.push(
+                this.command(
+                  `Make the next task (${next.id ?? next.title}) a subtask of this one`,
+                  "planner.indentTask",
+                  [taskArg(next)],
+                  diagnostic
+                )
+              );
+          }
           break;
         case "missing-id": {
           actions.push(
@@ -144,6 +159,20 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
         case "family-dep":
           removeDep();
           break;
+        case "implied-dep": {
+          const implied = new Set(impliedDeps(plan, task).map((x) => x.id));
+          const kept = task.deps.filter((d) => !implied.has(d.id)).map((d) => d.raw);
+          actions.push(
+            this.fix(
+              `Remove the implied dependenc${implied.size === 1 ? "y" : "ies"} (${[...implied].join(", ")})`,
+              document,
+              setAttr(file.lines, task, "dep", kept.length ? kept.join(",") : undefined),
+              diagnostic,
+              true
+            )
+          );
+          break;
+        }
         case "stale-started":
           remove("started", true);
           break;

@@ -326,6 +326,12 @@
         "icon": "$(watch)"
       },
       {
+        "command": "planner.removeFixedStart",
+        "title": "Remove fixed start",
+        "category": "Planner",
+        "icon": "$(debug-start)"
+      },
+      {
         "command": "planner.assignIds",
         "title": "Assign IDs",
         "category": "Planner",
@@ -1400,6 +1406,10 @@
         {
           "command": "planner.outdentTask",
           "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.removeFixedStart",
+          "when": "planner.isPlanFile"
         }
       ],
       "editor/title": [
@@ -1473,6 +1483,11 @@
           "submenu": "planner.aiMenu",
           "when": "planner.aiEnabled && (webviewId == 'planner.kanban' || webviewId == 'planner.gantt') && webviewSection == 'task'",
           "group": "3_ai@1"
+        },
+        {
+          "command": "planner.removeFixedStart",
+          "when": "webviewId == 'planner.gantt' && webviewSection == 'task' && pinned",
+          "group": "1_schedule@1"
         },
         {
           "command": "planner.moveTask",

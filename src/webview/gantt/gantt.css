@@ -346,6 +346,24 @@
   fill: var(--vscode-focusBorder);
 }
 
+.chart .link-ghost:not(.valid) {
+  opacity: 0.6;
+}
+
+/* The bar a link drag would connect to. */
+.chart .link-target {
+  fill: none;
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+/* Fixed start (@start): a pin on the day the task may start at the earliest. */
+.chart .pin {
+  fill: var(--vscode-editor-foreground);
+  pointer-events: none;
+}
+
 .chart.dragging.move .bar {
   cursor: grabbing;
 }

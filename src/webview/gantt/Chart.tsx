@@ -6,12 +6,14 @@ import { isoWeekday } from "../../core/dates";
 import { type GanttLink, type GanttModel, type GanttRow } from "../../core/views/gantt";
 import { type GanttViewOptions } from "../shared/protocol";
 import { type Tooltip } from "../shared/ui";
-import { rowColor, vscodeContext } from "./rows";
+import { linkTargetAt, resizeHandleWidth, rowColor, vscodeContext } from "./rows";
 import { dayToX, gridLines, type Scale } from "./scale";
 
 export const ROW_H = 26;
 const BAR_H = 14;
 const BAR_Y = (ROW_H - BAR_H) / 2;
+/** Pixels the pointer must travel before a press becomes a drag (a click may wobble). */
+const DRAG_THRESHOLD = 6;
 
 export type DragResult =
   | { kind: "move"; key: string; start: number }
@@ -55,6 +57,8 @@ export function Chart(props: ChartProps) {
     [model, rows, scale, options, rowIndex, height, props.selectedLink]
   );
 
+  const linkTarget = (d: Drag) => linkTargetAt(rows, scale, d.key, d.x, d.y, ROW_H);
+
   const local = (e: PointerEvent | MouseEvent) => {
     const rect = svg.current!.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -92,7 +96,9 @@ export function Chart(props: ChartProps) {
     if (!drag) return;
     const p = local(e);
     const moved =
-      drag.moved || Math.abs(p.x - drag.originX) > 3 || Math.abs(p.y - drag.originY) > 3;
+      drag.moved ||
+      Math.abs(p.x - drag.originX) > DRAG_THRESHOLD ||
+      Math.abs(p.y - drag.originY) > DRAG_THRESHOLD;
     setDrag({ ...drag, x: p.x, y: p.y, moved });
   };
 
@@ -112,15 +118,9 @@ export function Chart(props: ChartProps) {
       const finish = Math.max(d.row.start ?? d.row.finish, d.row.finish + days);
       props.onDrag({ kind: "resize", key: d.key, finish });
     } else if (d.kind === "link") {
-      const target = rows[Math.floor(d.y / ROW_H)];
-      if (
-        target &&
-        target.key !== d.key &&
-        (target.kind === "task" || target.kind === "parent") &&
-        target.task
-      ) {
-        props.onDrag({ kind: "link", from: d.key, to: target.key });
-      }
+      // Only a drop on a bar links: releasing anywhere else in a row does nothing.
+      const target = linkTarget(d);
+      if (target) props.onDrag({ kind: "link", from: d.key, to: target.key });
     }
   };
 
@@ -165,7 +165,14 @@ export function Chart(props: ChartProps) {
           height={ROW_H}
         />
       )}
-      {drag && drag.moved && <DragOverlay drag={drag} scale={scale} rowIndex={rowIndex} />}
+      {drag && drag.moved && (
+        <DragOverlay
+          drag={drag}
+          scale={scale}
+          rowIndex={rowIndex}
+          target={drag.kind === "link" ? linkTarget(drag) : undefined}
+        />
+      )}
     </svg>
   );
 }
@@ -174,19 +181,46 @@ function DragOverlay({
   drag,
   scale,
   rowIndex,
+  target,
 }: {
   drag: Drag;
   scale: Scale;
   rowIndex: Map<string, number>;
+  /** Link drags: the bar under the pointer that would get the dependency. */
+  target?: GanttRow;
 }) {
   const row = drag.row;
   const y = (rowIndex.get(drag.key) ?? 0) * ROW_H;
   if (drag.kind === "link") {
     const x1 = dayToX(scale, (row.finish ?? row.start ?? 0) + 1);
+    const name = (r: GanttRow) =>
+      r.id ?? (r.title.length > 30 ? `${r.title.slice(0, 29)}…` : r.title);
+    const ty = target ? (rowIndex.get(target.key) ?? 0) * ROW_H : 0;
+    const tx = target ? dayToX(scale, target.start!) : 0;
+    const tw = target ? dayToX(scale, target.finish! + 1) - tx : 0;
     return (
       <g class="drag-overlay">
-        <line class="link-ghost" x1={x1} y1={y + ROW_H / 2} x2={drag.x} y2={drag.y} />
+        {target && (
+          <rect
+            class="link-target"
+            x={tx - 3}
+            y={ty + 2}
+            width={tw + 6}
+            height={ROW_H - 4}
+            rx={4}
+          />
+        )}
+        <line
+          class={`link-ghost${target ? " valid" : ""}`}
+          x1={x1}
+          y1={y + ROW_H / 2}
+          x2={drag.x}
+          y2={drag.y}
+        />
         <circle class="link-ghost-end" cx={drag.x} cy={drag.y} r={4} />
+        <text class="ghost-label" x={drag.x + 10} y={drag.y - 8}>
+          {target ? `${name(target)} waits for ${name(row)}` : "Drop on a bar to add a dependency"}
+        </text>
       </g>
     );
   }
@@ -366,9 +400,20 @@ function renderRow(
       }
       parts.push(...overtimeMarks(r, scale, y + BAR_Y - 4));
       if (r.editable) {
-        parts.push(
-          <rect class="resize-handle" x={x + w - 5} y={y + BAR_Y} width={8} height={BAR_H} />
-        );
+        // The resize handle covers at most a third of the bar, and very short bars have none, so a
+        // drag meant to move a short bar does not change its estimate.
+        const hw = resizeHandleWidth(w);
+        if (hw > 0) {
+          parts.push(
+            <rect
+              class="resize-handle"
+              x={x + w - hw}
+              y={y + BAR_Y}
+              width={hw + 3}
+              height={BAR_H}
+            />
+          );
+        }
         parts.push(<circle class="link-handle" cx={x + w + 8} cy={y + ROW_H / 2} r={4} />);
       }
       if (scale.px * (r.finish! - r.start! + 1) > 60 && r.ownerInitials) {
@@ -426,6 +471,12 @@ function renderRow(
         />
       );
     parts.push(...overtimeMarks(r, scale, y + ROW_H / 2 - 8));
+  }
+
+  // A pin on the fixed start (`@start`): the scheduler never places the task earlier.
+  if (r.task && r.fixedStart !== undefined && hasBar) {
+    const px = dayToX(scale, r.fixedStart);
+    parts.push(<path class="pin" d={`M${px - 4},${y} h8 l-4,5 z`} />);
   }
 
   if (r.kind === "milestone") {

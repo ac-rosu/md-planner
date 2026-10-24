@@ -2,6 +2,7 @@
 // recomputed once per change and shared by every view.
 import * as vscode from "vscode";
 import { formatDate, parseDate } from "../core/dates";
+import { describeLateCause, lateCause } from "../core/lateCause";
 import { describeOvertime, formatLoad, loadLevel, taskOvertime, weekLoadAt } from "../core/load";
 import { type Issue, isOpen, type Task } from "../core/model";
 import { type Plan } from "../core/resolve";
@@ -184,8 +185,12 @@ export class PlannerState implements vscode.Disposable {
         lines.push(
           `Slack: ${ts.slack} working day${Math.abs(ts.slack) === 1 ? "" : "s"}${ts.critical ? " (critical path)" : ""}`
         );
-      if (ts.late && ts.deadline !== undefined)
+      if (ts.late && ts.deadline !== undefined) {
         lines.push(`Late: deadline ${formatDate(ts.deadline)}`);
+        const cause = lateCause(s, t);
+        if (cause) lines.push(describeLateCause(this.plan, t, cause));
+      }
+      if (t.start) lines.push(`Fixed start: not before ${t.start} (@start)`);
       const ot = taskOvertime(s).get(ts.key);
       if (ot) lines.push(describeOvertime(ot, formatDate));
       return lines;

@@ -167,6 +167,12 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
         "info",
         `${t.id ?? t.title} cannot start before its dependencies finish; @start is set to ${date}, the schedule keeps it later.`
       );
+    } else if (ok && !t.start) {
+      // Dragging pins the task; say so the first time, as it stays when the plan changes.
+      this.notice(
+        "info",
+        `${t.id ?? t.title} is pinned: it starts no earlier than ${date} (@start), even when its dependencies finish sooner. Right-click the bar → Remove fixed start to let the scheduler place it again.`
+      );
     }
     return ok;
   }

@@ -30,6 +30,17 @@ Safer editing, from the pilot users' feedback.
   Option+arrows in the Milestones view), drag and drop in the Milestones view (dropping onto a task
   asks: before, after or as a subtask), and Option+↑ / ↓ on a task line in a plan file moves the
   task with its notes and subtasks (`planner.editor.moveTasksAsBlocks`).
+- A move that would make the plan invalid (a dependency loop, a task depending on its new parent)
+  asks first.
+- Late tasks say what holds them back, following the dependencies to the cause: "Held back by the
+  fixed start 2027-10-19 of T461 (via M1)" or "… by Sam having other work first", in the warning,
+  the Gantt tooltip and the hovers.
+- Gantt: a click with a slight wobble no longer moves a bar, short bars can no longer be resized by
+  accident, and a link is only made when you drop on a bar (outlined, with a "T202 waits for T201"
+  label while you drag). Bars with a fixed start show a pin, with **Remove fixed start** in their
+  context menu.
+- A hint points out dependencies that another dependency in the list already covers, with a quick
+  fix to remove them; a task without an estimate offers to make the next task its subtask.
 
 ## 1.0.0
 

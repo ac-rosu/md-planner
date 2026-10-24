@@ -30,6 +30,7 @@ export function consistencyIssues(plan: Plan): Issue[] {
     if (!isOpen(t.status) || isEffectivelyDone(t) || isEffectivelyCancelled(t)) continue;
     dates(plan, t, issues);
     cancelledDeps(plan, t, issues);
+    implied(plan, t, issues);
     parentEstimate(t, issues);
   }
   milestoneTargets(plan, issues);
@@ -158,6 +159,64 @@ function cancelledDeps(plan: Plan, t: Task, issues: Issue[]): void {
       data: { depId: d.id },
     });
   }
+}
+
+/**
+ * Dependencies another dependency in the same list already implies: a subtask of a listed task, or
+ * a task another listed task waits for. Dependencies with a lag are kept (the lag says something
+ * the other one does not), and so are dependencies a milestone's `depends:` covers: they document
+ * the order of the work and stay right if the milestones change.
+ */
+export function impliedDeps(plan: Plan, t: Task): Array<{ id: string; why: string }> {
+  const listed = t.deps.flatMap((d) => {
+    const task = plan.taskById(d.id);
+    return task ? [{ d, task }] : [];
+  });
+  const out: Array<{ id: string; why: string }> = [];
+  for (const { d, task: x } of listed) {
+    if (d.lagHours > 0 || x === t) continue;
+    const parent = listed.find((o) => o.task !== x && isAncestorOf(o.task, x));
+    if (parent) {
+      out.push({ id: d.id, why: `${parent.d.id} includes it` });
+      continue;
+    }
+    const via = listed.find(
+      (o) => o.task !== x && waitsFor(plan, o.task, x) && !waitsFor(plan, x, o.task)
+    );
+    if (via) out.push({ id: d.id, why: `${via.d.id} waits for it` });
+  }
+  return out;
+}
+
+function implied(plan: Plan, t: Task, issues: Issue[]): void {
+  const list = impliedDeps(plan, t);
+  if (list.length === 0) return;
+  const shown = list.slice(0, 6).map((x) => `${x.id} (${x.why})`);
+  issues.push(
+    attrIssue(
+      t,
+      "dep",
+      "hint",
+      "implied-dep",
+      `Already implied by the other dependencies: ${shown.join(", ")}${list.length > 6 ? ", …" : ""}.`,
+      { implied: list.map((x) => x.id).join(",") }
+    )
+  );
+}
+
+function isAncestorOf(a: Task, b: Task): boolean {
+  for (let p = b.parent; p; p = p.parent) if (p === a) return true;
+  return false;
+}
+
+/** True when `y` (or a parent of it) directly depends on `x` or on a parent of `x`. */
+function waitsFor(plan: Plan, y: Task, x: Task): boolean {
+  for (let a: Task | undefined = y; a; a = a.parent)
+    for (const d of a.deps) {
+      const target = plan.taskById(d.id);
+      if (target && (target === x || isAncestorOf(target, x))) return true;
+    }
+  return false;
 }
 
 /**

@@ -1,5 +1,6 @@
 // Gantt view model: rows (groups, parents, tasks, milestones), bars, dependency links and calendar
 // data. Built from the plan and schedule; rendered by the Gantt webview and the HTML export.
+import { describeLateCause, lateCause } from "../lateCause";
 import { UNASSIGNED } from "../calendar";
 import { type DayNumber, isoWeekday, parseDate } from "../dates";
 import { formatHours } from "../duration";
@@ -151,6 +152,12 @@ export function buildGanttModel(plan: Plan, schedule: Schedule, options: GanttOp
       );
     if (ts?.deadline !== undefined)
       tooltip.push(`Deadline ${isoOf(ts.deadline)}${ts.late ? " – late" : ""}`);
+    if (ts?.late) {
+      const cause = lateCause(schedule, t);
+      if (cause) tooltip.push(describeLateCause(plan, t, cause));
+    }
+    if (t.start)
+      tooltip.push(`Fixed start: not before ${t.start} · right-click → Remove fixed start`);
     if (ts?.unscheduled) tooltip.push(`Not scheduled: ${unscheduledText(ts.unscheduled)}`);
     if (t.blocked) tooltip.push(`Blocked: ${t.blocked}`);
     let slip: number | undefined;

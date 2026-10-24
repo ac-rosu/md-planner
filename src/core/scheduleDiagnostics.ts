@@ -1,6 +1,7 @@
 // Diagnostics that need a schedule: tasks finishing after their deadline, unschedulable tasks and
 // (with a demand schedule) overbooked people.
 import { formatDate } from "./dates";
+import { describeLateCause, lateCause } from "./lateCause";
 import { loadLevel, weeklyLoad } from "./load";
 import { type Issue } from "./model";
 import { type Plan } from "./resolve";
@@ -35,12 +36,13 @@ export function scheduleDiagnostics(plan: Plan, schedule: Schedule, demand?: Sch
     if (ts.late && ts.finish !== undefined && ts.deadline !== undefined) {
       const late = schedule.calendar.workingDaysBetween(ts.deadline, ts.finish);
       const what = t.due ? `@due ${t.due}` : deadlineSource(plan, t);
+      const cause = lateCause(schedule, t);
       issues.push({
         file: t.file,
         range: lineContentRange(plan, t),
         severity: "warning",
         code: "late-task",
-        message: `Scheduled to finish ${formatDate(ts.finish)}, after ${what} (${late} working day${late === 1 ? "" : "s"} late).`,
+        message: `Scheduled to finish ${formatDate(ts.finish)}, after ${what} (${late} working day${late === 1 ? "" : "s"} late).${cause ? ` ${describeLateCause(plan, t, cause)}` : ""}`,
       });
     }
   }

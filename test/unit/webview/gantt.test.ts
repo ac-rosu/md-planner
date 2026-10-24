@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { formatDate, isoWeekday, parseDate } from "../../../src/core/dates";
 import { schedulePlan } from "../../../src/core/scheduler";
 import { buildGanttModel } from "../../../src/core/views/gantt";
-import { stepWorkingDays, visibleRows } from "../../../src/webview/gantt/rows";
+import {
+  linkTargetAt,
+  resizeHandleWidth,
+  stepWorkingDays,
+  visibleRows,
+  vscodeContext,
+} from "../../../src/webview/gantt/rows";
 import {
   dayToX,
   fitPx,
@@ -140,5 +146,44 @@ describe("gantt model", () => {
       baselineFinish: d("2026-11-13"),
       slip: 5,
     });
+  });
+});
+
+describe("gantt drag safety", () => {
+  const model = buildGanttModel(plan, schedule, { grouping: "milestone", hideDone: false });
+  const rows = model.rows;
+  const scale = makeScale(model.start, model.end, 14);
+  const ROW = 26;
+  const index = (key: string) => rows.findIndex((r) => r.key === key);
+  const row = (key: string) => rows[index(key)];
+
+  it("links only when the pointer is released on a bar (or right next to it)", () => {
+    const target = row("T122");
+    const y = index("T122") * ROW + ROW / 2;
+    const left = dayToX(scale, target.start!);
+    const right = dayToX(scale, target.finish! + 1);
+    expect(linkTargetAt(rows, scale, "T121", (left + right) / 2, y, ROW)?.key).toBe("T122");
+    expect(linkTargetAt(rows, scale, "T121", right + 5, y, ROW)?.key).toBe("T122");
+    // Far from the bar, on the same row: no dependency.
+    expect(linkTargetAt(rows, scale, "T121", right + 60, y, ROW)).toBeUndefined();
+    // Not on itself, not on milestone or section rows.
+    expect(linkTargetAt(rows, scale, "T122", (left + right) / 2, y, ROW)).toBeUndefined();
+    const m = index("milestone:M2");
+    expect(linkTargetAt(rows, scale, "T121", left, m * ROW + 5, ROW)).toBeUndefined();
+  });
+
+  it("keeps the resize handle to a third of the bar, and off very short bars", () => {
+    expect(resizeHandleWidth(4.5)).toBe(0);
+    expect(resizeHandleWidth(11)).toBe(0);
+    expect(resizeHandleWidth(12)).toBe(4);
+    expect(resizeHandleWidth(200)).toBe(8);
+  });
+
+  it("offers Remove fixed start on pinned bars only", () => {
+    expect(JSON.parse(vscodeContext(row("T105")))).toMatchObject({ key: "T105", pinned: true });
+    expect(JSON.parse(vscodeContext(row("T122"))).pinned).toBeUndefined();
+    expect(row("T105").tooltip.join("\n")).toContain(
+      "Fixed start: not before 2026-11-10 · right-click → Remove fixed start"
+    );
   });
 });

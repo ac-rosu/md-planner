@@ -57,6 +57,8 @@ export interface TaskSchedule {
   unscheduled?: UnscheduledReason;
   /** Earliest day the task could start (dependencies + @start), before resource limits. */
   earliest?: DayNumber;
+  /** What set `earliest`: the latest-finishing predecessor or the fixed start (none: today). */
+  driver?: StartDriver;
   deadline?: DayNumber;
   /** Finish after the deadline (@due, inherited @due or milestone target). */
   late: boolean;
@@ -67,6 +69,12 @@ export interface TaskSchedule {
   unknownOwner: boolean;
   unestimated: boolean;
 }
+
+export type StartDriver =
+  /** Waited for `on` (a leaf), through the dependency declared by a task or a milestone. */
+  | { kind: "dep"; on: Task; declaredBy: Task | string }
+  /** The `@start` of `from` (the task itself or an ancestor). */
+  | { kind: "start"; from: Task };
 
 export interface Allocation {
   key: string;
@@ -150,6 +158,7 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
   // --- Per-leaf setup --------------------------------------------------------------------------
   const remaining = new Map<Task, number>();
   const fixedStart = new Map<Task, DayNumber>();
+  const fixedStartFrom = new Map<Task, Task>();
   const deadlineIdx = new Map<Task, number>();
   for (const leaf of graph.leaves) {
     const owner = ownerOf(leaf);
@@ -184,7 +193,10 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
     let fs: DayNumber | undefined;
     for (let t: Task | undefined = leaf; t; t = t.parent) {
       const d = t.start ? parseDate(t.start) : undefined;
-      if (d !== undefined && (fs === undefined || d > fs)) fs = d;
+      if (d !== undefined && (fs === undefined || d > fs)) {
+        fs = d;
+        fixedStartFrom.set(leaf, t);
+      }
     }
     if (fs !== undefined) fixedStart.set(leaf, fs);
     if (ts.deadline !== undefined) deadlineIdx.set(leaf, workIndex(calendar, start, ts.deadline));
@@ -209,9 +221,22 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
     return max;
   };
 
+  /** The member of a node that finished last (the one a successor really waited for). */
+  const lastOf = (node: DepNode): Task => {
+    if (node.kind === "leaf") return node.task;
+    let last = node.members[0];
+    for (const m of node.members)
+      if ((tasks.get(m)!.finish ?? -Infinity) > (tasks.get(last)!.finish ?? -Infinity)) last = m;
+    return last;
+  };
+
   /** Earliest day a ready leaf may start given finished requirements, or undefined if waiting. */
-  const earliestDay = (leaf: Task, resource: string): DayNumber | undefined => {
+  const earliestDay = (
+    leaf: Task,
+    resource: string
+  ): { day: DayNumber; driver?: StartDriver } | undefined => {
     let earliest = start;
+    let driver: StartDriver | undefined;
     for (const r of graph.requirements.get(leaf) ?? []) {
       const f = finishOf(r.node);
       if (f === undefined) return undefined;
@@ -229,11 +254,17 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
         : lagDays === 0
           ? f + 1
           : calendar.addWorkingDays(f + 1, lagDays);
-      if (d > earliest) earliest = d;
+      if (d > earliest) {
+        earliest = d;
+        driver = { kind: "dep", on: lastOf(r.node), declaredBy: r.declaredBy };
+      }
     }
     const fs = fixedStart.get(leaf);
-    if (fs !== undefined && fs > earliest) earliest = fs;
-    return earliest;
+    if (fs !== undefined && fs > earliest) {
+      earliest = fs;
+      driver = { kind: "start", from: fixedStartFrom.get(leaf)! };
+    }
+    return { day: earliest, driver };
   };
 
   // Mark tasks that are on a cycle or wait (transitively) on one. Memoized and iterative, so it
@@ -328,9 +359,11 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
   const tryRelease = (leaf: Task): void => {
     if (released.has(leaf) || !pending.has(leaf)) return;
     const ts = tasks.get(leaf)!;
-    const e = earliestDay(leaf, ts.resource);
-    if (e === undefined) return;
+    const found = earliestDay(leaf, ts.resource);
+    if (found === undefined) return;
+    const e = found.day;
     ts.earliest = e;
+    ts.driver = found.driver;
     released.add(leaf);
     if (remaining.get(leaf)! <= EPS) {
       // Zero-hour tasks (nothing left, or unestimated) need no capacity: they complete on the

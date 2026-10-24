@@ -68,13 +68,16 @@ The chosen grouping, colours, zoom and options are remembered for the workspace.
 | Critical path       | Red outline and red arrows                                 | Tasks with the least slack: any delay moves the end date.            |
 | Blocked task        | Red dashed outline                                         | Status `[!]`. Still scheduled as if it were not blocked.             |
 | Deadline marker     | Short red vertical line after a bar                        | The task's deadline, shown when the task is scheduled after it.      |
+| Pin ▼               | Small triangle above the start of a bar                    | A fixed start (`@start`): the task never starts earlier.             |
 | Dependency          | Grey arrow from a bar's end to another bar's start         | `@dep` (finish-to-start).                                            |
 | Baseline            | Thin grey bar under a task                                 | Where the task was planned in the chosen baseline.                   |
 | `+5d`               | Red label after a bar or milestone                         | Slip against the baseline, in working days.                          |
 | Weekend / holiday   | Shaded columns                                             | Non-working days of the project calendar (Day and Week zoom).        |
 | `not scheduled`     | Text instead of a bar                                      | The task has no dates; the tooltip and the CodeLens say why.         |
 
-Hover a bar for its details:
+Hover a bar for its details. A late task's tooltip says what holds it back, following the
+dependencies to the cause: for example "Held back by the fixed start 2027-10-19 of T461 (via M1)"
+for every task after a mistyped date, or "Held back by Sam having other work first".
 
 ![The tooltip of a task bar](images/gantt-tooltip.png)
 
@@ -119,12 +122,20 @@ Drag a bar left or right. A ghost bar shows the new dates while you drag:
 ![Dragging a bar to a new start date](images/gantt-drag-move.png)
 
 On release the task gets `@start:<date>` (snapped forward to a working day), a "not before"
-constraint. If the task's dependencies finish later than that date, the scheduler still keeps it
-after them, and a notice tells you so.
+constraint, and a pin ▼ marks it. The pin stays when the plan changes: the task will not move
+earlier, even when its dependencies finish sooner. A notice says so the first time; to let the
+scheduler place the task again, right-click the bar → **Remove fixed start**. If the task's
+dependencies finish later than the date, the scheduler still keeps it after them, and a notice
+tells you so.
+
+A press only becomes a drag after the pointer has moved a few pixels, so a click with a slight
+wobble selects the bar and changes nothing. At Month and Quarter zoom a day is only a few pixels
+wide: zoom in to move a bar by a single day.
 
 ### Resize a bar → `@est`
 
-Drag the right end of a bar:
+Drag the right end of a bar (the last third of it at most; very short bars have no resize handle,
+so they can only be moved):
 
 ![Dragging the right end of a bar](images/gantt-drag-resize.png)
 
@@ -135,7 +146,9 @@ so that the remaining part fits.
 
 ### Link two bars → `@dep`
 
-Hover a bar: a small dot appears after its right end. Drag the dot onto another task's row:
+Hover a bar: a small dot appears after its right end. Drag the dot onto another task's bar. While
+you drag, the bar under the pointer is outlined and a label says what the link will mean, such as
+"T202 waits for T201"; releasing anywhere else adds nothing:
 
 ![Dragging from the dot to the successor](images/gantt-drag-link.png)
 
@@ -166,7 +179,8 @@ Double-click a bar or a task row, or select it and press **F2**:
 ### The right-click menu
 
 Right-click a bar or a row of the task list for every task action: edit, add a subtask, status,
-owner, estimate, timer, move, delete and reveal in the editor. Milestone and section rows offer
+owner, estimate, timer, move, delete and reveal in the editor. Pinned bars also offer **Remove
+fixed start**. Milestone and section rows offer
 **Add task…**, and milestones also **Add section…**, **Edit milestone…** and **Delete milestone…**.
 
 ![The context menu of a Gantt task](images/gantt-context-menu.png)

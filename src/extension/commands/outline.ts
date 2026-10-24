@@ -11,6 +11,7 @@ import {
   placeTask,
   type Placement,
 } from "../../core/writer/structure";
+import { confirmNoNewErrors } from "../guard";
 import { type PlanService } from "../planService";
 import { type PlannerState } from "../state";
 import { type MilestoneNode } from "../views/milestonesTree";
@@ -91,17 +92,28 @@ export async function outlineCommand(
     void vscode.window.setStatusBarMessage(`$(info) ${r.reason}`, 5000);
     return false;
   }
-  return applyMove(state, task, r.edits, editor);
+  // Up and down keep the parent, so they cannot add errors; a new parent can (its dependencies).
+  const check = move === "indent" || move === "outdent";
+  return applyMove(state, task, r.edits, { editor, check });
 }
 
-/** Applies a move and keeps the task in view: the cursor follows it, or the tree reveals it. */
+/**
+ * Applies a move (after asking, when `check` finds it would add errors) and keeps the task in view:
+ * the cursor follows it, or the tree reveals it.
+ */
 async function applyMove(
   state: PlannerState,
   task: Task,
   edits: FileEdit[],
-  editor?: vscode.TextEditor
+  options: { editor?: vscode.TextEditor; check: boolean }
 ): Promise<boolean> {
   const service = state.service;
+  const editor = options.editor;
+  if (
+    options.check &&
+    !(await confirmNoNewErrors(service, edits, `Moving ${task.id ?? task.title}`))
+  )
+    return false;
   const column = editor ? editor.selection.active.character - task.indentText.length : 0;
   const ok = await service.apply(edits, { source: editor ? "editor" : "view" });
   if (!ok) return false;
@@ -192,6 +204,6 @@ export class MilestonesDragAndDrop implements vscode.TreeDragAndDropController<M
       void vscode.window.showWarningMessage(`Planner: ${r.reason}`);
       return;
     }
-    await applyMove(this.state, current, r.edits);
+    await applyMove(this.state, current, r.edits, { check: true });
   }
 }

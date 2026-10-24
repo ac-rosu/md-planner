@@ -46,6 +46,7 @@ export function registerTaskCommands(service: PlanService): vscode.Disposable[] 
     reg("planner.addEstimate", (arg: TaskArg, value?: unknown) =>
       addEstimate(service, arg, stringArg(value))
     ),
+    reg("planner.removeFixedStart", (arg: TaskArg) => removeFixedStart(service, arg)),
     reg("planner.assignIds", (scope?: unknown) => assignIds(service, stringArg(scope))),
     reg("planner.showAttention", () => showAttention(service)),
   ];
@@ -199,6 +200,18 @@ export async function addEstimate(
     }));
   if (!text || parseDuration(text, hpd) === undefined) return false;
   const edits = setAttr(fileOf(service, t).lines, t, "est", text.trim());
+  return service.apply([{ path: t.file, edits }], { source: r.fromEditor ? "editor" : "view" });
+}
+
+/** Removes `@start`, so the scheduler places the task again as early as it can. */
+export async function removeFixedStart(service: PlanService, arg: TaskArg): Promise<boolean> {
+  const r = resolveTask(service, arg);
+  if (!r?.task.start) {
+    void vscode.window.showInformationMessage("Planner: this task has no fixed start (@start).");
+    return false;
+  }
+  const t = r.task;
+  const edits = setAttr(fileOf(service, t).lines, t, "start", undefined);
   return service.apply([{ path: t.file, edits }], { source: r.fromEditor ? "editor" : "view" });
 }
 
