@@ -317,14 +317,14 @@ dashboard shows how much each milestone has moved. Commit baseline files to git.
 
 **Change a status** in any of these ways:
 
-- Click inside the checkbox in the editor. Each click moves the task one step:
-  to do `[ ]` → in progress `[/]` → review `[?]` → done `[x]` → to do. The planner writes
+- Hover the checkbox in the editor and click the new status.
+- Press **Cmd+Option+X** (Ctrl+Alt+X) with the cursor on a task. Each press moves the task one
+  step: to do `[ ]` → in progress `[/]` → review `[?]` → done `[x]` → to do. The planner writes
   `@started` and `@done` dates for you:
 
-  ![A task before clicking its checkbox](images/editor-status-before.png)
-  ![The same task after one click: in progress, with @started](images/editor-status-after.png)
+  ![A task before the status change](images/editor-status-before.png)
+  ![The same task one step later: in progress, with @started](images/editor-status-after.png)
 
-- Press **Cmd+Option+X** (Ctrl+Alt+X) with the cursor on a task.
 - Click ↻ on the task's row in the Milestones or My Work / Team view (one step per click).
 - Right-click a task in a view or in the editor → **Set status**.
 - Drag the card on the **Kanban board**. Dropping a card on **Blocked** asks for the reason.

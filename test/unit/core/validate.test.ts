@@ -43,10 +43,10 @@ describe("diagnostics", () => {
         ),
       })
     ).toEqual(["error:circular-dep:2", "error:circular-dep:3"]);
-    // A child depending on its own parent is a cycle.
+    // A child depending on its own parent is a cycle, reported with its own explanation.
     expect(
       codes({ "milestones/M1.md": md("# M1", "", "- [ ] p ^T1", "  - [ ] c @est:1h @dep:T1 ^T2") })
-    ).toContain("error:circular-dep:3");
+    ).toEqual(["error:family-dep:3"]);
     // Milestone-level cycle.
     const m = codes({
       "milestones/M1.md": md("# M1", "", "depends: M2", "", "- [ ] a @est:1h ^T1"),
@@ -89,7 +89,7 @@ describe("diagnostics", () => {
           "",
           "- [ ] parent ^T1",
           "  - [ ] child ^T2",
-          "  - [x] done child ^T3",
+          "  - [x] done child @done:2026-10-01 ^T3",
           "- [-] cancelled ^T4"
         ),
       })

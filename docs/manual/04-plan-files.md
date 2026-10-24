@@ -212,10 +212,13 @@ A task is a Markdown checkbox list item:
 
 Any other character, such as `[z]`, is treated as to do and reported as a warning.
 
-When the status is changed by the planner (a click, a command, the Kanban, the timer), it also
-writes dates: to in progress or review adds `@started:<today>` if missing; to done adds
-`@done:<today>`; leaving done removes `@done`; to blocked writes `@blocked:"reason"` if you give
-one; leaving blocked removes `@blocked`. When you type a checkbox yourself, nothing else changes.
+When the status is changed by the planner (a command, the checkbox hover, the Kanban, the timer),
+it also writes dates: to in progress or review adds `@started:<today>` if missing; back to to do
+removes `@started` when no time was logged (`@act` or `@progress`); to done adds `@done:<today>`;
+leaving done removes `@done`; to blocked writes `@blocked:"reason"` if you give one; leaving
+blocked removes `@blocked`. When you type a checkbox yourself, nothing else changes, but the editor
+points out a done task without `@done` or a to-do task with a leftover `@started` (a to-do task's
+`@started` is ignored by the scheduler).
 
 ### Attributes
 

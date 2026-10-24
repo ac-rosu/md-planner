@@ -1,5 +1,25 @@
 # Change Log
 
+## Unreleased
+
+Safer editing, from the pilot users' feedback.
+
+- Clicking a checkbox in the editor no longer changes the status (it changed tasks by accident).
+  Hover the checkbox to pick a status, or press Ctrl/Cmd+Alt+X. Turn
+  `planner.editor.toggleOnClick` on to get the click back.
+- A task moved back to to do loses its `@started` when no time was logged, and a leftover
+  `@started` on a to-do task no longer stretches its Gantt bar. A timer stopped within a minute puts
+  the task back to to do.
+- Kanban: moving a card to another column keeps its priority; only reordering within a column
+  changes it.
+- A task line copied with its id and given another title gets a new id on save, so dependencies
+  keep pointing at the original. Duplicate ids have a quick fix.
+- New warnings with quick fixes: lines that look like tasks but are not (`- []`, `-[ ]`,
+  `- [ ]Title`, `[ ] Title`), dates outside the project (often a wrong year: the fix offers the
+  year that fits), a fixed start after work started or after the milestone target, a due date after
+  the milestone target, done tasks without `@done`, leftover `@started`, dependencies on cancelled
+  tasks, and tasks depending on themselves, their parent or their subtask.
+
 ## 1.0.0
 
 - Initial release.

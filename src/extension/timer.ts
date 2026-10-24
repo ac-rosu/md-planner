@@ -14,6 +14,8 @@ export interface RunningTimer {
   title: string;
   /** Epoch milliseconds. */
   startedAt: number;
+  /** The timer moved the task from to do to in progress (undone when nothing is logged). */
+  startedTask?: boolean;
 }
 
 const STATE_KEY = "planner.timer";
@@ -55,6 +57,7 @@ export class TimerService implements vscode.Disposable {
       key: taskKey(t),
       title: t.title,
       startedAt: this.now(),
+      startedTask: t.status === "todo",
     } satisfies RunningTimer);
     // Starting work on a task that is still "to do" moves it to "in progress".
     if (t.status === "todo") {
@@ -76,8 +79,19 @@ export class TimerService implements vscode.Disposable {
     this.render();
     const minutes = (this.now() - running.startedAt) / 60_000;
     if (minutes < 1) {
+      // Started by mistake: put a task the timer moved to in progress back to to do.
+      const t = running.startedTask ? findTaskByKey(this.service.plan, running.key) : undefined;
+      if (t?.status === "doing") {
+        const file = this.service.plan.file(t.file)!;
+        const edits = editTaskLine(file.lines, t, (e) =>
+          applyStatus(e, t, "todo", this.service.today())
+        );
+        await this.service.apply([{ path: t.file, edits }], { source: "view" });
+      }
       void vscode.window.showInformationMessage(
-        "Planner: timer stopped after less than a minute; nothing logged."
+        t?.status === "doing"
+          ? `Planner: timer stopped after less than a minute; nothing logged, ${t.id ?? t.title} is back to To do.`
+          : "Planner: timer stopped after less than a minute; nothing logged."
       );
       return 0;
     }

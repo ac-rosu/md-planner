@@ -25,6 +25,19 @@ export function isEffectivelyCancelled(task: Task): boolean {
   return false;
 }
 
+/** True when time or progress was recorded on the task itself (`@act`, `@progress`). */
+export function hasLoggedWork(task: Task): boolean {
+  return (task.act ?? 0) > 0 || (task.progress ?? 0) > 0;
+}
+
+/**
+ * The day work started: `@started`, except on a task that is (back) to do, where it is a leftover
+ * of an earlier status and the scheduler places the task itself.
+ */
+export function startedOn(task: Task): string | undefined {
+  return task.status === "todo" ? undefined : task.started;
+}
+
 /** True when the task is done, or an ancestor is done (its open subtasks are moot). */
 export function isEffectivelyDone(task: Task): boolean {
   for (let t: Task | undefined = task; t; t = t.parent) if (t.status === "done") return true;

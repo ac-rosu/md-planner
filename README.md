@@ -101,8 +101,8 @@ Completion for owners, dependencies, attribute keys and dates; hovers with the s
 definition, find references and rename for task ids; diagnostics with quick fixes (unknown owners
 and dependencies, cycles, invalid durations, late and overbooked tasks); CodeLens with milestone
 progress and forecasts and each task's dates and slack, next to clickable actions (owner, Edit, Add
-task …). Click a checkbox, or press
-**Ctrl+Alt+X** (**Cmd+Alt+X** on macOS), to cycle the status.
+task …). Hover a checkbox to change the status, or press
+**Ctrl+Alt+X** (**Cmd+Alt+X** on macOS) to cycle it.
 
 ### Sidebar
 

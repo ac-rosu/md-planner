@@ -223,6 +223,59 @@ describe("editor integration", () => {
     assert.match(editor.document.getText(), /- \[ \] Task without id @est:2h \^T408\n/);
   });
 
+  it("gives a copied and retitled task line a new id on save and keeps the original", async () => {
+    const api = await getApi();
+    const editor = await openPlanFile(M2);
+    const pos = await positionOf(M2, "  - [ ] Order events schema @est:6h ^T104");
+    await editor.edit((b) => b.insert(pos, "  - [ ] Payment events schema @est:6h ^T104\n"));
+    await waitFor(
+      () => api.state.plan.tasks.filter((t) => t.id === "T104").length === 2,
+      "duplicate indexed"
+    );
+    await editor.document.save();
+    const lines = editor.document.getText().split("\n");
+    assert.equal(lines[pos.line], "  - [ ] Payment events schema @est:6h ^T408");
+    assert.equal(lines[pos.line + 1], "  - [ ] Order events schema @est:6h ^T104");
+  });
+
+  it("turns a mistyped line into a task with a quick fix", async () => {
+    const editor = await openPlanFile(M2);
+    const pos = await positionOf(M2, "## Notes");
+    await editor.edit((b) => b.insert(pos, "- [] Mistyped task @est:1h\n\n"));
+    const diag = await waitFor(
+      () =>
+        vscode.languages
+          .getDiagnostics(planUri(M2))
+          .find((d) => d.code === "not-a-task" && d.range.start.line === pos.line),
+      "not-a-task"
+    );
+    const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      "vscode.executeCodeActionProvider",
+      planUri(M2),
+      diag.range
+    );
+    const fix = actions.find((a) => a.title === "Make it a task: - [ ] Mistyped task @est:1h")!;
+    await vscode.workspace.applyEdit(fix.edit!);
+    assert.equal(editor.document.lineAt(pos.line).text, "- [ ] Mistyped task @est:1h");
+  });
+
+  it("offers the other statuses when hovering a checkbox", async () => {
+    await openPlanFile(M2);
+    const pos = await positionOf(M2, "- [ ] Order events schema", 3);
+    const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+      "vscode.executeHoverProvider",
+      planUri(M2),
+      pos
+    );
+    const text = hovers
+      .flatMap((h) => h.contents.map((c) => (c as vscode.MarkdownString).value))
+      .join("\n");
+    assert.match(text, /\*\*To do\*\*/);
+    assert.match(text, /\[\$\(play-circle\) In progress\]\(command:planner\.setStatus\?/);
+    assert.match(text, /Done\]\(command:planner\.setStatus\?/);
+    assert.doesNotMatch(text, /To do\]\(command:/);
+  });
+
   it("shows CodeLens above milestone headings", async () => {
     const lenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
       "vscode.executeCodeLensProvider",

@@ -1,9 +1,9 @@
 // Generic line-based structure scan of a plan Markdown file: headings, property blocks, checkbox
 // items (nested by indentation) with their notes, and free text. Code fences are respected.
 import { type Issue, type ItemKind, type PropertyBlock, type Task, statusFromChar } from "../model";
-import { indentWidth, range, type Range, type TextLines } from "../text";
+import { indentWidth, leadingWhitespace, range, type Range, type TextLines } from "../text";
 import { readPropertyBlock } from "./properties";
-import { type CheckboxLine, matchCheckbox, tokenRange } from "./taskLine";
+import { type CheckboxLine, matchCheckbox, nearMissCheckbox, tokenRange } from "./taskLine";
 
 export interface Heading {
   level: number;
@@ -101,6 +101,18 @@ export function scanLines(file: string, lines: TextLines, kind: ItemKind): ScanR
     }
 
     if (text.trim() === "") continue;
+
+    const near = nearMissCheckbox(text);
+    if (near) {
+      issues.push({
+        file,
+        range: range(i, leadingWhitespace(text).length, text.length),
+        severity: "warning",
+        code: "not-a-task",
+        message: `Not read as a task: ${near.problem}.`,
+        data: { fixed: near.fixed },
+      });
+    }
 
     const width = indentWidth(text);
     while (stack.length > 0 && stack[stack.length - 1].indent >= width) stack.pop();

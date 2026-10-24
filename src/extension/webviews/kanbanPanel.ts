@@ -161,9 +161,13 @@ export class KanbanPanel extends WebviewPanelHost<HostToKanban, KanbanToHost> {
       }
     }
 
-    // Position within the column → priority of the neighbour.
+    // Reordering within the column → priority of the neighbour. A card moved to another column or
+    // owner keeps its priority: a status drag should not change anything else by accident.
     const neighbour = (key: string | undefined) => (key ? findTaskByKey(plan, key) : undefined);
-    const prio = priorityForDrop(t.prio, neighbour(m.above)?.prio, neighbour(m.below)?.prio);
+    const reorder = m.status === t.status && owner === undefined;
+    const prio = reorder
+      ? priorityForDrop(t.prio, neighbour(m.above)?.prio, neighbour(m.below)?.prio)
+      : undefined;
 
     if (m.status === t.status && owner === undefined && !prio) return false;
     if (m.status !== t.status) parts.unshift(m.status);

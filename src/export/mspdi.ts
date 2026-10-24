@@ -12,6 +12,7 @@ import {
   ownerOf,
   progressOf,
   remainingHours,
+  startedOn,
 } from "../core/rollup";
 import { type Schedule } from "../core/scheduler";
 
@@ -197,7 +198,8 @@ export function exportMspdi(plan: Plan, schedule: Schedule, options: MspdiOption
       act > 0 ? `<ActualWork>${msDuration(act)}</ActualWork>` : "",
       leaf ? `<RemainingWork>${msDuration(remaining)}</RemainingWork>` : "",
     ];
-    if (t.started) parts.push(`<ActualStart>${dt(parseDate(t.started)!)}</ActualStart>`);
+    const started = startedOn(t);
+    if (started) parts.push(`<ActualStart>${dt(parseDate(started)!)}</ActualStart>`);
     if (t.status === "done" && t.done)
       parts.push(`<ActualFinish>${dt(parseDate(t.done)!, true)}</ActualFinish>`);
     if (leaf && ts && !ts.done && start !== undefined) {

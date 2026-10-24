@@ -6,6 +6,10 @@ import { type Issue, isOpen, type Task, TEST_TYPES } from "./model";
 import { type Plan } from "./resolve";
 import { isEffectivelyDone, isLeaf } from "./rollup";
 import { range, type Range } from "./text";
+import { consistencyIssues } from "./consistency";
+import { attrIssue, depIdRange, lineContentRange, statusRange } from "./issueRanges";
+
+export { depIdRange, lineContentRange } from "./issueRanges";
 
 export interface ValidateOptions {
   /** Report tasks without an id (hint level, used for the "assign id" quick fix). */
@@ -67,12 +71,16 @@ export function validatePlan(plan: Plan, options: ValidateOptions = {}): Issue[]
     });
   }
 
+  // A dependency on the task itself, its parent or its subtask is a cycle too; say so plainly.
+  const family = checkFamilyDeps(plan, issues);
+
   if (graph.cycles.length > 0) {
     const declarations = cycleDeclarations(graph);
     const label = (cycle: Task[]) => cycle.map((t) => t.id ?? t.title).join(" → ");
     for (const cycle of graph.cycles) {
       const message = `Circular dependency: ${label(cycle)}. These tasks are not scheduled.`;
       for (const d of declarations.tasks) {
+        if (family.has(d)) continue;
         if (!cycle.includes(d) && !cycle.some((c) => isAncestor(d, c))) continue;
         issues.push({
           file: d.file,
@@ -115,7 +123,36 @@ export function validatePlan(plan: Plan, options: ValidateOptions = {}): Issue[]
 
   checkTests(plan, issues);
   checkPunch(plan, issues);
+  issues.push(...consistencyIssues(plan));
   return dedupe(issues);
+}
+
+/** Reports dependencies on the task itself, an ancestor or a descendant; returns the declarers. */
+function checkFamilyDeps(plan: Plan, issues: Issue[]): Set<Task> {
+  const declarers = new Set<Task>();
+  for (const t of plan.tasks) {
+    for (const d of t.deps) {
+      const target = plan.taskById(d.id);
+      if (!target) continue;
+      let message: string | undefined;
+      if (target === t) message = "Depends on itself.";
+      else if (isAncestor(target, t))
+        message = `Depends on its own parent ${d.id}, which only finishes when its subtasks do, so it can never start. Subtasks already wait for what their parent waits for.`;
+      else if (isAncestor(t, target))
+        message = `Depends on its own subtask ${d.id}: a task cannot wait for a part of itself.`;
+      if (!message) continue;
+      declarers.add(t);
+      issues.push({
+        file: t.file,
+        range: depIdRange(t, d.id),
+        severity: "error",
+        code: "family-dep",
+        message: `${message} Not scheduled.`,
+        data: { depId: d.id },
+      });
+    }
+  }
+  return declarers;
 }
 
 function isAncestor(a: Task, b: Task): boolean {
@@ -234,54 +271,9 @@ function checkPunch(plan: Plan, issues: Issue[]): void {
   }
 }
 
-function attrIssue(
-  t: Task,
-  key: string,
-  severity: Issue["severity"],
-  code: string,
-  message: string,
-  data?: Record<string, string>
-): Issue {
-  const a = t.attrs.find((x) => x.key === key);
-  return {
-    file: t.file,
-    range: a?.range ?? statusRange(t),
-    severity,
-    code,
-    message,
-    data: { key, ...data },
-  };
-}
-
-function statusRange(t: Task): Range {
-  return range(t.line, t.statusCol - 1, t.statusCol + 2);
-}
-
-/** Range of the task text after the checkbox. */
-export function lineContentRange(plan: Plan, t: Task): Range {
-  const text = plan.file(t.file)?.lines.line(t.line) ?? "";
-  return range(t.line, Math.min(t.statusCol + 2, text.length), text.replace(/\s+$/, "").length);
-}
-
 function headingRange(plan: Plan, file: string, line: number): Range {
   const text = plan.file(file)?.lines.line(Math.max(0, line)) ?? "";
   return range(Math.max(0, line), 0, text.length);
-}
-
-/** Precise range of one id inside a task's `@dep` value. */
-export function depIdRange(t: Task, id: string): Range {
-  const a = t.attrs.find((x) => x.key === "dep");
-  if (!a) return statusRange(t);
-  if (!a.quoted) {
-    const re = new RegExp(`(^|,)\\s*(${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})(?=\\+|,|\\s*$)`);
-    const m = re.exec(a.value);
-    if (m) {
-      const offset = m.index + m[0].length - m[2].length;
-      const start = a.valueRange.start.character + offset;
-      return range(a.range.start.line, start, start + id.length);
-    }
-  }
-  return a.valueRange;
 }
 
 function dedupe(issues: Issue[]): Issue[] {

@@ -92,28 +92,38 @@ panel (Cmd+Shift+M). Click a message to jump to it.
 
 ![Plan diagnostics in the Problems panel](images/editor-problems.png)
 
-| Code                     | Severity        | Reported when                                                                                                                                           | Quick fix                                       |
-| ------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| `unknown-dep`            | Error           | `@dep` points to an id that does not exist.                                                                                                             | Remove the dependency                           |
-| `circular-dep`           | Error           | Tasks or milestones depend on each other in a loop. They are not scheduled.                                                                             |                                                 |
-| `duplicate-id`           | Error           | Two items (or test plans) have the same id.                                                                                                             |                                                 |
-| `duplicate-person`       | Error           | Two people in `team.md` have the same id.                                                                                                               |                                                 |
-| `unknown-milestone`      | Error / Warning | `depends:` (error) or a test plan's `milestone:` (warning) names a missing milestone.                                                                   |                                                 |
-| `invalid-date`           | Error           | A date is not `YYYY-MM-DD`.                                                                                                                             |                                                 |
-| `invalid-duration`       | Error           | A duration has no unit or is not a number (`@est:12` instead of `@est:12h`).                                                                            |                                                 |
-| `invalid-value`          | Error / Warning | A value is not allowed: priority, progress, severity, work week, test type, an empty `@owner` …                                                         |                                                 |
-| `unknown-owner`          | Warning         | `@owner` is not a person in `team.md`. The task runs in the unassigned pool.                                                                            | Change owner to …                               |
-| `unknown-test`           | Warning         | `@test` or `@from` names a missing test plan.                                                                                                           |                                                 |
-| `unknown-punch`          | Warning         | A test step's `@punch` names a missing punch item.                                                                                                      |                                                 |
-| `unknown-status`         | Warning         | The checkbox has an unknown character, such as `[z]`. Treated as to do.                                                                                 |                                                 |
-| `duplicate-attr`         | Warning         | The same attribute appears twice; only the first counts.                                                                                                |                                                 |
-| `late-task`              | Warning         | The task is scheduled to finish after its `@due` or its milestone's target.                                                                             |                                                 |
-| `unschedulable`          | Warning         | The owner (or the unassigned pool) has no capacity for it within 10 years.                                                                              |                                                 |
-| `blocked-by-cycle`       | Warning         | The task waits for tasks in a circular dependency.                                                                                                      |                                                 |
-| `missing-estimate`       | Info            | An open leaf task has no `@est`; it is scheduled with 0 hours.                                                                                          | Add estimate (2h … 1w, or type one)             |
-| `missing-blocked-reason` | Info            | A task is `[!]` without `@blocked:"…"`.                                                                                                                 |                                                 |
-| `overbooked`             | Info            | The owner has more work than capacity in that week if everything started as early as possible (demand). Turn off with `planner.diagnostics.overbooked`. |                                                 |
-| `missing-id`             | Hint            | A task has no id. Only shown when `planner.autoAssignIds` is off.                                                                                       | Assign id; assign ids to all tasks in this file |
+| Code                     | Severity        | Reported when                                                                                                                                           | Quick fix                                            |
+| ------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `unknown-dep`            | Error           | `@dep` points to an id that does not exist.                                                                                                             | Remove the dependency                                |
+| `circular-dep`           | Error           | Tasks or milestones depend on each other in a loop. They are not scheduled.                                                                             |                                                      |
+| `family-dep`             | Error           | A task depends on itself, its own parent or its own subtask. It is not scheduled.                                                                       | Remove the dependency                                |
+| `duplicate-id`           | Error           | Two items (or test plans) have the same id. A copied task line that was given another title gets a new id on save.                                      | Give this task a new id                              |
+| `duplicate-person`       | Error           | Two people in `team.md` have the same id.                                                                                                               |                                                      |
+| `unknown-milestone`      | Error / Warning | `depends:` (error) or a test plan's `milestone:` (warning) names a missing milestone.                                                                   |                                                      |
+| `invalid-date`           | Error           | A date is not `YYYY-MM-DD`.                                                                                                                             |                                                      |
+| `invalid-duration`       | Error           | A duration has no unit or is not a number (`@est:12` instead of `@est:12h`).                                                                            |                                                      |
+| `invalid-value`          | Error / Warning | A value is not allowed: priority, progress, severity, work week, test type, an empty `@owner` …                                                         |                                                      |
+| `unknown-owner`          | Warning         | `@owner` is not a person in `team.md`. The task runs in the unassigned pool.                                                                            | Change owner to …                                    |
+| `unknown-test`           | Warning         | `@test` or `@from` names a missing test plan.                                                                                                           |                                                      |
+| `unknown-punch`          | Warning         | A test step's `@punch` names a missing punch item.                                                                                                      |                                                      |
+| `unknown-status`         | Warning         | The checkbox has an unknown character, such as `[z]`. Treated as to do.                                                                                 |                                                      |
+| `not-a-task`             | Warning         | A line looks like a task but is not read as one: `- []`, `-[ ]`, `- [ ]Title`, `[ ] Title`.                                                             | Make it a task                                       |
+| `duplicate-attr`         | Warning         | The same attribute appears twice; only the first counts.                                                                                                |                                                      |
+| `late-task`              | Warning         | The task is scheduled to finish after its `@due` or its milestone's target.                                                                             |                                                      |
+| `date-outside-project`   | Warning         | A `@start` or `@due` (or a milestone target) is after the project end, or a `@due` before its start: often a wrong year.                                | Change to the same day in the year that fits; remove |
+| `start-after-started`    | Warning         | A task in progress has a fixed `@start` after its `@started`: the rest of the work waits until then.                                                    | Remove `@start`                                      |
+| `start-after-target`     | Warning         | A fixed `@start` is after the milestone target, so the task cannot finish on time.                                                                      | Remove `@start`                                      |
+| `due-after-target`       | Warning         | `@due` is after the milestone target: the task is not reported late until its due date, although the milestone is late by then.                         | Change `@due` to the target; remove                  |
+| `done-before-started`    | Warning         | `@done` is before `@started`.                                                                                                                           |                                                      |
+| `unschedulable`          | Warning         | The owner (or the unassigned pool) has no capacity for it within 10 years.                                                                              |                                                      |
+| `blocked-by-cycle`       | Warning         | The task waits for tasks in a circular dependency.                                                                                                      |                                                      |
+| `missing-estimate`       | Info            | An open leaf task has no `@est`; it is scheduled with 0 hours.                                                                                          | Add estimate (2h … 1w, or type one)                  |
+| `missing-blocked-reason` | Info            | A task is `[!]` without `@blocked:"…"`.                                                                                                                 |                                                      |
+| `stale-started`          | Info            | A to-do task has `@started` but no time logged, left from an earlier status. It is ignored.                                                             | Remove `@started`                                    |
+| `missing-done`           | Info            | A done task has no `@done`, so it has no place on the timeline or in the burn-up.                                                                       | Add `@done` with today's date                        |
+| `cancelled-dep`          | Info            | `@dep` names a cancelled task (or one in a cancelled milestone); the dependency is ignored.                                                             | Remove the dependency                                |
+| `overbooked`             | Info            | The owner has more work than capacity in that week if everything started as early as possible (demand). Turn off with `planner.diagnostics.overbooked`. |                                                      |
+| `missing-id`             | Hint            | A task has no id. Only shown when `planner.autoAssignIds` is off.                                                                                       | Assign id; assign ids to all tasks in this file      |
 
 ## Quick fixes
 
@@ -127,6 +137,13 @@ open the menu:
 - **Remove broken dependency T999**.
 - **Change owner to sam (Sam)** – one entry per person in `team.md`.
 - **Assign id ^T123** or **Assign ids to all N tasks in this file** (when automatic ids are off).
+- **Make it a task: `- [ ] Title`** for a line that was almost a task.
+- **Give this task a new id** for a duplicate id.
+- **Change `@start` to 2026-10-19** when a date is outside the project and the same day a year
+  earlier (or later) fits; **Remove `@start`** / **Remove `@due`** for dates that cannot work.
+- **Remove `@started`** on a to-do task, **Add `@done:<today>`** on a done task without a date.
+- **Remove the dependency on T12** for dependencies on cancelled work, on the task itself, its
+  parent or its subtask.
 
 ## CodeLens: the schedule and actions inline
 
@@ -166,21 +183,24 @@ all CodeLens with `planner.codeLens.enabled`.
 
 ## Change the status
 
-- **Click inside the checkbox** (between `[` and `]`). Each click cycles the status:
-  to do → in progress → review → done → to do; blocked → in progress; cancelled → to do. Turn this
-  off with `planner.editor.toggleOnClick`.
+- **Hover the checkbox** (`[ ]`): the hover shows the status and a link for every other status.
+  Click one.
+- **Cmd+Option+X** (Ctrl+Alt+X) cycles the status of the task under the cursor (**Planner: Cycle
+  status**): to do → in progress → review → done → to do; blocked → in progress; cancelled → to do.
 
   ![Before](images/editor-status-before.png)
-  ![After one click: in progress, with @started added](images/editor-status-after.png)
+  ![After one step: in progress, with @started added](images/editor-status-after.png)
 
-- **Cmd+Option+X** (Ctrl+Alt+X) does the same for the task under the cursor (**Planner: Cycle
-  status**).
 - **Right-click → Set status →** _To do_, _In progress_, _Review / test_, _Blocked…_, _Done_,
   _Cancelled_ sets a status directly. _Blocked…_ asks for an optional reason.
 - The same commands are in the Command Palette: **Planner: Set status…**, **Planner: Done** …
 
 The dates described in [Plan files › Status](04-plan-files.md#status) are written for you. Edits
 made from the editor stay unsaved like normal typing.
+
+A click inside the checkbox does not change the status: a click meant to place the cursor changed
+tasks by accident. If you prefer clicking, turn on `planner.editor.toggleOnClick`; each click then
+moves the task one step, like Cmd+Option+X.
 
 ## The editor context menu
 

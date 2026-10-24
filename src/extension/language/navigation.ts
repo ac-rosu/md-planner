@@ -1,7 +1,8 @@
 // Hover, go to definition, find references and rename for task ids and other references.
 import * as vscode from "vscode";
 import { formatHours } from "../../core/duration";
-import { STATUS_LABEL } from "../../core/model";
+import { STATUS_LABEL, STATUSES } from "../../core/model";
+import { matchCheckbox } from "../../core/parser/taskLine";
 import {
   definitionOf,
   isValidTaskId,
@@ -13,9 +14,11 @@ import {
 import { milestoneStats, openTasksOf } from "../../core/queries";
 import { estimateHours, remainingHours } from "../../core/rollup";
 import { allIds, renameTaskId } from "../../core/writer";
+import { itemAtLine } from "../commands/args";
 import { type PlanService } from "../planService";
 import { type PlannerState } from "../state";
 import { md, toRange } from "../util";
+import { statusCodicon } from "../views/common";
 
 function refAt(
   service: PlanService,
@@ -33,7 +36,36 @@ function toLocation(service: PlanService, loc: Location): vscode.Location {
 export class PlanHoverProvider implements vscode.HoverProvider {
   constructor(private readonly state: PlannerState) {}
 
+  /** Hovering a task's checkbox offers the other statuses as links (a click on it does nothing). */
+  private statusHover(
+    document: vscode.TextDocument,
+    position: vscode.Position
+  ): vscode.Hover | undefined {
+    const service = this.state.service;
+    if (!service.isPlanDocument(document)) return undefined;
+    const cb = matchCheckbox(document.lineAt(position.line).text);
+    if (!cb || position.character < cb.statusCol - 1 || position.character > cb.statusCol + 1)
+      return undefined;
+    const rel = service.relPath(document.uri);
+    const t = rel === undefined ? undefined : itemAtLine(this.state.plan, rel, position.line);
+    if (!t || t.line !== position.line || t.kind === "step") return undefined;
+    const arg = t.id ?? { file: t.file, line: t.line };
+    const out = new vscode.MarkdownString(undefined, true);
+    out.supportThemeIcons = true;
+    out.isTrusted = { enabledCommands: ["planner.setStatus"] };
+    const links = STATUSES.filter((s) => s !== t.status).map((s) => {
+      const args = encodeURIComponent(JSON.stringify([arg, s]));
+      return `[$(${statusCodicon(s)}) ${STATUS_LABEL[s]}](command:planner.setStatus?${args} "Set the status to ${STATUS_LABEL[s]}")`;
+    });
+    out.appendMarkdown(`$(${statusCodicon(t.status)}) **${STATUS_LABEL[t.status]}** · `);
+    out.appendMarkdown(`Set to ${links.join(" · ")}`);
+    const at = (c: number) => new vscode.Position(position.line, c);
+    return new vscode.Hover(out, new vscode.Range(at(cb.statusCol - 1), at(cb.statusCol + 2)));
+  }
+
   provideHover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
+    const status = this.statusHover(document, position);
+    if (status) return status;
     const ref = refAt(this.state.service, document, position);
     if (!ref) return undefined;
     const plan = this.state.plan;

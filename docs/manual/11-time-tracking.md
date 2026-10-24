@@ -26,7 +26,8 @@ Rules:
 
 Stop the timer by clicking it in the status bar or running **Planner: Stop timer**. The elapsed
 time is rounded **up** to `planner.time.roundingMinutes` (15 minutes by default) and added to the
-task's `@act`. Less than one minute is discarded with a message.
+task's `@act`. Less than one minute is discarded with a message, and a task the timer moved to in
+progress goes back to to do (a timer started by mistake leaves no trace).
 
 ## Log time by hand
 

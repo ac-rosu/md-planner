@@ -3,7 +3,7 @@ import { type DayNumber, formatDate, parseDate, weekStart } from "./dates";
 import { isOpen, type Task, type TestPlan } from "./model";
 import { deadlineOf, isOpenTask } from "./queries";
 import { type Plan } from "./resolve";
-import { isEffectivelyCancelled, isLeaf, ownerOf, progressOf } from "./rollup";
+import { isEffectivelyCancelled, isLeaf, ownerOf, progressOf, startedOn } from "./rollup";
 import { type Schedule } from "./scheduler";
 
 // ---------------------------------------------------------------------------------------------
@@ -174,7 +174,9 @@ export function attentionLists(plan: Plan, schedule: Schedule): AttentionLists {
     startingThisWeek: open
       .filter((t) => {
         const ts = schedule.tasks.get(t);
-        return ts?.start !== undefined && ts.start >= weekFrom && ts.start <= weekTo && !t.started;
+        return (
+          ts?.start !== undefined && ts.start >= weekFrom && ts.start <= weekTo && !startedOn(t)
+        );
       })
       .sort((a, b) => startOf(a) - startOf(b) || a.order - b.order),
     unassigned: open.filter((t) => !ownerOf(t)),

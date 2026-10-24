@@ -16,6 +16,11 @@ const STATUS_ICONS: Record<Status, [string, string | undefined]> = {
   cancelled: ["circle-slash", "disabledForeground"],
 };
 
+/** Codicon name of a status (for `$(name)` in labels and hovers). */
+export function statusCodicon(status: Status): string {
+  return STATUS_ICONS[status][0];
+}
+
 export function statusIcon(status: Status): vscode.ThemeIcon {
   const [icon, color] = STATUS_ICONS[status];
   return new vscode.ThemeIcon(icon, color ? new vscode.ThemeColor(color) : undefined);

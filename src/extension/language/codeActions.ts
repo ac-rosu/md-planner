@@ -1,8 +1,18 @@
-// Quick fixes: add estimate, assign id, remove broken dependency, change unknown owner.
+// Quick fixes: add estimate, assign id, remove broken dependency, change unknown owner, turn a
+// mistyped line into a task, and the fixes of the consistency checks (dates, status dates, ids).
 import * as vscode from "vscode";
 import { type Task } from "../../core/model";
 import { type TextEdit } from "../../core/text";
-import { assignMissingIds, nextId, removeDependency, setAttr, setId } from "../../core/writer";
+import { suggestYear } from "../../core/consistency";
+import { nearMissCheckbox } from "../../core/parser/taskLine";
+import {
+  assignMissingIds,
+  minimalLineEdit,
+  nextId,
+  removeDependency,
+  setAttr,
+  setId,
+} from "../../core/writer";
 import { itemAtLine } from "../commands/args";
 import { type PlanService } from "../planService";
 import { toRange } from "../util";
@@ -26,8 +36,40 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
     const actions: vscode.CodeAction[] = [];
     for (const diagnostic of context.diagnostics) {
       if (diagnostic.source !== "planner") continue;
-      const task = itemAtLine(plan, rel, diagnostic.range.start.line);
-      if (!task || task.line !== diagnostic.range.start.line) continue;
+      const lineNo = diagnostic.range.start.line;
+      if (diagnostic.code === "not-a-task") {
+        const near = nearMissCheckbox(document.lineAt(lineNo).text);
+        const edit = near && minimalLineEdit(lineNo, document.lineAt(lineNo).text, near.fixed);
+        if (edit)
+          actions.push(
+            this.fix(`Make it a task: ${near.fixed.trim()}`, document, [edit], diagnostic, true)
+          );
+        continue;
+      }
+      const task = itemAtLine(plan, rel, lineNo);
+      if (!task || task.line !== lineNo) continue;
+      const remove = (key: string, preferred = false) =>
+        actions.push(
+          this.fix(
+            `Remove @${key}`,
+            document,
+            setAttr(file.lines, task, key, undefined),
+            diagnostic,
+            preferred
+          )
+        );
+      const removeDep = () => {
+        const depId = document.getText(diagnostic.range);
+        actions.push(
+          this.fix(
+            `Remove the dependency on ${depId}`,
+            document,
+            removeDependency(file.lines, task, depId),
+            diagnostic,
+            true
+          )
+        );
+      };
       switch (diagnostic.code) {
         case "missing-estimate":
           for (const est of ESTIMATES) {
@@ -78,6 +120,75 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
               true
             )
           );
+          break;
+        }
+        case "duplicate-id": {
+          const id = nextId(plan);
+          actions.push(
+            this.fix(
+              `Give this task a new id ^${id}`,
+              document,
+              setId(file.lines, task, id),
+              diagnostic
+            )
+          );
+          break;
+        }
+        case "cancelled-dep":
+        case "family-dep":
+          removeDep();
+          break;
+        case "stale-started":
+          remove("started", true);
+          break;
+        case "missing-done": {
+          const today = this.service.today();
+          actions.push(
+            this.fix(
+              `Add @done:${today}`,
+              document,
+              setAttr(file.lines, task, "done", today),
+              diagnostic,
+              true
+            )
+          );
+          break;
+        }
+        case "date-outside-project": {
+          const key = /^@(\w+):/.exec(document.getText(diagnostic.range))?.[1];
+          const value = key === "start" ? task.start : key === "due" ? task.due : undefined;
+          if (!key || !value) break;
+          const suggestion = suggestYear(plan, value);
+          if (suggestion)
+            actions.push(
+              this.fix(
+                `Change @${key} to ${suggestion}`,
+                document,
+                setAttr(file.lines, task, key, suggestion),
+                diagnostic,
+                true
+              )
+            );
+          remove(key);
+          break;
+        }
+        case "start-after-started":
+        case "start-after-target":
+          remove("start", true);
+          break;
+        case "due-after-target": {
+          const m = plan.milestoneById(task.milestoneId);
+          if (m?.target)
+            actions.push(
+              this.fix(
+                `Change @due to the ${m.id} target ${m.target}`,
+                document,
+                setAttr(file.lines, task, "due", m.target),
+                diagnostic,
+                true
+              )
+            );
+          remove("due");
           break;
         }
         case "unknown-owner":

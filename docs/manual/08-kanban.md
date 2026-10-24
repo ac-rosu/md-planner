@@ -76,13 +76,13 @@ the punch-list board, severity comes first (A, B, C).
 
 Drag a card with the mouse:
 
-| You drop a card …                     | The planner writes                                                                                                                                                |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| in another column                     | The new checkbox, plus `@started` (to Doing or Review), `@done` (to Done), or removes `@done` / `@blocked` when the card leaves those columns.                    |
-| in **Blocked** (task board)           | Asks for the reason first and writes `@blocked:"…"` (the reason is optional).                                                                                     |
-| higher or lower in the same column    | The priority of the card it lands next to: dropping above a high-priority card makes it `@prio:high`. `med` is the default, so it is written by removing `@prio`. |
-| in another **owner** lane             | `@owner` of that lane (or no owner in the _Unassigned_ lane).                                                                                                     |
-| in another milestone or severity lane | Nothing: dragging is refused. Use right-click → **Move task to…** (milestone) or **Edit task…** (severity).                                                       |
+| You drop a card …                     | The planner writes                                                                                                                                                                                                                                |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| in another column                     | The new checkbox, plus `@started` (to Doing or Review), `@done` (to Done), or removes `@done` / `@blocked` when the card leaves those columns.                                                                                                    |
+| in **Blocked** (task board)           | Asks for the reason first and writes `@blocked:"…"` (the reason is optional).                                                                                                                                                                     |
+| higher or lower in the same column    | The priority of the card it lands next to: dropping above a high-priority card makes it `@prio:high`. `med` is the default, so it is written by removing `@prio`. A card dropped in another column or lane keeps its priority, wherever it lands. |
+| in another **owner** lane             | `@owner` of that lane (or no owner in the _Unassigned_ lane).                                                                                                                                                                                     |
+| in another milestone or severity lane | Nothing: dragging is refused. Use right-click → **Move task to…** (milestone) or **Edit task…** (severity).                                                                                                                                       |
 
 ![The reason prompt when a card is dropped on Blocked](images/kanban-blocked.png)
 

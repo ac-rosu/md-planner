@@ -9,8 +9,10 @@ import {
   STATUS_CHAR,
   type Task,
 } from "../model";
+import { parseFileAs } from "../parser/files";
 import { formatAttr } from "../parser/taskLine";
 import { type Plan } from "../resolve";
+import { hasLoggedWork } from "../rollup";
 import { pos, range, type TextEdit, type TextLines } from "../text";
 import { minimalLineEdit, TaskLineEditor } from "./lineEditor";
 
@@ -39,9 +41,10 @@ export interface StatusOptions {
 }
 
 /**
- * Changes the checkbox and maintains the automatic dates: `@started` is added when work starts,
- * `@done` when the task is completed (and removed again when it is reopened); `@blocked` is
- * removed when a blocked task is unblocked.
+ * Changes the checkbox and maintains the automatic dates: `@started` is added when work starts
+ * (and removed when the task goes back to to do with no time logged), `@done` when the task is
+ * completed (and removed again when it is reopened); `@blocked` is removed when a blocked task is
+ * unblocked.
  */
 export function setStatus(
   lines: TextLines,
@@ -65,6 +68,8 @@ export function applyStatus(
   if (task.kind === "step") return;
   if ((status === "doing" || status === "review") && !e.hasAttr("started"))
     e.setAttr("started", today);
+  if (status === "todo" && e.hasAttr("started") && !hasLoggedWork(task))
+    e.setAttr("started", undefined);
   if (status === "done" && !e.hasAttr("done")) e.setAttr("done", today);
   if (status !== "done" && e.hasAttr("done") && status !== "cancelled")
     e.setAttr("done", undefined);
@@ -468,6 +473,54 @@ export function assignMissingIds(
   const ids = nextIds(plan, prefix, missing.length, reserved);
   for (const id of ids) reserved.add(id);
   return missing.flatMap((t, i) => setId(file.lines, t, ids[i]));
+}
+
+/**
+ * Gives fresh ids to tasks that were copied with their id and then made into another task: a
+ * duplicated or pasted line keeps its `^T12`, and once its title differs from every other task
+ * with that id it is clearly a new task. Only occurrences beyond those in the file's saved text
+ * count as copies (saved ones keep their id: unchanged titles first, then in file order). A copy
+ * with the same title is left alone: it may be a task being moved (pasted here, to be deleted
+ * there), and the duplicate-id quick fix handles it. Ids in `reserved` are avoided and the new ones
+ * are added to it.
+ */
+export function renumberCopiedIds(
+  plan: Plan,
+  file: ParsedFile,
+  savedText: string | undefined,
+  reserved: Set<string> = new Set()
+): TextEdit[] {
+  if (file.kind !== "milestone" && file.kind !== "punch") return [];
+  const users = new Map<string, Task[]>();
+  for (const t of [...plan.tasks, ...plan.punch, ...plan.inbox])
+    if (t.id) users.set(t.id, [...(users.get(t.id) ?? []), t]);
+  const saved = savedText === undefined ? undefined : parseFileAs(file.path, savedText, file.kind);
+  const savedTitles = new Map<string, string[]>();
+  for (const t of saved?.items ?? [])
+    if (t.id) savedTitles.set(t.id, [...(savedTitles.get(t.id) ?? []), t.title]);
+  const byId = new Map<string, Task[]>();
+  for (const t of file.items)
+    if (t.id && (users.get(t.id)?.length ?? 0) > 1) byId.set(t.id, [...(byId.get(t.id) ?? []), t]);
+
+  const copies: Task[] = [];
+  for (const [id, items] of byId) {
+    const titles = [...(savedTitles.get(id) ?? [])];
+    const unmatched: Task[] = [];
+    for (const t of items) {
+      const i = titles.indexOf(t.title);
+      if (i >= 0) titles.splice(i, 1);
+      else unmatched.push(t);
+    }
+    // Saved occurrences whose title was edited since keep their id in file order.
+    for (const t of unmatched.slice(titles.length)) {
+      const others = users.get(id)!.filter((u) => u !== t);
+      if (others.every((u) => u.title !== t.title)) copies.push(t);
+    }
+  }
+  copies.sort((a, b) => a.line - b.line);
+  const ids = nextIds(plan, file.kind === "punch" ? "P" : "T", copies.length, reserved);
+  for (const id of ids) reserved.add(id);
+  return copies.flatMap((t, i) => setId(file.lines, t, ids[i]));
 }
 
 /** Renames a task id and every `@dep` reference to it, across all files. */

@@ -26,6 +26,7 @@ import {
   ownerOf,
   progressOf,
   remainingHours,
+  startedOn,
 } from "./rollup";
 
 export type ScheduleMode = "capacity" | "demand";
@@ -401,10 +402,11 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
   }
   for (const t of pending) tasks.get(t)!.unscheduled = "horizon";
 
-  // In-progress tasks show their real start.
+  // Tasks under way show their real start (a to-do task's leftover @started is ignored).
   for (const ts of tasks.values()) {
     if (ts.done || ts.unscheduled) continue;
-    const started = ts.task.started ? parseDate(ts.task.started) : undefined;
+    const startedIso = startedOn(ts.task);
+    const started = startedIso ? parseDate(startedIso) : undefined;
     if (started !== undefined && (ts.start === undefined || started < ts.start)) ts.start = started;
     if (ts.finish !== undefined && ts.deadline !== undefined) ts.late = ts.finish > ts.deadline;
   }

@@ -53,6 +53,38 @@ export function isPlainListItem(text: string): boolean {
   return PLAIN_LIST_ITEM.test(text);
 }
 
+/** A list item or bracket that looks like a checkbox: indent, marker, gap, box, gap, rest. */
+const NEAR_CHECKBOX =
+  /^([ \t]*)(?:([-*+]|\d{1,9}[.)])([ \t]*))?\[([ xX/?!-]?)\]([ \t]*)(?![(:[])(.*)$/;
+
+export interface NearMissCheckbox {
+  /** What is wrong, as an instruction ("add a space after the list marker"). */
+  problem: string;
+  /** The line written as a task. */
+  fixed: string;
+}
+
+/**
+ * A line that was almost certainly meant as a task but is not read as one: `- []`, `-[ ]`,
+ * `- [ ]Title` or `[ ] Title` (no list marker). Links (`[x](…)`) and reference definitions
+ * (`[x]: …`) are not matched.
+ */
+export function nearMissCheckbox(text: string): NearMissCheckbox | undefined {
+  if (matchCheckbox(text)) return undefined;
+  const m = NEAR_CHECKBOX.exec(text);
+  if (!m) return undefined;
+  const [, indent, marker, gap, box, gap2, rest] = m;
+  if (!marker && (!box || !rest.trim())) return undefined;
+  let problem: string;
+  if (!box) problem = "the checkbox is empty – write [ ]";
+  else if (!marker) problem = "it has no list marker – write - [ ]";
+  else if (!gap) problem = "add a space after the list marker";
+  else if (!gap2 && rest) problem = "add a space after ]";
+  else return undefined;
+  const fixed = `${indent}${marker ?? "-"} [${box || " "}]${rest ? ` ${rest}` : ""}`;
+  return { problem, fixed };
+}
+
 /** Splits the content of a task line into space, text, attribute, tag and id tokens. */
 export function tokenize(text: string, from: number): Token[] {
   const tokens: Token[] = [];

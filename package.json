@@ -1481,7 +1481,7 @@
         "planner.autoAssignIds": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Add missing task ids (`^T…`) when a milestone file or the punch list is saved."
+          "markdownDescription": "Add missing task ids (`^T…`) when a milestone file or the punch list is saved, and give a new id to a task line that was copied with its id and then given another title."
         },
         "planner.autoAssignIdsOnAutoSave": {
           "type": "boolean",
@@ -1495,8 +1495,8 @@
         },
         "planner.editor.toggleOnClick": {
           "type": "boolean",
-          "default": true,
-          "markdownDescription": "Clicking inside a task's checkbox `[ ]` in the editor cycles its status (to do → in progress → review → done) and writes `@started`/`@done`."
+          "default": false,
+          "markdownDescription": "Clicking inside a task's checkbox `[ ]` in the editor cycles its status (to do → in progress → review → done) and writes `@started`/`@done`. Off by default: a click meant to place the cursor changed the task. Hover the checkbox to change the status, or use **Planner: Cycle status** (Ctrl/Cmd+Alt+X)."
         },
         "planner.codeLens.enabled": {
           "type": "boolean",

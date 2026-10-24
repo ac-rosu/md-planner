@@ -85,6 +85,20 @@ describe("Kanban", () => {
     assert.doesNotMatch(line(M2, "T105"), /@prio/);
   });
 
+  it("keeps the priority when a card moves to another column, whatever its neighbours", async () => {
+    const panel = await openKanban();
+    // Dropped into Doing right below T105 (high): only the status changes.
+    await panel.receive({
+      type: "move",
+      key: "T107",
+      status: "doing",
+      lane: "all",
+      above: "T105",
+    });
+    assert.match(line(M2, "T107"), /^- \[\/\] /);
+    assert.doesNotMatch(line(M2, "T107"), /@prio/);
+  });
+
   it("reassigns the owner when a card moves to another owner lane, and refuses milestone moves", async () => {
     const panel = await openKanban();
     await panel.receive({

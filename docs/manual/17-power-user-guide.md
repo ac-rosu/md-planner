@@ -11,8 +11,8 @@ settings, followed by troubleshooting.
 1. Glance at the status bar: `⚠ overdue` and `⊘ blocked` counts. Click it if they are not zero.
 2. Open My Work / Team: your next tasks are at the top, in schedule order.
 3. Start the timer on the task you pick up (right-click → **Start timer**).
-4. Update statuses as you go: click the checkbox, ↻ on the task's row, or drag cards on the Kanban
-   board.
+4. Update statuses as you go: hover the checkbox, ↻ on the task's row, or drag cards on the
+   Kanban board.
 
 **Every week (30 minutes)**
 
@@ -290,7 +290,7 @@ The generated reference with every description is in [docs/settings.md](../setti
 | `planner.autoAssignIds`                 | `true`                                                                                                  | Add missing ids when a milestone file or the punch list is saved.         |
 | `planner.autoAssignIdsOnAutoSave`       | `false`                                                                                                 | Also on VS Code's delayed auto-save.                                      |
 | `planner.autoSave`                      | `true`                                                                                                  | Save plan files after edits from forms, views and commands.               |
-| `planner.editor.toggleOnClick`          | `true`                                                                                                  | Clicking inside a checkbox cycles the status.                             |
+| `planner.editor.toggleOnClick`          | `false`                                                                                                 | Clicking inside a checkbox cycles the status (hover it to choose one).    |
 | `planner.codeLens.enabled`              | `true`                                                                                                  | CodeLens above milestone headings (and tasks).                            |
 | `planner.codeLens.tasks`                | `true`                                                                                                  | Scheduled dates and slack above each task.                                |
 | `planner.codeLens.actions`              | `true`                                                                                                  | Clickable actions in the CodeLens (owner, Edit, Add task …).              |
@@ -343,12 +343,12 @@ and in your user settings (personal, not committed): `"planner.me": "alex"`.
 | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The Milestones view says "No plan folder found". | The workspace has no `plan/project.md`. Open the folder that contains `plan/`, or set `planner.planFolder`, then **Planner: Refresh**.                                                                    |
 | A file's tasks do not appear.                    | Only these files are read: `project.md`, `team.md`, `inbox.md`, `punchlist.md`, and `.md` files under `milestones/` and `tests/` (sub-folders allowed). Other Markdown in the plan folder is ignored.     |
-| A line is not a task.                            | It needs a list marker, a space and a checkbox: `- [ ] Title`. `-[ ]` or `- []` is not a task.                                                                                                            |
+| A line is not a task.                            | It needs a list marker, a space and a checkbox: `- [ ] Title`. `-[ ]`, `- []`, `- [ ]Title` or `[ ] Title` is not a task; the editor warns and the quick fix rewrites the line.                           |
 | A task shows `not scheduled`.                    | It is in a circular dependency, waits for one, or its owner has no capacity. Hover the CodeLens for the reason; check the Problems panel.                                                                 |
 | A task is scheduled with 0 hours.                | It has no `@est` (info message). Add an estimate.                                                                                                                                                         |
 | `@est:12` is reported as invalid.                | Durations need a unit: `12h`, `1.5d`, `1w`.                                                                                                                                                               |
 | Ids are not added when saving.                   | Only milestone files and the punch list get ids, only on an explicit save (or with `planner.autoAssignIdsOnAutoSave`), and only when `planner.autoAssignIds` is on. **Planner: Assign IDs** always works. |
-| Clicking a checkbox does nothing.                | Click between the brackets of a task line; check `planner.editor.toggleOnClick`.                                                                                                                          |
+| Clicking a checkbox does nothing.                | That is the default: hover the checkbox and click a status, or press Cmd/Ctrl+Alt+X. To change it with a click, turn on `planner.editor.toggleOnClick`.                                                   |
 | A Gantt drag is refused.                         | Only open leaf tasks can be moved, resized or edited; links that would create a cycle are refused.                                                                                                        |
 | A Kanban drop is refused.                        | Cards cannot be dragged to another milestone or severity lane. Right-click the card → **Move task to…** (milestone) or **Edit task…** (severity).                                                         |
 | I cannot find a button.                          | Narrow sidebars move toolbar buttons into the **…** menu. Row buttons appear on hover (and on the selected row). Every action is also in the Command Palette (`planner add`, `planner edit`).             |

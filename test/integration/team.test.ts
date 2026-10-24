@@ -96,6 +96,16 @@ describe("team load, dashboard, baselines and time tracking", () => {
     assert.equal(api.timer.running, undefined);
   });
 
+  it("puts a task back to to do when its timer is stopped within a minute", async () => {
+    const api = await getApi();
+    const before = line(M2, "T121");
+    await vscode.commands.executeCommand("planner.startTimer", "T121");
+    await waitFor(() => api.state.plan.taskById("T121")?.status === "doing", "index");
+    const hours = await vscode.commands.executeCommand<number>("planner.stopTimer");
+    assert.equal(hours, 0);
+    assert.equal(line(M2, "T121"), before);
+  });
+
   it("logs time manually", async () => {
     const api = await getApi();
     await vscode.commands.executeCommand("planner.logTime", "T102", "1h30m");
