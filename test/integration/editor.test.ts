@@ -242,6 +242,42 @@ describe("editor integration", () => {
     assert.equal(lines[pos.line + 1], "  - [ ] Order events schema @est:6h ^T104");
   });
 
+  it("notices when format on save rewrites a plan file", async () => {
+    const api = await getApi();
+    const formatter = vscode.languages.registerDocumentFormattingEditProvider(
+      { language: "markdown" },
+      {
+        // A formatter that re-indents notes, as Prettier did in a pilot user's plan.
+        provideDocumentFormattingEdits: (doc) => {
+          const line = doc
+            .getText()
+            .split("\n")
+            .findIndex((l) => l.startsWith("        Notes"));
+          return line < 0
+            ? []
+            : [vscode.TextEdit.replace(new vscode.Range(line, 0, line, 8), "  ")];
+        },
+      }
+    );
+    const config = vscode.workspace.getConfiguration("editor", { languageId: "markdown" });
+    await config.update("formatOnSave", true, vscode.ConfigurationTarget.Workspace, true);
+    try {
+      const editor = await openPlanFile(M2);
+      const pos = await positionOf(M2, "## Notes");
+      await editor.edit((b) => b.insert(pos, "- [ ] Saved with a formatter @est:1h\n\n"));
+      const before = api.formatGuard.reformatted.length;
+      await editor.document.save();
+      await waitFor(
+        () => api.formatGuard.reformatted.length > before,
+        "the guard noticed the formatter"
+      );
+      assert.equal(api.formatGuard.reformatted[api.formatGuard.reformatted.length - 1], M2);
+    } finally {
+      formatter.dispose();
+      await config.update("formatOnSave", undefined, vscode.ConfigurationTarget.Workspace, true);
+    }
+  });
+
   it("turns a mistyped line into a task with a quick fix", async () => {
     const editor = await openPlanFile(M2);
     const pos = await positionOf(M2, "## Notes");

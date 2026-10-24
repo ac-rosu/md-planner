@@ -162,20 +162,20 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
       [{ path: t.file, edits: setAttr(this.lines(t), t, "start", date) }],
       `Move ${t.id ?? t.title} to ${date}`
     );
+    if (!ok) return false;
+    // Every drag is reported with an Undo button, so an accidental one is noticed right away.
     const ts = s.tasks.get(t);
-    if (ok && ts?.earliest !== undefined && snapped < ts.earliest && !ts.task.start) {
-      this.notice(
-        "info",
-        `${t.id ?? t.title} cannot start before its dependencies finish; @start is set to ${date}, the schedule keeps it later.`
-      );
-    } else if (ok && !t.start) {
+    const name = t.id ?? t.title;
+    const what = `${name}: fixed start ${t.start ?? "none"} → ${date}.`;
+    if (ts?.earliest !== undefined && snapped < ts.earliest && !ts.task.start)
+      this.changed(`${what} It still waits for its dependencies, so the schedule keeps it later.`);
+    else if (!t.start)
       // Dragging pins the task; say so the first time, as it stays when the plan changes.
-      this.notice(
-        "info",
-        `${t.id ?? t.title} is pinned: it starts no earlier than ${date} (@start), even when its dependencies finish sooner. Right-click the bar → Remove fixed start to let the scheduler place it again.`
+      this.changed(
+        `${what} It is now pinned: it starts no earlier than that, even when its dependencies finish sooner (right-click → Remove fixed start).`
       );
-    }
-    return ok;
+    else this.changed(what);
+    return true;
   }
 
   /** Drag the end of a bar: the new span becomes the remaining work, written as `@est` in hours. */
@@ -201,10 +201,13 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
         : remaining + (t.act ?? 0);
     est = Math.round(est * 2) / 2;
     const value = formatHours(est);
-    return this.ctx.history.apply(
+    const before = t.attrs.find((a) => a.key === "est")?.value ?? "none";
+    const ok = await this.ctx.history.apply(
       [{ path: t.file, edits: setAttr(this.lines(t), t, "est", value) }],
       `Set ${t.id ?? t.title} estimate to ${value}`
     );
+    if (ok) this.changed(`${t.id ?? t.title}: estimate ${before} → ${value}.`);
+    return ok;
   }
 
   /** Drag from one bar to another: the target gets `@dep` on the source (ids added if missing). */
@@ -235,20 +238,24 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
       return false;
     }
     edits.push({ path: succ.file, edits: depEdits });
-    return this.ctx.history.apply(
+    const ok = await this.ctx.history.apply(
       mergeEdits(edits),
       `Add dependency ${succ.id ?? succ.title} → ${predId}`
     );
+    if (ok) this.changed(`${succ.id ?? succ.title} now waits for ${predId}.`);
+    return ok;
   }
 
   async unlink(fromKey: string, toKey: string): Promise<boolean> {
     const pred = this.task(fromKey);
     const succ = this.task(toKey);
     if (!pred.id) return false;
-    return this.ctx.history.apply(
+    const ok = await this.ctx.history.apply(
       [{ path: succ.file, edits: removeDependency(this.lines(succ), succ, pred.id) }],
       `Remove dependency ${succ.id ?? succ.title} → ${pred.id}`
     );
+    if (ok) this.changed(`${succ.id ?? succ.title} no longer waits for ${pred.id}.`);
+    return ok;
   }
 
   /** Inline edit of title, owner and estimate in one minimal edit. */
@@ -268,7 +275,9 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
       if (change.owner !== undefined) e.setAttr("owner", change.owner ?? undefined);
       if (change.estimate !== undefined) e.setAttr("est", change.estimate);
     });
-    return this.ctx.history.apply([{ path: t.file, edits }], `Edit ${t.id ?? t.title}`);
+    const ok = await this.ctx.history.apply([{ path: t.file, edits }], `Edit ${t.id ?? t.title}`);
+    if (ok && edits.length) this.changed(`Saved ${t.id ?? t.title}.`);
+    return ok;
   }
 
   override dispose(): void {

@@ -177,6 +177,10 @@ input[type="search"] {
   z-index: 50;
 }
 
+.notice .notice-action {
+  margin-left: 10px;
+}
+
 .notice.error {
   border-color: var(--vscode-inputValidation-errorBorder, var(--planner-late));
 }

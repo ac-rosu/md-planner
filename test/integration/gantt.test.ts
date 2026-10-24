@@ -100,11 +100,22 @@ describe("scheduler integration and Gantt", () => {
 
   it("resizes a bar by writing @est as the remaining hours", async () => {
     const panel = await openGantt();
+    // Every drag is reported with what changed and an Undo button.
+    const posted: unknown[] = [];
+    const post = panel.post.bind(panel);
+    panel.post = (m) => {
+      posted.push(m);
+      post(m);
+    };
     // T121 (Sam, 40 h/week) is scheduled 2026-10-21 → 10-23; ending on Monday 10-26 = 4 working days.
     await panel.receive({ type: "resize", key: "T121", finish: "2026-10-26" });
     assert.equal(
       line(M2, "T121"),
       "- [ ] Shared API library (auth, validation, logging) @est:32h @owner:sam #backend ^T121"
+    );
+    assert.deepEqual(
+      posted.find((m) => (m as { type: string }).type === "notice"),
+      { type: "notice", level: "info", message: "T121: estimate 3d → 32h.", undo: true }
     );
   });
 

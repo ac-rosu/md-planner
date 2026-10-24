@@ -3,7 +3,7 @@ import { nearMissCheckbox } from "../../../src/core/parser/taskLine";
 import { schedulePlan } from "../../../src/core/scheduler";
 import { validatePlan } from "../../../src/core/validate";
 import { nextStatus, renumberCopiedIds, setStatus } from "../../../src/core/writer";
-import { applyEdits } from "../../../src/core/text";
+import { applyEdits, sameExceptTrailingSpace } from "../../../src/core/text";
 import { md, planFrom } from "../helpers";
 
 const PROJECT = md("# P", "", "start: 2026-10-01", "end: 2027-03-31");
@@ -326,5 +326,16 @@ describe("copied ids", () => {
   it("leaves duplicates that were already saved for the quick fix", () => {
     const both = md(...head, "- [ ] A ^T1", "- [ ] B ^T1");
     expect(renumber(both, both)).toBe(both);
+  });
+});
+
+describe("format guard comparison", () => {
+  it("ignores whitespace at line ends and at the end, nothing else", () => {
+    expect(sameExceptTrailingSpace("- [ ] A ^T1\n", "- [ ] A ^T1  \n\n")).toBe(true);
+    expect(sameExceptTrailingSpace("a\r\nb", "a\nb\n")).toBe(true);
+    expect(sameExceptTrailingSpace("        notes\n", "  notes\n")).toBe(false);
+    expect(sameExceptTrailingSpace("@start:2026-10-26  ^T413", "@start:2026-10-26 ^T413")).toBe(
+      false
+    );
   });
 });

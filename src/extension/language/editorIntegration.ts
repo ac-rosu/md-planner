@@ -2,13 +2,18 @@
 // and the `planner.isPlanFile` context key drives keybindings and menus.
 import * as vscode from "vscode";
 import { matchCheckbox } from "../../core/parser/taskLine";
+import { applyEdits } from "../../core/text";
 import { assignMissingIds, nextStatus, renumberCopiedIds, setStatus } from "../../core/writer";
 import { itemAtLine } from "../commands/args";
 import { statusEffects } from "../commands/status";
+import { type FormatGuard } from "../formatGuard";
 import { type PlanService } from "../planService";
 import { config, toRange } from "../util";
 
-export function registerEditorIntegration(service: PlanService): vscode.Disposable[] {
+export function registerEditorIntegration(
+  service: PlanService,
+  guard: FormatGuard
+): vscode.Disposable[] {
   const updateContext = (editor: vscode.TextEditor | undefined) =>
     vscode.commands.executeCommand(
       "setContext",
@@ -30,7 +35,7 @@ export function registerEditorIntegration(service: PlanService): vscode.Disposab
       if (!config().get<boolean>("autoAssignIds", true)) return;
       const file = service.fileFor(e.document);
       if (!file || (file.kind !== "milestone" && file.kind !== "punch")) return;
-      e.waitUntil(idEdits(service, e.document));
+      e.waitUntil(idEdits(service, guard, e.document));
     }),
   ];
 }
@@ -39,7 +44,11 @@ export function registerEditorIntegration(service: PlanService): vscode.Disposab
  * On save: fresh ids for task lines that were copied with their id (compared with the saved file),
  * then ids for tasks that have none.
  */
-async function idEdits(service: PlanService, doc: vscode.TextDocument): Promise<vscode.TextEdit[]> {
+async function idEdits(
+  service: PlanService,
+  guard: FormatGuard,
+  doc: vscode.TextDocument
+): Promise<vscode.TextEdit[]> {
   const saved = await vscode.workspace.fs.readFile(doc.uri).then(
     (bytes) => new TextDecoder().decode(bytes),
     () => undefined
@@ -52,6 +61,8 @@ async function idEdits(service: PlanService, doc: vscode.TextDocument): Promise<
     ...renumberCopiedIds(service.plan, file, saved, reserved),
     ...assignMissingIds(service.plan, file, reserved),
   ];
+  // What the saved file should be; anything more is a formatter's doing (see FormatGuard).
+  guard.expect(doc, applyEdits(doc.getText(), edits));
   return edits.map((x) => vscode.TextEdit.replace(toRange(x.range), x.newText));
 }
 

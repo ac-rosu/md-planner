@@ -151,6 +151,17 @@ export function applyEdits(source: string, edits: readonly TextEdit[]): string {
   return bom + out;
 }
 
+/** True when two texts differ at most in whitespace at the ends of lines and of the text. */
+export function sameExceptTrailingSpace(a: string, b: string): boolean {
+  const norm = (s: string) =>
+    s
+      .split(/\r\n|\n|\r/)
+      .map((l) => l.replace(/[ \t]+$/, ""))
+      .join("\n")
+      .replace(/\n+$/, "");
+  return norm(a) === norm(b);
+}
+
 /** Visual indentation width of leading whitespace (tabs advance to the next multiple of 4). */
 export function indentWidth(text: string): number {
   let width = 0;

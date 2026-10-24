@@ -193,6 +193,11 @@ Gantt's own **Undo** and **Redo** buttons (and Cmd+Z / Cmd+Shift+Z while the cha
 and redo the chart's edits even when the file is not in front, and refuse if the file was changed
 in between.
 
+After every drag, link, unlink or dialog edit, a message at the bottom of the chart says exactly
+what changed, such as "T417: estimate 80h → 122.5h.", with an **Undo** button, so a drag you did
+not mean is noticed at once. **Remove fixed start** shows the same in a notification. The undo
+history does not survive closing VS Code or reloading the window.
+
 ## Other groupings
 
 Group by **Owner** and colour by **Status** to see each person's sequence of work, with done

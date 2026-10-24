@@ -8,6 +8,7 @@ import { assignMissingIds, type FileEdit, nextStatus, setAttr, setStatus } from 
 import { type PlanService } from "../planService";
 import { toRange } from "../util";
 import { resolveTask, stringArg, type TaskArg } from "./args";
+import { offerUndo } from "./edit";
 import { type StatusAnswers, statusEffects, SUBTASK_CHOICES } from "./status";
 
 export function registerTaskCommands(service: PlanService): vscode.Disposable[] {
@@ -210,7 +211,13 @@ export async function removeFixedStart(service: PlanService, arg: TaskArg): Prom
   }
   const t = r.task;
   const edits = setAttr(fileOf(service, t).lines, t, "start", undefined);
-  return service.apply([{ path: t.file, edits }], { source: r.fromEditor ? "editor" : "view" });
+  const revert = await service.applyRevertible([{ path: t.file, edits }], {
+    source: r.fromEditor ? "editor" : "view",
+  });
+  if (!revert) return false;
+  // From a menu the change is easy to miss: say what it did, with Undo.
+  offerUndo(service, `${t.id ?? t.title}: fixed start ${t.start} removed.`, revert);
+  return true;
 }
 
 /** Assigns ids in the active file (default), a given plan path, or all files (`"all"`). */

@@ -5,28 +5,47 @@ import { type CommonHostMessage } from "./protocol";
 /** A transient notice at the bottom of the webview (errors from the host, confirmations). */
 export function Notice({
   notice,
+  onUndo,
 }: {
-  notice?: { level: "info" | "error"; message: string; at: number };
+  notice?: { level: "info" | "error"; message: string; at: number; undo?: boolean };
+  /** Shown as an Undo button on notices that report an edit. */
+  onUndo?: () => void;
 }) {
   const [visible, setVisible] = useState(false);
+  const undo = notice?.undo && onUndo;
   useEffect(() => {
     if (!notice) return;
     setVisible(true);
-    const timer = setTimeout(() => setVisible(false), notice.level === "error" ? 6000 : 3000);
+    // Edits stay long enough to be noticed and undone.
+    const ms = notice.level === "error" ? 6000 : notice.undo ? 10000 : 3000;
+    const timer = setTimeout(() => setVisible(false), ms);
     return () => clearTimeout(timer);
   }, [notice?.at]);
   if (!notice || !visible) return null;
   return (
     <div class={`notice ${notice.level}`} role={notice.level === "error" ? "alert" : "status"}>
       {notice.message}
+      {undo && (
+        <button
+          class="btn notice-action"
+          onClick={() => {
+            setVisible(false);
+            onUndo!();
+          }}
+        >
+          Undo
+        </button>
+      )}
     </div>
   );
 }
 
 export function noticeFrom(
   m: CommonHostMessage
-): { level: "info" | "error"; message: string; at: number } | undefined {
-  return m.type === "notice" ? { level: m.level, message: m.message, at: Date.now() } : undefined;
+): { level: "info" | "error"; message: string; at: number; undo?: boolean } | undefined {
+  return m.type === "notice"
+    ? { level: m.level, message: m.message, at: Date.now(), undo: m.undo }
+    : undefined;
 }
 
 /** Imperative tooltip, so that hovering does not re-render large charts. */

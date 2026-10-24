@@ -306,6 +306,10 @@ plan at once.
   in the message that follows (it refuses when one of the files was changed in between).
 - `planner.autoSave` (on by default) saves the file right after an edit from the UI. Turn it off
   to review changes before saving.
+- **Format on save** (for example Prettier as the default formatter) rewrites a whole plan file
+  whenever it is saved, also after an edit from the planner. A formatter can change task lines and
+  how subtasks nest. The planner notices when a save changed more than its edit and offers to turn
+  format on save off for Markdown in the workspace, or to add the plan folder to `.prettierignore`.
 - New files (a milestone, `team.md`, `inbox.md`, `punchlist.md`) are created when needed.
 - The clickable CodeLens actions can be hidden with `planner.codeLens.actions`; the schedule
   CodeLens stays.

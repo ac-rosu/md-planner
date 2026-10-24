@@ -80,6 +80,11 @@ export abstract class WebviewPanelHost<HostMessage, WebviewMessage extends { typ
 
   protected abstract onMessage(message: WebviewMessage): Promise<void> | void;
 
+  /** Reports an edit made from the view, with an Undo button, so an accidental drag is noticed. */
+  protected changed(message: string): void {
+    this.post({ type: "notice", level: "info", message, undo: true } as HostMessage);
+  }
+
   protected notice(level: "info" | "error", message: string): void {
     this.post({ type: "notice", level, message } as HostMessage);
     if (level === "error") this.ctx.state.service.log.warn(message);

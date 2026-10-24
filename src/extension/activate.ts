@@ -11,6 +11,7 @@ import { PlanCodeActionProvider } from "./language/codeActions";
 import { PlanCodeLensProvider } from "./language/codeLens";
 import { PlanCompletionProvider } from "./language/completion";
 import { PlanDiagnostics } from "./language/diagnostics";
+import { FormatGuard } from "./formatGuard";
 import { registerEditorIntegration } from "./language/editorIntegration";
 import {
   PlanDefinitionProvider,
@@ -55,6 +56,8 @@ export interface PlannerApi {
   milestones: MilestonesTreeProvider;
   /** Drag and drop of the Milestones view. */
   milestonesDnd: MilestonesDragAndDrop;
+  /** Notices plan files rewritten by a formatter on save. */
+  formatGuard: FormatGuard;
   team: TeamTreeProvider;
   inbox: InboxTreeProvider;
   punch: PunchTreeProvider;
@@ -163,6 +166,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<Planne
   }
   context.subscriptions.push(milestones, team, inbox, punch);
 
+  // Notices when format on save rewrites a plan file.
+  const formatGuard = new FormatGuard(service, context.workspaceState);
+  context.subscriptions.push(formatGuard);
+
   // Language features for plan files
   const selector: vscode.DocumentSelector = [
     { language: "markdown", scheme: "file" },
@@ -189,7 +196,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Planne
     vscode.languages.registerCodeActionsProvider(selector, new PlanCodeActionProvider(service), {
       providedCodeActionKinds: PlanCodeActionProvider.kinds,
     }),
-    ...registerEditorIntegration(service)
+    ...registerEditorIntegration(service, formatGuard)
   );
 
   // Commands
@@ -293,6 +300,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Planne
     state,
     milestones,
     milestonesDnd,
+    formatGuard,
     team,
     inbox,
     punch,

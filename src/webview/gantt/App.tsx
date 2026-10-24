@@ -35,7 +35,7 @@ export function App() {
   const [editing, setEditing] = useState<string | undefined>();
   const [history, setHistory] = useState({ canUndo: false, canRedo: false });
   const [notice, setNotice] = useState<
-    { level: "info" | "error"; message: string; at: number } | undefined
+    { level: "info" | "error"; message: string; at: number; undo?: boolean } | undefined
   >();
   const scroller = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -58,7 +58,7 @@ export function App() {
           setHistory({ canUndo: m.canUndo, canRedo: m.canRedo });
           break;
         case "notice":
-          setNotice({ level: m.level, message: m.message, at: Date.now() });
+          setNotice({ level: m.level, message: m.message, at: Date.now(), undo: m.undo });
           break;
       }
     });
@@ -461,7 +461,7 @@ export function App() {
           }}
         />
       )}
-      <Notice notice={notice} />
+      <Notice notice={notice} onUndo={() => send({ type: "undo" })} />
     </>
   );
 }

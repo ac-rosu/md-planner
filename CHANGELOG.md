@@ -49,6 +49,10 @@ Safer editing, from the pilot users' feedback.
   of a note on every task. Tasks that cannot be scheduled say whose working hours end and when,
   and the tasks waiting for them name that task instead of blaming their own owner. Dates in
   `team.md` after the project end are flagged, with a quick fix for the year.
+- Every Gantt edit shows what changed ("T417: estimate 80h → 122.5h") with an **Undo** button, and
+  so does **Remove fixed start**. When format on save (Prettier and the like) rewrites a plan file,
+  the planner says so and offers to turn it off for Markdown or to add the plan folder to
+  `.prettierignore`.
 - The Gantt shows tasks in the order they start, as a cascade (**Order: Schedule**, the default;
   **Files** keeps the order of the plan files, which are never reordered).
 

@@ -18,7 +18,8 @@ import {
 
 export type CommonHostMessage =
   | { type: "history"; canUndo: boolean; canRedo: boolean }
-  | { type: "notice"; level: "info" | "error"; message: string };
+  /** `undo`: the notice reports an edit and offers to undo it. */
+  | { type: "notice"; level: "info" | "error"; message: string; undo?: boolean };
 
 export type CommonWebviewMessage =
   { type: "ready" } | { type: "reveal"; key: string } | { type: "undo" } | { type: "redo" };
