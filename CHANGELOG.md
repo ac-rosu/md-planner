@@ -44,6 +44,8 @@ Safer editing, from the pilot users' feedback.
   waits for T491"). Hovering an arrow names both tasks; Esc or a click on empty space shows all
   arrows again. Arrows of tasks that finish on the same day no longer lie on top of each other,
   and their corners are rounded.
+- Gantt: pinch on the trackpad, or Ctrl/Cmd + scroll wheel, zooms the timeline smoothly around
+  the pointer, from several years down to single days. The zoom is remembered like the others.
 - Late tasks say what holds them back, following the dependencies to the cause: "Held back by the
   fixed start 2027-10-19 of T461 (via M1)" or "… by Sam having other work first", in the warning,
   the Gantt tooltip and the hovers.

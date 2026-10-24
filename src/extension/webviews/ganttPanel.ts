@@ -94,11 +94,14 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
       case "ready":
         this.sendModel();
         return;
-      case "options":
+      case "options": {
+        // Zooming is up to the webview: only other options change the model.
+        const zoomOnly = sameExceptZoom(this.options, m.options);
         this.options = m.options;
         await this.ctx.memento.update(OPTIONS_KEY, m.options);
-        this.sendModel();
+        if (!zoomOnly) this.sendModel();
         return;
+      }
       case "reveal": {
         const t = this.task(m.key);
         await revealTaskInEditor(this.ctx.state.service, t, this.editorColumn());
@@ -295,4 +298,10 @@ export function mergeEdits(edits: FileEdit[]): FileEdit[] {
     else map.set(e.path, { path: e.path, edits: [...e.edits] });
   }
   return [...map.values()];
+}
+
+function sameExceptZoom(a: GanttViewOptions, b: GanttViewOptions): boolean {
+  const rest = (o: GanttViewOptions) =>
+    JSON.stringify({ ...o, zoom: undefined, pxPerDay: undefined });
+  return rest(a) === rest(b);
 }

@@ -119,6 +119,24 @@ describe("scheduler integration and Gantt", () => {
     );
   });
 
+  it("keeps a zoom without rebuilding the chart, and rebuilds for other options", async () => {
+    const panel = await openGantt();
+    const posted: Array<{ type: string }> = [];
+    const post = panel.post.bind(panel);
+    panel.post = (m) => {
+      posted.push(m as { type: string });
+      post(m);
+    };
+    const before = panel.viewOptions;
+    // A pinch or Ctrl+wheel zoom only stores the pixels per day.
+    await panel.receive({ type: "options", options: { ...before, pxPerDay: 21.5 } });
+    assert.equal(panel.viewOptions.pxPerDay, 21.5);
+    assert.equal(posted.filter((m) => m.type === "model").length, 0);
+    await panel.receive({ type: "options", options: { ...before, order: "file" } });
+    assert.equal(posted.filter((m) => m.type === "model").length, 1);
+    await panel.receive({ type: "options", options: before });
+  });
+
   it("links two bars by adding @dep, refuses cycles, and unlinks", async () => {
     const api = await getApi();
     const panel = await openGantt();

@@ -32,6 +32,35 @@ export function fitPx(rangeStart: number, rangeEnd: number, width: number): numb
   return Math.min(48, Math.max(0.8, width / days));
 }
 
+/** Zoom limits in pixels per day: several years on screen, to wide single days. */
+export const MIN_PX = 0.8;
+export const MAX_PX = 64;
+
+/**
+ * Pixels per day after one wheel event of a zoom gesture (a trackpad pinch, or Ctrl/Cmd + wheel).
+ * A pinch sends many small deltas, a mouse wheel a few large ones (about 100 px, or 3 lines, per
+ * notch): one notch zooms by about a quarter, a pinch follows the fingers smoothly.
+ */
+export function zoomPx(px: number, deltaY: number, deltaMode = 0): number {
+  const pixels = deltaMode === 1 ? deltaY * 33 : deltaMode === 2 ? deltaY * 800 : deltaY;
+  const step = Math.max(-200, Math.min(200, pixels));
+  return Math.min(MAX_PX, Math.max(MIN_PX, px * Math.pow(2, -step / 250)));
+}
+
+/**
+ * The horizontal scroll that keeps `day` under the pointer after zooming: `pointerX` is measured
+ * from the left edge of the scroll area, `chartLeft` is where the chart starts in it (after the
+ * task list).
+ */
+export function anchoredScroll(
+  scale: Scale,
+  day: number,
+  pointerX: number,
+  chartLeft: number
+): number {
+  return Math.max(0, chartLeft + (day - scale.start) * scale.px - pointerX);
+}
+
 /** The named zoom closest to a pixel density (for labelling and tick choice). */
 export function zoomFor(px: number): GanttZoom {
   if (px >= 24) return "day";

@@ -1,5 +1,5 @@
 // Gantt webview: toolbar, accessible task tree (left) and the SVG timeline (right).
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { type GanttLink, type GanttModel, type GanttRow } from "../../core/views/gantt";
 import {
   DEFAULT_GANTT_OPTIONS,
@@ -13,7 +13,16 @@ import { getState, isoDate, onMessage, post, setState } from "../shared/vscode";
 import { Chart, type DragResult, ROW_H } from "./Chart";
 import { EditDialog, type EditResult } from "./EditDialog";
 import { describeFocus, linkFocus, stepWorkingDays, visibleRows, vscodeContext } from "./rows";
-import { dayToX, fitPx, headerTicks, makeScale, ZOOM_PX } from "./scale";
+import {
+  anchoredScroll,
+  dayToX,
+  fitPx,
+  headerTicks,
+  makeScale,
+  type Scale,
+  ZOOM_PX,
+  zoomPx,
+} from "./scale";
 
 const LEFT_W = 320;
 
@@ -128,6 +137,54 @@ export function App() {
       dayToX(scale, model.today) - (scroller.current.clientWidth - LEFT_W) / 3
     );
   };
+
+  // Pinch on a trackpad (Chromium reports it as Ctrl + wheel) or Ctrl/Cmd + mouse wheel zooms the
+  // timeline around the pointer; plain wheel and swipes keep scrolling. One render per frame; the
+  // zoom is saved once the gesture pauses.
+  const live = useRef<{ scale: Scale; options: GanttViewOptions }>({ scale, options });
+  live.current = { scale, options };
+  const zoom = useRef<{ px?: number; day: number; pointerX: number; frame: number; save?: number }>(
+    {
+      day: 0,
+      pointerX: 0,
+      frame: 0,
+    }
+  );
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const z = zoom.current;
+      const shown = live.current.scale;
+      const pointerX = Math.max(LEFT_W, e.clientX - el.getBoundingClientRect().left);
+      if (z.px === undefined) {
+        // The day under the pointer, on the chart as it is drawn now.
+        z.day = shown.start + (el.scrollLeft + pointerX - LEFT_W) / shown.px;
+        z.pointerX = pointerX;
+      }
+      z.px = zoomPx(z.px ?? shown.px, e.deltaY, e.deltaMode);
+      if (z.frame) return;
+      z.frame = requestAnimationFrame(() => {
+        z.frame = 0;
+        const next = { ...live.current.options, pxPerDay: z.px };
+        setOptions(next);
+        clearTimeout(z.save);
+        z.save = window.setTimeout(() => send({ type: "options", options: next }), 400);
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [model !== undefined]);
+  // After the zoomed chart is laid out, scroll so the same day is under the pointer again.
+  useLayoutEffect(() => {
+    const z = zoom.current;
+    if (z.px === undefined || !scroller.current) return;
+    scroller.current.scrollLeft = anchoredScroll(scale, z.day, z.pointerX, LEFT_W);
+    // More wheel events already waiting for the next frame keep zooming around the same day.
+    if (!z.frame) z.px = undefined;
+  }, [scale]);
 
   // Start at today the first time a model arrives.
   const scrolledOnce = useRef(false);
@@ -245,6 +302,8 @@ export function App() {
 
   if (!model) return <div class="empty">Loading the schedule…</div>;
   const focusText = describeFocus(model, focus, selected, selectedLink);
+  // Pixels per day that show the whole project (a pinch zoom presses none of the zoom buttons).
+  const fit = fitPx(model.start, model.end, (scroller.current?.clientWidth ?? 1200) - LEFT_W - 20);
   const ticks = headerTicks(scale);
   const editRow = editing ? model.rows.find((r) => r.key === editing) : undefined;
   const zoomLabel: Record<GanttZoom, string> = {
@@ -312,10 +371,9 @@ export function App() {
         <button
           class="btn"
           title="Fit the whole project"
-          aria-pressed={options.pxPerDay !== undefined}
+          aria-pressed={options.pxPerDay !== undefined && Math.abs(options.pxPerDay - fit) < 0.01}
           onClick={() => {
-            const width = (scroller.current?.clientWidth ?? 1200) - LEFT_W - 20;
-            updateOptions({ pxPerDay: fitPx(model.start, model.end, width) });
+            updateOptions({ pxPerDay: fit });
             if (scroller.current) scroller.current.scrollLeft = 0;
           }}
         >
@@ -462,7 +520,7 @@ export function App() {
             Drag a bar to move it (@start), drag its end to resize (@est), drag the dot to another
             bar to add a dependency. Click a bar or an arrow to highlight its dependencies.
             Double-click or F2 to edit, right-click for all actions; Alt+←/→ moves, Shift+Alt+←/→
-            resizes.
+            resizes; pinch or Ctrl/Cmd+scroll zooms.
             {model.rows.some((r) => r.overtime) &&
               " Orange marks above a bar: overtime or extra working days (hover for the hours)."}
           </>

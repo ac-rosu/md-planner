@@ -39,7 +39,7 @@ the side) and watch it update while you type.
 | 1   | Group         | **Milestone**: milestone → section → task, with milestone rows and diamonds. **Section**: one group per section (`M2 › Checkout`). **Owner**: one group per person. **Tag**: one group per tag; a task goes under its first (or inherited) tag only.            |
 | 2   | Order         | **Schedule** (the default): rows in the order the work starts, at every level (milestones, sections, tasks, subtasks), so the chart reads as a cascade from top left to bottom right. **Files**: in the order of the plan files. The files are never reordered. |
 | 3   | Colour        | Colour bars by **Owner** (the person's `color`), **Status** or **Milestone**.                                                                                                                                                                                   |
-| 4   | Zoom          | **Day**, **Week**, **Month** or **Quarter**.                                                                                                                                                                                                                    |
+| 4   | Zoom          | **Day**, **Week**, **Month** or **Quarter**. Pinch on the trackpad, or hold Ctrl (Cmd on a Mac) and scroll, to zoom in and out smoothly around the pointer.                                                                                                     |
 | 5   | Fit           | Zooms so that the whole project fits the window.                                                                                                                                                                                                                |
 | 6   | Today         | Scrolls to today.                                                                                                                                                                                                                                               |
 | 7   | Critical path | Highlights the critical path (bars and arrows in red). On by default.                                                                                                                                                                                           |
@@ -50,7 +50,8 @@ the side) and watch it update while you type.
 
 While a dependency arrow is selected, a **Remove dependency** button appears before Undo.
 
-The chosen grouping, colours, zoom and options are remembered for the workspace.
+The chosen grouping, colours, zoom (also a pinch zoom) and options are remembered for the
+workspace.
 
 ## Reading the chart
 

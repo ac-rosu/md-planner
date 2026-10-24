@@ -16,13 +16,17 @@ import {
   vscodeContext,
 } from "../../../src/webview/gantt/rows";
 import {
+  anchoredScroll,
   dayToX,
   fitPx,
   gridLines,
   headerTicks,
   makeScale,
+  MAX_PX,
+  MIN_PX,
   xToDay,
   zoomFor,
+  zoomPx,
 } from "../../../src/webview/gantt/scale";
 import { loadSample, TODAY } from "../helpers";
 
@@ -72,6 +76,35 @@ describe("gantt scale", () => {
     expect(formatDate(stepWorkingDays(model, d("2026-12-24"), 1))).toBe("2026-12-28");
     expect(formatDate(stepWorkingDays(model, d("2026-12-28"), -1))).toBe("2026-12-24");
     expect(formatDate(stepWorkingDays(model, d("2026-10-14"), 3))).toBe("2026-10-19");
+  });
+});
+
+describe("gantt zoom gesture", () => {
+  it("zooms in on a pinch or wheel up, out on a pinch or wheel down, within limits", () => {
+    expect(zoomPx(14, -100)).toBeCloseTo(14 * Math.pow(2, 0.4));
+    expect(zoomPx(14, 100)).toBeCloseTo(14 / Math.pow(2, 0.4));
+    // A wheel in lines (Firefox-style) counts like pixels; huge deltas are capped.
+    expect(zoomPx(14, -3, 1)).toBeCloseTo(zoomPx(14, -99));
+    expect(zoomPx(14, -5000)).toBeCloseTo(14 * Math.pow(2, 0.8));
+    // Small pinch steps add up smoothly.
+    let px = 14;
+    for (let i = 0; i < 10; i++) px = zoomPx(px, -10);
+    expect(px).toBeCloseTo(zoomPx(14, -100));
+    expect(zoomPx(MAX_PX, -100)).toBe(MAX_PX);
+    expect(zoomPx(MIN_PX, 100)).toBe(MIN_PX);
+  });
+
+  it("keeps the day under the pointer in place", () => {
+    const before = makeScale(d("2026-10-01"), d("2027-03-31"), 14);
+    const after = { ...before, px: 28, width: before.days * 28 };
+    const day = d("2026-12-01") + 0.5;
+    // The pointer is 700 px from the left of the scroll area; the chart starts after a 320 px list.
+    const scrollBefore = 320 + (day - before.start) * before.px - 700;
+    const scrollAfter = anchoredScroll(after, day, 700, 320);
+    expect(320 + (day - after.start) * after.px - scrollAfter).toBe(700);
+    expect(scrollAfter).toBeGreaterThan(scrollBefore);
+    // Never scrolls before the start.
+    expect(anchoredScroll(after, before.start, 700, 320)).toBe(0);
   });
 });
 
