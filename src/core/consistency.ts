@@ -2,7 +2,7 @@
 // that contradict the checkbox, dates outside the project or after the milestone target,
 // dependencies on cancelled work, and parents whose estimate or status disagrees with their
 // subtasks. Each issue carries what its quick fix needs in `data`.
-import { parseDate } from "./dates";
+import { formatDate, parseDate, parseDateRange } from "./dates";
 import { formatHours } from "./duration";
 import { isSchedulableTask } from "./graph";
 import { attrIssue, depIdRange, statusRange } from "./issueRanges";
@@ -16,8 +16,10 @@ import {
   isEffectivelyCancelled,
   isEffectivelyDone,
   isLeaf,
+  leavesOf,
   openSubtasks,
 } from "./rollup";
+import { range } from "./text";
 
 /** Differences below a minute are rounding. */
 const EPS = 0.01;
@@ -29,7 +31,8 @@ export function consistencyIssues(plan: Plan): Issue[] {
   for (const t of plan.tasks) {
     parentStatus(t, issues);
     startedEarly(plan, t, issues);
-    if (!isOpen(t.status) || isEffectivelyDone(t) || isEffectivelyCancelled(t)) continue;
+    // Work in a cancelled milestone is not scheduled: its dates and dependencies change nothing.
+    if (!isOpen(t.status) || isEffectivelyDone(t) || !isSchedulableTask(plan, t)) continue;
     dates(plan, t, issues);
     cancelledDeps(plan, t, issues);
     implied(plan, t, issues);
@@ -41,7 +44,14 @@ export function consistencyIssues(plan: Plan): Issue[] {
   return issues;
 }
 
-/** Dates in team.md (capacity changes, time off, overtime, extra days) after the project end. */
+/** A date or a period (`2026-12-21..2026-12-31`) in a team.md value. */
+const PERIOD = /(\d{4}-\d{2}-\d{2})(?:[ \t]*\.\.[ \t]*(\d{4}-\d{2}-\d{2}))?/g;
+
+/**
+ * Dates in team.md (capacity changes, time off, overtime, extra days) after the project end, each
+ * date or period of a value on its own. A period that only runs a few days past the end is fine;
+ * one that runs past it and lasts over a year (`2026-12-21..2027-12-31`) has a wrong year too.
+ */
 function teamDates(plan: Plan, issues: Issue[]): void {
   const end = plan.project.end;
   if (!end) return;
@@ -49,17 +59,25 @@ function teamDates(plan: Plan, issues: Issue[]): void {
   for (const p of plan.people) {
     for (const e of p.props.entries) {
       if (!keys.has(e.key.toLowerCase())) continue;
-      const date = /\d{4}-\d{2}-\d{2}/.exec(e.value)?.[0];
-      if (!date || date <= end) continue;
-      const suggestion = suggestYear(plan, date);
-      issues.push({
-        file: p.file,
-        range: e.valueRange,
-        severity: "warning",
-        code: "date-outside-project",
-        message: `${e.key}: ${date} is after the project end ${end}, so it changes nothing. Is the year right?`,
-        data: { date, ...(suggestion ? { suggestion } : {}) },
-      });
+      for (const m of e.value.matchAll(PERIOD)) {
+        const [text, from, to = from] = m;
+        // Invalid periods are reported by the resolver.
+        if (to <= end || !parseDateRange(text)) continue;
+        const suggestion = suggestPeriodYear(plan, text);
+        if (from <= end && !suggestion) continue;
+        const at = e.valueRange.start.character + m.index;
+        issues.push({
+          file: p.file,
+          range: range(e.line, at, at + text.length),
+          severity: "warning",
+          code: "date-outside-project",
+          message:
+            from > end
+              ? `${e.key}: ${text} is after the project end ${end}, so it only matters if the work runs that late. Is the year right?`
+              : `${e.key}: ${text} runs past the project end ${end} and lasts over a year. Is the year right?`,
+          data: { date: text, ...(suggestion ? { suggestion } : {}) },
+        });
+      }
     }
   }
 }
@@ -223,12 +241,13 @@ function cancelledDeps(plan: Plan, t: Task, issues: Issue[]): void {
  * Dependencies another dependency in the same list already implies: a subtask of a listed task, or
  * a task another listed task waits for. Dependencies with a lag are kept (the lag says something
  * the other one does not), and so are dependencies a milestone's `depends:` covers: they document
- * the order of the work and stay right if the milestones change.
+ * the order of the work and stay right if the milestones change. Dependencies on cancelled work
+ * count for nothing (see cancelledDeps), so they neither imply nor are implied.
  */
 export function impliedDeps(plan: Plan, t: Task): Array<{ id: string; why: string }> {
   const listed = t.deps.flatMap((d) => {
     const task = plan.taskById(d.id);
-    return task ? [{ d, task }] : [];
+    return task && isSchedulableTask(plan, task) ? [{ d, task }] : [];
   });
   const out: Array<{ id: string; why: string }> = [];
   for (const { d, task: x } of listed) {
@@ -267,14 +286,22 @@ function isAncestorOf(a: Task, b: Task): boolean {
   return false;
 }
 
-/** True when `y` (or a parent of it) directly depends on `x` or on a parent of `x`. */
+/**
+ * True when `y` still waits for `x` in the schedule: an open leaf of `y` depends on `x` or on a
+ * parent of `x`, itself or through a parent. Done and cancelled work waits for nothing, so a
+ * dependency it has does not hold anything else back.
+ */
 function waitsFor(plan: Plan, y: Task, x: Task): boolean {
-  for (let a: Task | undefined = y; a; a = a.parent)
-    for (const d of a.deps) {
-      const target = plan.taskById(d.id);
-      if (target && (target === x || isAncestorOf(target, x))) return true;
-    }
-  return false;
+  if (!isSchedulableTask(plan, y)) return false;
+  return leavesOf(y).some((leaf) => {
+    if (!isOpen(leaf.status) || isEffectivelyDone(leaf)) return false;
+    for (let a: Task | undefined = leaf; a; a = a.parent)
+      for (const d of a.deps) {
+        const target = plan.taskById(d.id);
+        if (target && (target === x || isAncestorOf(target, x))) return true;
+      }
+    return false;
+  });
 }
 
 /**
@@ -311,19 +338,37 @@ function parentEstimate(t: Task, issues: Issue[]): void {
   }
 }
 
-/** A parent whose checkbox disagrees with its subtasks. */
+/**
+ * A parent whose checkbox disagrees with its subtasks. Open subtasks of a cancelled task are
+ * cancelled with it, and cancelling a parent from the planner leaves them open on purpose, so the
+ * nearest cancelled task gets an info rather than a warning: it says they are not scheduled, which
+ * matters most for a task typed or moved under a cancelled one.
+ */
 function parentStatus(t: Task, issues: Issue[]): void {
-  if (isLeaf(t) || isEffectivelyCancelled(t)) return;
+  if (isLeaf(t)) return;
+  if (t.status === "cancelled") {
+    const open = openSubtasks(t);
+    if (open.length === 0) return;
+    const one = open.length === 1;
+    issues.push({
+      file: t.file,
+      range: statusRange(t),
+      severity: "info",
+      code: "cancelled-parent-open-subtasks",
+      message: `Cancelled, so its ${one ? "open subtask" : `${open.length} open subtasks`} (${names(open)}) ${one ? "is" : "are"} not scheduled either.`,
+    });
+    return;
+  }
+  if (isEffectivelyCancelled(t)) return;
   if (t.status === "done") {
     const open = openSubtasks(t);
     if (open.length === 0) return;
-    const names = open.map((s) => s.id ?? s.title);
     issues.push({
       file: t.file,
       range: statusRange(t),
       severity: "warning",
       code: "done-parent-open-subtasks",
-      message: `Done, but ${open.length === 1 ? "1 subtask is" : `${open.length} subtasks are`} still open (${names.slice(0, 5).join(", ")}${names.length > 5 ? ", …" : ""}); they are no longer scheduled.`,
+      message: `Done, but ${open.length === 1 ? "1 subtask is" : `${open.length} subtasks are`} still open (${names(open)}); they are no longer scheduled.`,
     });
     return;
   }
@@ -338,6 +383,12 @@ function parentStatus(t: Task, issues: Issue[]): void {
       message: "All subtasks are done, but this task is still open.",
     });
   }
+}
+
+/** "T2, T3, T4, T5, T6, …" for messages: the first five ids (or titles). */
+function names(tasks: Task[]): string {
+  const list = tasks.map((s) => s.id ?? s.title);
+  return `${list.slice(0, 5).join(", ")}${list.length > 5 ? ", …" : ""}`;
 }
 
 function milestoneTargets(plan: Plan, issues: Issue[]): void {
@@ -366,5 +417,24 @@ export function suggestYear(plan: Plan, iso: string): string | undefined {
   if (parseDate(shifted) === undefined) return undefined;
   if (start !== undefined && shifted < start) return undefined;
   if (end !== undefined && shifted > end) return undefined;
+  return shifted;
+}
+
+/**
+ * For a team.md date or period (`2027-12-21..2027-12-31`) after the project end: the same text with
+ * every date after the end a year earlier, when that is a period in the project (at least partly).
+ * So a period stays a period, and one typed a year too long (`2026-12-21..2027-12-31`) gets its
+ * end back in the right year.
+ */
+export function suggestPeriodYear(plan: Plan, text: string): string | undefined {
+  const { start, end } = plan.project;
+  if (end === undefined) return undefined;
+  const shifted = text.replace(/\d{4}-\d{2}-\d{2}/g, (d) =>
+    d > end ? `${Number(d.slice(0, 4)) - 1}${d.slice(4)}` : d
+  );
+  const period = shifted === text ? undefined : parseDateRange(shifted);
+  if (!period) return undefined;
+  if (start !== undefined && formatDate(period[1]) < start) return undefined;
+  if (formatDate(period[0]) > end) return undefined;
   return shifted;
 }

@@ -70,6 +70,40 @@ describe("2,000-task plan end to end", () => {
     expect(timings.recompute).toBeLessThan(timeLimit(200));
   });
 
+  it("schedules in well under the recompute budget", () => {
+    const plan = index.plan;
+    schedulePlan(plan, { today }); // warm-up
+    timings.schedule = best(5, () => schedulePlan(plan, { today }));
+    expect(timings.schedule).toBeLessThan(timeLimit(40));
+  });
+
+  it("explains the tasks that cannot be scheduled quickly when someone's hours end", () => {
+    // Jordan leaves at New Year: the open tasks and everything after them cannot be scheduled.
+    const ending = new PlanIndex();
+    const people = ["alex", "sam", "priya", "jordan", "maria"];
+    for (const [path, text] of Object.entries(largePlanFiles({ people })))
+      ending.update(
+        path,
+        path === "team.md"
+          ? text.replace("id: jordan\n", "id: jordan\ncapacityFrom: 2027-01-04 0h/week\n")
+          : text
+      );
+    const plan = ending.plan;
+    const explain = () => {
+      const schedule = schedulePlan(plan, { today });
+      return [
+        scheduleDiagnostics(plan, schedule, { workload: true }),
+        buildGanttModel(plan, schedule, { grouping: "milestone" }),
+      ] as const;
+    };
+    const [issues] = explain();
+    expect(issues.filter((i) => i.code === "blocked-by-unschedulable").length).toBeGreaterThan(
+      1000
+    );
+    timings.unschedulable = best(3, explain);
+    expect(timings.unschedulable).toBeLessThan(timeLimit(100));
+  });
+
   it("builds every view model quickly", () => {
     const plan = index.plan;
     const schedule = schedulePlan(plan, { today });

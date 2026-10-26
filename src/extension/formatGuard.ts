@@ -67,21 +67,34 @@ export class FormatGuard implements vscode.Disposable {
     else if (pick === never) await this.memento.update(NEVER_KEY, true);
   }
 
-  /** Adds the plan folder (relative to its workspace folder) to `.prettierignore`. */
-  private async addToPrettierIgnore(): Promise<void> {
+  /**
+   * Adds the plan folder (relative to its workspace folder) to `.prettierignore`, creating the file
+   * when needed (also a test hook). One WorkspaceEdit, so it can be undone and an open editor of
+   * the file shows it; saved at once, as Prettier reads the file from disk.
+   */
+  async addToPrettierIgnore(): Promise<void> {
     const root = this.service.root;
     const folder = root ? vscode.workspace.getWorkspaceFolder(root) : undefined;
     if (!root || !folder) return;
     const rel = root.path.slice(folder.uri.path.length).replace(/^\/+/, "") || ".";
     const file = vscode.Uri.joinPath(folder.uri, ".prettierignore");
-    const text = await vscode.workspace.fs.readFile(file).then(
-      (b) => new TextDecoder().decode(b),
-      () => ""
+    const doc = await vscode.workspace.openTextDocument(file).then(
+      (d) => d,
+      () => undefined
     );
+    const text = doc?.getText() ?? "";
     const line = rel === "." ? "*.md" : `${rel}/`;
     if (text.split(/\r?\n/).includes(line)) return;
-    const next = `${text}${text && !text.endsWith("\n") ? "\n" : ""}${line}\n`;
-    await vscode.workspace.fs.writeFile(file, new TextEncoder().encode(next));
+    const eol = doc?.eol === vscode.EndOfLine.CRLF ? "\r\n" : "\n";
+    const edit = new vscode.WorkspaceEdit();
+    if (!doc) edit.createFile(file, { ignoreIfExists: true });
+    edit.insert(
+      file,
+      doc?.positionAt(text.length) ?? new vscode.Position(0, 0),
+      `${text && !text.endsWith("\n") ? eol : ""}${line}${eol}`
+    );
+    if (!(await vscode.workspace.applyEdit(edit))) return;
+    await (await vscode.workspace.openTextDocument(file)).save();
   }
 
   dispose(): void {

@@ -48,18 +48,20 @@ Set the project's budget in hours with **Edit budget…** (or **Set budget…**)
 
 ![The budget panel](images/dashboard-budget.png)
 
-| #   | Element         | Meaning                                                                                                                                                                                       |
-| --- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Meter           | The forecast as one bar: hours logged (blue), hours still to do (light blue), the part over the budget (red). The purple line is the budget, ▲ the planned hours. Hover a part for its hours. |
-| 2   | Figures         | **Budget**; **Planned**: the sum of the estimates; **Forecast**: what the work will take, hours logged plus the remaining work; **Logged**: the `@act` hours; **Left** or **Over budget**.    |
-| 3   | Why over budget | Only when the forecast is over the budget: whether the estimates already add up to more, which tasks take longer than estimated (blocked ones say so), and open tasks without an estimate.    |
-| 4   | By milestone    | Planned, logged and forecast hours per milestone, and the forecast against the plan: where an overrun comes from.                                                                             |
-| 5   | Taking longer   | Tasks whose logged (or logged plus remaining) hours are above their estimate, most first. Click one to open it.                                                                               |
-| 6   | Edit budget…    | Opens the project form.                                                                                                                                                                       |
+| #   | Element         | Meaning                                                                                                                                                                                                                                                                      |
+| --- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Meter           | The forecast as one bar: hours logged (blue), work done without logged hours (hatched, at its estimate), hours still to do (light blue), the part over the budget (red). The purple line is the budget, ▲ the planned hours. Hover a part for its hours.                     |
+| 2   | Figures         | **Budget**; **Planned**: the sum of the estimates; **Forecast**: what the work will take, hours logged plus work done without logged hours plus the remaining work; **Done, not logged** when there is such work; **Logged**: the `@act` hours; **Left** or **Over budget**. |
+| 3   | Why over budget | Only when the forecast is over the budget: whether the estimates already add up to more, which tasks take longer than estimated (blocked ones say so), hours logged on cancelled tasks and on tasks without an estimate, and open tasks without an estimate.                 |
+| 4   | By milestone    | Planned, logged and forecast hours per milestone, and the forecast against the plan: where an overrun comes from.                                                                                                                                                            |
+| 5   | Taking longer   | Tasks whose logged (or logged plus remaining) hours are above their estimate, and parents whose own logged hours go past theirs, most first. Click one to open it.                                                                                                           |
+| 6   | Edit budget…    | Opens the project form.                                                                                                                                                                                                                                                      |
 
 How the forecast is counted, per task: a done task counts its `@act` (or its estimate when no
 time was logged); an open task its `@act` (or the share done with `@progress`) plus its remaining
-work; a cancelled task the hours logged on it before it was cancelled. Open tasks without an
+work; a cancelled task (or a task in a cancelled milestone) the hours logged on it before it was
+cancelled. Hours logged on a parent task count once, in Planned as far as its own `@est` covers
+them. Open tasks without an
 estimate count 0 until they get one, and the panel says how many there are. The budget covers the
 milestone tasks; punch-list and inbox items are not counted.
 
@@ -112,7 +114,12 @@ yet. The **Blocked** list says what it costs:
   chain (also through its parent and through milestone `depends:`).
 - **can stay blocked until 2026-12-14**: the last day it can stay blocked without moving anything
   (its latest start minus one working day, from its slack). On the critical path it adds that after
-  that day the end date moves.
+  that day the end date moves. When the working hours of its owner, or of a colleague whose work
+  waits for it, end (`capacityFrom: … 0h`), the date also leaves them the time for that work next
+  to their other work, and says so: "(Alex has no working hours from 2026-10-19 on)". **must be
+  unblocked now** means it only just fits; **already too late** that it, or the work that waits for
+  it, no longer fits before their hours end. The status report lists a blocked task as a risk when
+  it has no more room than the critical path, or already holds the plan up.
 - **already delaying the plan** (or **the end date**): it has no slack left, so every day it stays
   blocked moves its milestone (or the end of the project).
 

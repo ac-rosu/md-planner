@@ -267,6 +267,20 @@
   background: var(--vscode-charts-blue);
 }
 
+/* Work done without logged hours is hatched (the meter's pattern): it counts at its estimate. */
+.budget-meter .hatch {
+  stroke: var(--vscode-charts-blue);
+  stroke-width: 3;
+}
+
+.chart-legend .swatch.unlogged {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--vscode-charts-blue) 0 2px,
+    transparent 2px 4px
+  );
+}
+
 .budget-meter .remaining,
 .chart-legend .swatch.remaining {
   fill: color-mix(in srgb, var(--vscode-charts-blue) 45%, transparent);

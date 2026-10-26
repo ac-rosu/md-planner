@@ -14,7 +14,13 @@
 //  7. Per task start/finish and per person-day allocations are recorded.
 import { Calendar, type CalendarOptions, UNASSIGNED } from "./calendar";
 import { type DayNumber, formatDate, parseDate } from "./dates";
-import { buildDepGraph, type DepGraph, type DepNode } from "./graph";
+import {
+  buildDepGraph,
+  type DepGraph,
+  type DepNode,
+  type GroupNode,
+  type Requirement,
+} from "./graph";
 import { isOpen, type Milestone, PRIORITY_RANK, type Section, type Task } from "./model";
 import { deadlineOf } from "./queries";
 import { type Plan } from "./resolve";
@@ -69,25 +75,48 @@ export interface TaskSchedule {
   earliest?: DayNumber;
   /** What set `earliest`: the latest-finishing predecessor or the fixed start (none: today). */
   driver?: StartDriver;
+  /** The latest @start of the task and its parents (open tasks): it does not start before. */
+  fixedStart?: DayNumber;
+  /**
+   * Its place among its owner's work that is ready, lowest first (tasks with hours left): a fixed
+   * start first, then @prio, the latest finish that keeps everything on time, file order.
+   */
+  precedence?: number[];
   deadline?: DayNumber;
   /** Finish after the deadline (@due, inherited @due or milestone target). */
   late: boolean;
   /** Total slack in working days (CPM); negative when late. */
   slack?: number;
+  /**
+   * When the slack ends where someone's working hours end (`capacityFrom: … 0h`): the owner of
+   * this task or of work that waits for it, and the first day without hours.
+   */
+  hoursEnd?: { resource: string; from: DayNumber };
   critical: boolean;
   unassigned: boolean;
   unknownOwner: boolean;
   unestimated: boolean;
 }
 
+/** Waited for `on` (a leaf), through the dependency declared by a task or a milestone. */
+export interface DepDriver {
+  kind: "dep";
+  on: Task;
+  declaredBy: Task | string;
+}
+
 export type StartDriver =
-  /** Waited for `on` (a leaf), through the dependency declared by a task or a milestone. */
-  | { kind: "dep"; on: Task; declaredBy: Task | string }
-  /** The `@start` of `from` (the task itself or an ancestor). */
-  | { kind: "start"; from: Task };
+  | DepDriver
+  /**
+   * The `@start` of `from` (the task itself or an ancestor). Without it the task could have
+   * started on `otherwise`, set by `dep` (none: the first day of the schedule).
+   */
+  | { kind: "start"; from: Task; otherwise: DayNumber; dep?: DepDriver };
 
 export interface Allocation {
   key: string;
+  /** The task that got the hours: tasks that share an id share a key. */
+  task: Task;
   resource: string;
   day: DayNumber;
   hours: number;
@@ -214,118 +243,80 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
         fixedStartFrom.set(leaf, t);
       }
     }
-    if (fs !== undefined) fixedStart.set(leaf, fs);
+    if (fs !== undefined) {
+      fixedStart.set(leaf, fs);
+      ts.fixedStart = fs;
+    }
     if (ts.deadline !== undefined) deadlineIdx.set(leaf, workIndex(calendar, start, ts.deadline));
   }
 
   // --- Dependency bookkeeping ------------------------------------------------------------------
-  const finishOf = (node: DepNode): DayNumber | null | undefined => {
-    // number = finished that day; null = satisfied long ago / never constrains; undefined = not yet.
-    if (node.kind === "leaf") {
-      const ts = tasks.get(node.task)!;
-      if (ts.done) return ts.finish ?? null;
-      return ts.finish;
-    }
-    let max: DayNumber | null = null;
-    for (const m of node.members) {
-      const ts = tasks.get(m)!;
-      if (ts.unscheduled) return undefined;
-      const f = ts.done ? (ts.finish ?? null) : ts.finish;
-      if (f === undefined) return undefined;
-      if (f !== null && (max === null || f > max)) max = f;
-    }
-    return max;
-  };
+  const groupsOf = groupsByMember(graph);
 
-  /** The member of a node that finished last (the one a successor really waited for). */
-  const lastOf = (node: DepNode): Task => {
-    if (node.kind === "leaf") return node.task;
-    let last = node.members[0];
-    for (const m of node.members)
-      if ((tasks.get(m)!.finish ?? -Infinity) > (tasks.get(last)!.finish ?? -Infinity)) last = m;
-    return last;
-  };
-
-  /** Earliest day a ready leaf may start given finished requirements, or undefined if waiting. */
-  const earliestDay = (
-    leaf: Task,
-    resource: string
-  ): { day: DayNumber; driver?: StartDriver } | undefined => {
-    let earliest = start;
-    let driver: StartDriver | undefined;
-    for (const r of graph.requirements.get(leaf) ?? []) {
-      const f = finishOf(r.node);
-      if (f === undefined) return undefined;
-      if (f === null) continue;
-      const lagDays = Math.ceil(r.lagHours / hpd - EPS);
-      const sameResourceSameDay =
-        lagDays === 0 &&
-        r.node.kind === "leaf" &&
-        tasks.get(r.node.task)!.resource === resource &&
-        !tasks.get(r.node.task)!.done;
-      // Without a lag the successor may start the next day its owner works (an extra working day
-      // on a Saturday counts); a lag counts working days of the project calendar.
-      const d = sameResourceSameDay
-        ? f
-        : lagDays === 0
-          ? f + 1
-          : calendar.addWorkingDays(f + 1, lagDays);
-      if (d > earliest) {
-        earliest = d;
-        driver = { kind: "dep", on: lastOf(r.node), declaredBy: r.declaredBy };
+  // Mark tasks that wait (transitively) on a cycle: everything reachable backwards from the tasks
+  // on a cycle, through the tasks and groups that wait for them. Linear in the size of the graph
+  // (milestone dependencies fan out to every member) and safe on deep chains.
+  const waitsOnCycle = new Set<Task>();
+  const behind: DepNode[] = [...graph.cyclic].map((t) => graph.leafNode.get(t)!);
+  const seenGroups = new Set<GroupNode>();
+  for (let i = 0; i < behind.length; i++) {
+    const n = behind[i];
+    for (const dep of graph.dependents.get(n) ?? [])
+      if (!graph.cyclic.has(dep) && !waitsOnCycle.has(dep)) {
+        waitsOnCycle.add(dep);
+        behind.push(graph.leafNode.get(dep)!);
       }
-    }
-    const fs = fixedStart.get(leaf);
-    if (fs !== undefined && fs > earliest) {
-      earliest = fs;
-      driver = { kind: "start", from: fixedStartFrom.get(leaf)! };
-    }
-    return { day: earliest, driver };
-  };
-
-  // Mark tasks that are on a cycle or wait (transitively) on one. Memoized and iterative, so it
-  // stays linear in the size of the graph (milestone dependencies fan out to every member) and
-  // safe on deep chains. Every cycle runs through `graph.cyclic`, so the rest is a DAG.
-  const waitsOnCycle = new Map<Task, boolean>();
-  const depsOf = (leaf: Task): Task[] =>
-    (graph.requirements.get(leaf) ?? []).flatMap((r) =>
-      r.node.kind === "leaf" ? [r.node.task] : r.node.members
-    );
-  const resolveCycleWait = (root: Task): boolean => {
-    const stack = [{ leaf: root, deps: depsOf(root), i: 0, blocked: graph.cyclic.has(root) }];
-    const onPath = new Set<Task>([root]);
-    while (stack.length > 0) {
-      const frame = stack[stack.length - 1];
-      if (!frame.blocked && frame.i < frame.deps.length) {
-        const dep = frame.deps[frame.i++];
-        const known = graph.cyclic.has(dep) || waitsOnCycle.get(dep);
-        if (known) frame.blocked = true;
-        else if (known === undefined && !onPath.has(dep)) {
-          onPath.add(dep);
-          stack.push({ leaf: dep, deps: depsOf(dep), i: 0, blocked: false });
+    if (n.kind === "leaf")
+      for (const g of groupsOf.get(n.task) ?? [])
+        if (!seenGroups.has(g)) {
+          seenGroups.add(g);
+          behind.push(g);
         }
-        continue;
-      }
-      stack.pop();
-      onPath.delete(frame.leaf);
-      waitsOnCycle.set(frame.leaf, frame.blocked);
-      if (frame.blocked && stack.length > 0) stack[stack.length - 1].blocked = true;
-    }
-    return waitsOnCycle.get(root)!;
-  };
-  for (const leaf of remaining.keys()) {
-    if (resolveCycleWait(leaf)) tasks.get(leaf)!.unscheduled = "blocked-by-cycle";
   }
+  for (const leaf of remaining.keys())
+    if (waitsOnCycle.has(leaf)) tasks.get(leaf)!.unscheduled = "blocked-by-cycle";
 
   const pending = new Set([...remaining.keys()].filter((t) => !tasks.get(t)!.unscheduled));
-  const groupsOf = new Map<Task, DepNode[]>();
-  for (const g of graph.groups.values()) {
-    for (const m of g.members) {
-      const list = groupsOf.get(m);
-      if (list) list.push(g);
-      else groupsOf.set(m, [g]);
+
+  // A requirement is met when its task (or every task of its group) is done or has finished. Each
+  // group counts its tasks still to finish and each open leaf its requirements still to be met, so
+  // a finished task only touches the tasks that wait for it.
+  const toFinish = new Map<GroupNode, number>();
+  for (const g of graph.groups.values())
+    toFinish.set(g, g.members.filter((m) => !tasks.get(m)!.done).length);
+  const unmet = new Map<Task, number>();
+  for (const leaf of pending) {
+    let n = 0;
+    for (const r of graph.requirements.get(leaf) ?? []) {
+      const met =
+        r.node.kind === "leaf"
+          ? tasks.get(r.node.task)!.done || tasks.get(r.node.task)!.finish !== undefined
+          : toFinish.get(r.node) === 0;
+      if (!met) n++;
     }
+    unmet.set(leaf, n);
   }
+
+  /** When a met group finished (null: its tasks were done without dates) and which finished last. */
+  const groupEnds = new Map<GroupNode, { day: DayNumber | null; last: Task }>();
+  const groupEnd = (g: GroupNode): { day: DayNumber | null; last: Task } => {
+    let end = groupEnds.get(g);
+    if (!end) {
+      end = { day: null, last: g.members[0] };
+      for (const m of g.members) {
+        const f = tasks.get(m)!.finish;
+        if (f !== undefined && (end.day === null || f > end.day)) end = { day: f, last: m };
+      }
+      groupEnds.set(g, end);
+    }
+    return end;
+  };
+  /** The day a met requirement finished; null when it was done without a date (no constraint). */
+  const finishOf = (node: DepNode): DayNumber | null =>
+    node.kind === "leaf" ? (tasks.get(node.task)!.finish ?? null) : groupEnd(node).day;
+  /** The task of a met requirement that finished last (the one a successor really waited for). */
+  const lastOf = (node: DepNode): Task => (node.kind === "leaf" ? node.task : groupEnd(node).last);
+
   const latestFinish = latestFinishes(plan, graph, groupsOf, pending, tasks, remaining, {
     calendar,
     start,
@@ -337,29 +328,20 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
   // Per resource: `future` holds released tasks by earliest day, `ready` holds eligible tasks by
   // priority. The priority key does not change over time (the latest finish is computed once, so a
   // task in progress keeps its place), so heaps keep the order.
-  const keyOf = new Map<Task, number[]>();
-  const priorityKey = (t: Task): number[] => {
-    const key = [fixedStart.has(t) ? 0 : 1, PRIORITY_RANK[t.prio], latestFinish.get(t)!, t.order];
-    keyOf.set(t, key);
-    return key;
-  };
-  const lessKey = (a: Task, b: Task) => {
-    const ka = keyOf.get(a)!;
-    const kb = keyOf.get(b)!;
-    for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] < kb[i];
+  const lessKey = (a: Queued, b: Queued) => {
+    for (let i = 0; i < a.key.length; i++) if (a.key[i] !== b.key[i]) return a.key[i] < b.key[i];
     return false;
   };
-  const queues = new Map<string, { future: Heap<Task>; ready: Heap<Task> }>();
+  const queues = new Map<string, { future: Heap<Queued>; ready: Heap<Queued> }>();
   const queueOf = (resource: string) => {
     let q = queues.get(resource);
     if (!q) {
       q = {
-        future: new Heap<Task>(
+        future: new Heap<Queued>(
           (a, b) =>
-            tasks.get(a)!.earliest! < tasks.get(b)!.earliest! ||
-            (tasks.get(a)!.earliest === tasks.get(b)!.earliest && a.order < b.order)
+            a.earliest < b.earliest || (a.earliest === b.earliest && a.task.order < b.task.order)
         ),
-        ready: new Heap<Task>(lessKey),
+        ready: new Heap<Queued>(lessKey),
       };
       queues.set(resource, q);
     }
@@ -367,34 +349,85 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
   };
 
   const released = new Set<Task>();
-  const finishTask = (t: Task, day: DayNumber) => {
-    const ts = tasks.get(t)!;
-    ts.finish = day;
-    if (ts.start === undefined) ts.start = day;
-    pending.delete(t);
-    remaining.set(t, 0);
-    // Release the tasks that wait on this one (directly or through a parent/milestone group).
-    const nodes: DepNode[] = [graph.leafNode.get(t)!, ...(groupsOf.get(t) ?? [])];
-    for (const n of nodes) for (const dep of graph.dependents.get(n) ?? []) tryRelease(dep);
-  };
-  const tryRelease = (leaf: Task): void => {
-    if (released.has(leaf) || !pending.has(leaf)) return;
-    const ts = tasks.get(leaf)!;
-    const found = earliestDay(leaf, ts.resource);
-    if (found === undefined) return;
-    const e = found.day;
-    ts.earliest = e;
-    ts.driver = found.driver;
-    released.add(leaf);
-    if (remaining.get(leaf)! <= EPS) {
-      // Zero-hour tasks (nothing left, or unestimated) need no capacity: they complete on the
-      // first working day they are ready.
-      finishTask(leaf, calendar.nextWorkingDay(e));
-      return;
+  /**
+   * Finishes a task, then the tasks without hours left that it releases (they need no capacity),
+   * and so on: a worklist rather than recursion, so a long chain of them cannot run out of stack.
+   */
+  const finishTask = (task: Task, day: DayNumber) => {
+    const finishing: Array<[Task, DayNumber]> = [[task, day]];
+    while (finishing.length > 0) {
+      const [t, d] = finishing.pop()!;
+      const ts = tasks.get(t)!;
+      ts.finish = d;
+      if (ts.start === undefined) ts.start = d;
+      pending.delete(t);
+      remaining.set(t, 0);
+      // The requirements this meets: its own, and the parent/milestone groups it completes. Then
+      // release the tasks that wait on them.
+      const met: DepNode[] = [graph.leafNode.get(t)!];
+      for (const g of groupsOf.get(t) ?? []) {
+        const left = toFinish.get(g)! - 1;
+        toFinish.set(g, left);
+        if (left === 0) met.push(g);
+      }
+      for (const n of met)
+        for (const dep of graph.dependents.get(n) ?? []) {
+          const left = unmet.get(dep);
+          if (left !== undefined) unmet.set(dep, left - 1);
+        }
+      for (const n of met)
+        for (const dep of graph.dependents.get(n) ?? []) {
+          const at = tryRelease(dep);
+          if (at !== undefined) finishing.push([dep, at]);
+        }
     }
-    queueOf(ts.resource).future.push(leaf);
   };
-  for (const leaf of [...pending]) tryRelease(leaf);
+  /** Queues a task once its requirements are met; for a task without hours left, its finish day. */
+  const tryRelease = (leaf: Task): DayNumber | undefined => {
+    if (released.has(leaf) || !pending.has(leaf) || unmet.get(leaf)! > 0) return undefined;
+    const ts = tasks.get(leaf)!;
+    // The earliest day every requirement allows, and what set it.
+    let earliest = start;
+    let by: Requirement | undefined;
+    for (const r of graph.requirements.get(leaf) ?? []) {
+      const f = finishOf(r.node);
+      if (f === null) continue;
+      const p = r.node.kind === "leaf" ? tasks.get(r.node.task)! : undefined;
+      const d = startAfter(calendar, r, f, p?.resource === ts.resource && !p.done);
+      if (d > earliest) {
+        earliest = d;
+        by = r;
+      }
+    }
+    const dep: DepDriver | undefined = by && {
+      kind: "dep",
+      on: lastOf(by.node),
+      declaredBy: by.declaredBy,
+    };
+    ts.driver = dep;
+    const fs = fixedStart.get(leaf);
+    if (fs !== undefined && fs > earliest) {
+      ts.driver = { kind: "start", from: fixedStartFrom.get(leaf)!, otherwise: earliest, dep };
+      earliest = fs;
+    }
+    ts.earliest = earliest;
+    released.add(leaf);
+    // Zero-hour tasks (nothing left, or unestimated) need no capacity: they complete on the first
+    // working day they are ready.
+    if (remaining.get(leaf)! <= EPS) return calendar.nextWorkingDay(earliest);
+    ts.precedence = [
+      fixedStart.has(leaf) ? 0 : 1,
+      PRIORITY_RANK[leaf.prio],
+      latestFinish.get(leaf)!,
+      leaf.order,
+    ];
+    queueOf(ts.resource).future.push({ task: leaf, earliest, key: ts.precedence });
+    return undefined;
+  };
+  for (const leaf of [...pending]) {
+    const at = tryRelease(leaf);
+    if (at !== undefined) finishTask(leaf, at);
+  }
 
   for (let day = start; pending.size > 0 && day <= horizon; day++) {
     for (const resource of resources) {
@@ -402,56 +435,51 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
       if (!q || (q.future.size === 0 && q.ready.size === 0)) continue;
       const capacity = calendar.capacity(resource, day);
       const promote = () => {
-        while (q.future.size > 0 && tasks.get(q.future.peek()!)!.earliest! <= day) {
-          const t = q.future.pop()!;
-          priorityKey(t);
-          q.ready.push(t);
-        }
+        while (q.future.size > 0 && q.future.peek()!.earliest <= day) q.ready.push(q.future.pop()!);
       };
       promote();
       if (capacity <= EPS || q.ready.size === 0) continue;
       const allocate = (t: Task, hours: number) => {
         const ts = tasks.get(t)!;
         if (ts.start === undefined) ts.start = day;
-        allocations.push({ key: ts.key, resource, day, hours });
+        allocations.push({ key: ts.key, task: t, resource, day, hours });
         addLoad(resource, day, hours);
         ts.scheduledHours += hours;
         remaining.set(t, remaining.get(t)! - hours);
       };
-      const carry: Task[] = [];
+      const carry: Queued[] = [];
       if (mode === "capacity") {
         let free = capacity;
         while (free > EPS) {
           promote(); // same-person successors released earlier today
-          const t = q.ready.pop();
-          if (!t) break;
+          const next = q.ready.pop();
+          if (!next) break;
+          const t = next.task;
           const hours = Math.min(free, remaining.get(t)!);
           allocate(t, hours);
           free -= hours;
           if (remaining.get(t)! <= EPS) finishTask(t, day);
-          else carry.push(t);
+          else carry.push(next);
         }
       } else {
         // Demand: every eligible task gets the person's full capacity, as if alone.
         const worked = new Set<Task>();
         for (;;) {
           promote();
-          const t = q.ready.pop();
-          if (!t) break;
+          const next = q.ready.pop();
+          if (!next) break;
+          const t = next.task;
           if (worked.has(t)) {
-            carry.push(t);
+            carry.push(next);
             continue;
           }
           worked.add(t);
           allocate(t, Math.min(capacity, remaining.get(t)!));
           if (remaining.get(t)! <= EPS) finishTask(t, day);
-          else carry.push(t);
+          else carry.push(next);
         }
       }
-      for (const t of carry) {
-        priorityKey(t);
-        q.ready.push(t);
-      }
+      for (const next of carry) q.ready.push(next);
     }
   }
   // A task that was never released waited for work that never finished; the others found no capacity.
@@ -484,7 +512,7 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
     resources,
   };
   rollUp(plan, schedule);
-  computeCriticalPath(plan, schedule);
+  computeCriticalPath(plan, schedule, groupsOf);
   return schedule;
 }
 
@@ -500,7 +528,7 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
 function latestFinishes(
   plan: Plan,
   graph: DepGraph,
-  groupsOf: Map<Task, DepNode[]>,
+  groupsOf: Map<Task, GroupNode[]>,
   pending: Set<Task>,
   tasks: Map<Task, TaskSchedule>,
   remaining: Map<Task, number>,
@@ -513,32 +541,6 @@ function latestFinishes(
     if (last?.hours === 0)
       capacityEnd.set(p.id.toLowerCase(), workIndex(calendar, start, last.from - 1));
   }
-  const waiters = new Map<Task, Array<{ task: Task; gap: number }>>();
-  const indegree = new Map<Task, number>();
-  for (const t of pending) indegree.set(t, 0);
-  for (const t of pending) {
-    const own = tasks.get(t)!.resource;
-    const list: Array<{ task: Task; gap: number }> = [];
-    for (const n of [graph.leafNode.get(t)!, ...(groupsOf.get(t) ?? [])])
-      for (const dep of graph.dependents.get(n) ?? []) {
-        if (!pending.has(dep)) continue;
-        for (const r of graph.requirements.get(dep) ?? []) {
-          if (r.node !== n) continue;
-          const handOver = tasks.get(dep)!.resource === own ? 0 : 1;
-          list.push({ task: dep, gap: handOver + Math.ceil(r.lagHours / hpd - EPS) });
-          indegree.set(dep, indegree.get(dep)! + 1);
-        }
-      }
-    waiters.set(t, list);
-  }
-  // Kahn's order from the first tasks to the last; walked backwards, every waiter comes first.
-  const order = [...pending].filter((t) => indegree.get(t) === 0);
-  for (let i = 0; i < order.length; i++)
-    for (const w of waiters.get(order[i])!) {
-      const d = indegree.get(w.task)! - 1;
-      indegree.set(w.task, d);
-      if (d === 0) order.push(w.task);
-    }
   const latest = new Map<Task, number>();
   const own = (t: Task) =>
     Math.min(
@@ -546,15 +548,110 @@ function latestFinishes(
       capacityEnd.get(tasks.get(t)!.resource) ?? Number.POSITIVE_INFINITY
     );
   const latestStart = (t: Task) => latest.get(t)! - remaining.get(t)! / hpd;
+  // What the tasks waiting for a whole group leave to its tasks, per person who waits: for the same
+  // person (no hand-over day) and for anyone else. Worked out once per group, not once per member.
+  const groupBounds = new Map<GroupNode, Map<string, { same: number; other: number }>>();
+  const groupBound = (g: GroupNode, resource: string): number => {
+    let byResource = groupBounds.get(g);
+    if (!byResource) {
+      byResource = new Map();
+      for (const dep of graph.dependents.get(g) ?? []) {
+        if (!pending.has(dep)) continue;
+        const waiter = tasks.get(dep)!.resource;
+        const b = byResource.get(waiter) ?? { same: Infinity, other: Infinity };
+        for (const r of graph.requirements.get(dep)!) {
+          if (r.node !== g) continue;
+          const lag = Math.ceil(r.lagHours / hpd - EPS);
+          b.same = Math.min(b.same, latestStart(dep) - lag);
+          b.other = Math.min(b.other, latestStart(dep) - (1 + lag));
+        }
+        byResource.set(waiter, b);
+      }
+      groupBounds.set(g, byResource);
+    }
+    let bound = Number.POSITIVE_INFINITY;
+    for (const [waiter, b] of byResource)
+      bound = Math.min(bound, waiter === resource ? b.same : b.other);
+    return bound;
+  };
+  // Walked backwards, every task comes after the tasks that wait for it.
+  const order = dependencyOrder(graph, groupsOf, pending);
   for (let i = order.length - 1; i >= 0; i--) {
     const t = order[i];
+    const resource = tasks.get(t)!.resource;
+    const node = graph.leafNode.get(t)!;
     let finishBy = own(t);
-    for (const w of waiters.get(t)!) finishBy = Math.min(finishBy, latestStart(w.task) - w.gap);
+    for (const dep of graph.dependents.get(node) ?? []) {
+      if (!pending.has(dep)) continue;
+      const handOver = tasks.get(dep)!.resource === resource ? 0 : 1;
+      for (const r of graph.requirements.get(dep)!)
+        if (r.node === node)
+          finishBy = Math.min(
+            finishBy,
+            latestStart(dep) - (handOver + Math.ceil(r.lagHours / hpd - EPS))
+          );
+    }
+    for (const g of groupsOf.get(t) ?? []) finishBy = Math.min(finishBy, groupBound(g, resource));
     latest.set(t, finishBy);
   }
   // Only tasks around a cycle the graph did not flag are left: they keep their own bounds.
   for (const t of pending) if (!latest.has(t)) latest.set(t, own(t));
   return latest;
+}
+
+/** The groups (parents, milestones) each leaf belongs to. */
+function groupsByMember(graph: DepGraph): Map<Task, GroupNode[]> {
+  const groupsOf = new Map<Task, GroupNode[]>();
+  for (const g of graph.groups.values())
+    for (const m of g.members) {
+      const list = groupsOf.get(m);
+      if (list) list.push(g);
+      else groupsOf.set(m, [g]);
+    }
+  return groupsOf;
+}
+
+/**
+ * The tasks of `among` in an order in which every task comes after the tasks of `among` it waits
+ * for, directly or through a group (Kahn's algorithm; a group counts its members still to come, so
+ * a milestone dependency costs its members plus its dependents, not their product). Tasks around a
+ * cycle are left out.
+ */
+function dependencyOrder(
+  graph: DepGraph,
+  groupsOf: Map<Task, GroupNode[]>,
+  among: Set<Task>
+): Task[] {
+  const toCome = new Map<GroupNode, number>();
+  for (const g of graph.groups.values())
+    toCome.set(g, g.members.filter((m) => among.has(m)).length);
+  const waiting = new Map<Task, number>();
+  const order: Task[] = [];
+  for (const t of among) {
+    let n = 0;
+    for (const r of graph.requirements.get(t) ?? [])
+      if (r.node.kind === "leaf" ? among.has(r.node.task) : toCome.get(r.node)! > 0) n++;
+    waiting.set(t, n);
+    if (n === 0) order.push(t);
+  }
+  const arrived = (node: DepNode) => {
+    for (const dep of graph.dependents.get(node) ?? []) {
+      const n = waiting.get(dep);
+      if (n === undefined) continue;
+      waiting.set(dep, n - 1);
+      if (n === 1) order.push(dep);
+    }
+  };
+  for (let i = 0; i < order.length; i++) {
+    const t = order[i];
+    arrived(graph.leafNode.get(t)!);
+    for (const g of groupsOf.get(t) ?? []) {
+      const n = toCome.get(g)! - 1;
+      toCome.set(g, n);
+      if (n === 0) arrived(g);
+    }
+  }
+  return order;
 }
 
 /**
@@ -585,23 +682,37 @@ function fixDone(
     for (let d = ts.start; d <= ts.finish; d++) if (calendar.isWorkingDay(d)) days.push(d);
   if (days.length === 0) days.push(ts.finish);
   for (const d of days) {
-    allocations.push({ key: ts.key, resource: ts.resource, day: d, hours: hours / days.length });
+    allocations.push({
+      key: ts.key,
+      task: t,
+      resource: ts.resource,
+      day: d,
+      hours: hours / days.length,
+    });
     addLoad(ts.resource, d, hours / days.length);
   }
 }
 
+/**
+ * The first day a task can start when a requirement it waits for finished on `finish`. Without a
+ * lag the next day (its owner's next working day, an extra working day on a Saturday counts), or
+ * the same day when it is open work of the same owner (the task takes over the hours left); a lag
+ * counts working days of the project calendar.
+ */
+export function startAfter(
+  calendar: Calendar,
+  requirement: Requirement,
+  finish: DayNumber,
+  sameOwner: boolean
+): DayNumber {
+  const lagDays = Math.ceil(requirement.lagHours / calendar.hoursPerDay - EPS);
+  if (lagDays > 0) return calendar.addWorkingDays(finish + 1, lagDays);
+  return sameOwner ? finish : finish + 1;
+}
+
 /** Working-day index of `day` relative to `origin` (negative before it). */
-const indexCache = new WeakMap<Calendar, Map<number, Map<number, number>>>();
 export function workIndex(calendar: Calendar, origin: DayNumber, day: DayNumber): number {
-  let byOrigin = indexCache.get(calendar);
-  if (!byOrigin) indexCache.set(calendar, (byOrigin = new Map()));
-  let m = byOrigin.get(origin);
-  if (!m) byOrigin.set(origin, (m = new Map()));
-  const cached = m.get(day);
-  if (cached !== undefined) return cached;
-  const v = calendar.workingDaysBetween(origin, day);
-  m.set(day, v);
-  return v;
+  return calendar.workingDaysBetween(origin, day);
 }
 
 function rollUp(plan: Plan, s: Schedule): void {
@@ -671,8 +782,9 @@ function rollUp(plan: Plan, s: Schedule): void {
  * caps its late finish. Slack = late start − scheduled start in working days. Critical = slack at or
  * below max(0, minimum slack).
  */
-function computeCriticalPath(plan: Plan, s: Schedule): void {
+function computeCriticalPath(plan: Plan, s: Schedule, groupsOf: Map<Task, GroupNode[]>): void {
   const cal = s.calendar;
+  const hpd = plan.project.hoursPerDay;
   const targets = plan.milestones
     .filter((m) => m.status !== "cancelled" && m.target)
     .map((m) => parseDate(m.target!)!);
@@ -684,61 +796,81 @@ function computeCriticalPath(plan: Plan, s: Schedule): void {
     (ts) => !ts.done && !ts.unscheduled && ts.start !== undefined && ts.finish !== undefined
   );
   const openSet = new Set(open.map((o) => o.task));
-  // Successors per leaf (through group nodes too).
-  const groupsOf = new Map<Task, DepNode[]>();
-  for (const g of s.graph.groups.values())
-    for (const m of g.members) groupsOf.set(m, [...(groupsOf.get(m) ?? []), g]);
-  const successors = (t: Task): Array<{ task: Task; gapDays: number }> => {
-    const out: Array<{ task: Task; gapDays: number }> = [];
-    const own = s.tasks.get(t)!;
-    const nodes: DepNode[] = [s.graph.leafNode.get(t)!, ...(groupsOf.get(t) ?? [])];
-    for (const n of nodes) {
-      for (const dep of s.graph.dependents.get(n) ?? []) {
-        if (!openSet.has(dep)) continue;
-        for (const r of s.graph.requirements.get(dep) ?? []) {
-          if (r.node !== n) continue;
-          const lagDays = Math.ceil(r.lagHours / plan.project.hoursPerDay - EPS);
-          // A same-person successor that the scheduler placed on the predecessor's finish day may
-          // stay there; otherwise the successor starts at least one working day later.
-          const next = s.tasks.get(dep)!;
-          const sameDay =
-            lagDays === 0 &&
-            n.kind === "leaf" &&
-            next.resource === own.resource &&
-            next.start === own.finish;
-          out.push({ task: dep, gapDays: sameDay ? 0 : 1 + lagDays });
+  const lateStart = new Map<Task, DayNumber>();
+  // What ends each task's late finish, when it is someone's working hours (see TaskSchedule).
+  const hoursEnd = new Map<Task, TaskSchedule["hoursEnd"]>();
+  // A task that waits for a whole group starts at least one working day (plus the lag) after its
+  // last task: the same late finish for every member, worked out once per group.
+  const groupLateFinish = new Map<GroupNode, { lf: number; end: TaskSchedule["hoursEnd"] }>();
+  const groupBound = (g: GroupNode) => {
+    let found = groupLateFinish.get(g);
+    if (!found) {
+      found = { lf: Number.POSITIVE_INFINITY, end: undefined };
+      for (const dep of s.graph.dependents.get(g) ?? []) {
+        const ls = lateStart.get(dep);
+        if (ls === undefined) continue;
+        for (const r of s.graph.requirements.get(dep)!) {
+          const lf = ls - (1 + Math.ceil(r.lagHours / hpd - EPS));
+          if (r.node === g && lf < found.lf) found = { lf, end: hoursEnd.get(dep) };
         }
       }
+      groupLateFinish.set(g, found);
     }
-    return out;
+    return found;
   };
-  // Reverse topological order over open leaves (Kahn on successor edges).
-  const succ = new Map(open.map((o) => [o.task, successors(o.task)]));
-  const indegree = new Map<Task, number>(open.map((o) => [o.task, 0]));
-  for (const list of succ.values())
-    for (const x of list) indegree.set(x.task, (indegree.get(x.task) ?? 0) + 1);
-  const order: Task[] = [];
-  const queue = open.filter((o) => indegree.get(o.task) === 0).map((o) => o.task);
-  while (queue.length) {
-    const t = queue.shift()!;
-    order.push(t);
-    for (const x of succ.get(t) ?? []) {
-      const d = indegree.get(x.task)! - 1;
-      indegree.set(x.task, d);
-      if (d === 0) queue.push(x.task);
-    }
-  }
-  const lateStart = new Map<Task, DayNumber>();
   const refIdx = (d: DayNumber) => workIndex(cal, s.start, d);
+  const referenceLf = refIdx(cal.previousWorkingDay(reference));
+  // An owner whose hours end (`capacityFrom: … 0h`) finishes their work by their last working day,
+  // as in the latest-finish order of the simulation.
+  const capacityEnd = new Map<string, { lf: number; from: DayNumber }>();
+  for (const p of plan.people) {
+    const last = p.capacityChanges[p.capacityChanges.length - 1];
+    if (last?.hours === 0)
+      capacityEnd.set(p.id.toLowerCase(), {
+        lf: refIdx(cal.previousWorkingDay(last.from - 1)),
+        from: last.from,
+      });
+  }
+  // Walked backwards, every task comes after the tasks that wait for it.
+  const order = dependencyOrder(s.graph, groupsOf, openSet);
   for (let i = order.length - 1; i >= 0; i--) {
     const t = order[i];
     const ts = s.tasks.get(t)!;
-    let lf = refIdx(cal.previousWorkingDay(reference));
+    let lf = referenceLf;
+    let end: TaskSchedule["hoursEnd"];
     if (ts.deadline !== undefined) lf = Math.min(lf, refIdx(cal.previousWorkingDay(ts.deadline)));
-    for (const x of succ.get(t) ?? []) {
-      const ls = lateStart.get(x.task);
-      if (ls !== undefined) lf = Math.min(lf, ls - x.gapDays);
+    const own = capacityEnd.get(ts.resource);
+    if (own && own.lf < lf) {
+      lf = own.lf;
+      end = { resource: ts.resource, from: own.from };
     }
+    const node = s.graph.leafNode.get(t)!;
+    for (const dep of s.graph.dependents.get(node) ?? []) {
+      const ls = lateStart.get(dep);
+      if (ls === undefined) continue;
+      const next = s.tasks.get(dep)!;
+      for (const r of s.graph.requirements.get(dep)!) {
+        if (r.node !== node) continue;
+        const lagDays = Math.ceil(r.lagHours / hpd - EPS);
+        // A same-person successor that the scheduler placed on the predecessor's finish day may
+        // stay there; otherwise the successor starts at least one working day later.
+        const sameDay = lagDays === 0 && next.resource === ts.resource && next.start === ts.finish;
+        const bound = ls - (sameDay ? 0 : 1 + lagDays);
+        if (bound < lf) {
+          lf = bound;
+          end = hoursEnd.get(dep);
+        }
+      }
+    }
+    for (const g of groupsOf.get(t) ?? []) {
+      const bound = groupBound(g);
+      if (bound.lf < lf) {
+        lf = bound.lf;
+        end = bound.end;
+      }
+    }
+    hoursEnd.set(t, end);
+    ts.hoursEnd = end;
     // Only the scheduled part counts: in-progress tasks started before today.
     const es = refIdx(cal.nextWorkingDay(Math.max(ts.start!, s.start)));
     const duration = Math.max(0, refIdx(ts.finish!) - es);
@@ -746,9 +878,11 @@ function computeCriticalPath(plan: Plan, s: Schedule): void {
     lateStart.set(t, ls);
     ts.slack = ls - es;
   }
-  const slacks = open.map((o) => o.slack!).filter((x) => x !== undefined);
-  if (slacks.length === 0) return;
-  const threshold = Math.max(0, Math.min(...slacks));
+  let least: number | undefined;
+  for (const o of open)
+    if (o.slack !== undefined && (least === undefined || o.slack < least)) least = o.slack;
+  if (least === undefined) return;
+  const threshold = Math.max(0, least);
   for (const o of open) o.critical = o.slack! <= threshold;
   s.criticalPath = open
     .filter((o) => o.critical)
@@ -769,6 +903,14 @@ export function milestoneTasks(s: Schedule, m: Milestone): TaskSchedule[] {
 
 export function isoOrUndefined(day: DayNumber | undefined): string | undefined {
   return day === undefined ? undefined : formatDate(day);
+}
+
+/** A released task in its owner's queues, with what orders it there. */
+interface Queued {
+  task: Task;
+  earliest: DayNumber;
+  /** Fixed start first, then @prio, the latest finish, file order. */
+  key: number[];
 }
 
 /** Minimal binary heap with a "less than" comparator. */

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { impliedDeps, suggestPeriodYear } from "../../../src/core/consistency";
+import { formatDate } from "../../../src/core/dates";
 import { nearMissCheckbox } from "../../../src/core/parser/taskLine";
 import { schedulePlan } from "../../../src/core/scheduler";
 import { validatePlan } from "../../../src/core/validate";
@@ -196,7 +198,7 @@ describe("dates", () => {
         "team.md": md(
           "# Team",
           "",
-          "## JSO",
+          "## Jordan",
           "",
           "capacityFrom: 2027-12-24 0h/week",
           "off: 2026-12-21..2026-12-31",
@@ -209,8 +211,73 @@ describe("dates", () => {
       [6, { date: "2028-02-06", suggestion: "2027-02-06" }],
     ]);
     expect(list[0].message).toBe(
-      "capacityFrom: 2027-12-24 is after the project end 2027-03-31, so it changes nothing. Is the year right?"
+      "capacityFrom: 2027-12-24 is after the project end 2027-03-31, so it only matters if the work runs that late. Is the year right?"
     );
+  });
+
+  it("checks every date and period of a team.md value, and moves a period as a whole", () => {
+    const team = md(
+      "# Team",
+      "",
+      "## Jordan",
+      "",
+      "capacity: 40h/week",
+      "off: 2026-11-02, 2027-12-21..2027-12-31",
+      "overtime: 2027-11-02..2027-11-27 +8h/week",
+      "workday: 2027-11-06..2027-11-07 4h",
+      "off: 2026-12-21..2027-12-31",
+      "off: 2027-03-29..2027-04-09",
+      "off: 2028-02-29"
+    );
+    const p = planFrom({ "project.md": PROJECT, "team.md": team });
+    const lines = team.split("\n");
+    const list = validatePlan(p).filter((i) => i.code === "date-outside-project");
+    expect(
+      list.map((i) => [
+        lines[i.range.start.line].slice(i.range.start.character, i.range.end.character),
+        i.data?.suggestion,
+      ])
+    ).toEqual([
+      ["2027-12-21..2027-12-31", "2026-12-21..2026-12-31"],
+      ["2027-11-02..2027-11-27", "2026-11-02..2026-11-27"],
+      ["2027-11-06..2027-11-07", "2026-11-06..2026-11-07"],
+      // Typed a year too long: only the date after the end moves.
+      ["2026-12-21..2027-12-31", "2026-12-21..2026-12-31"],
+      // No 29 February in 2027.
+      ["2028-02-29", undefined],
+    ]);
+    expect(list[3].message).toBe(
+      "off: 2026-12-21..2027-12-31 runs past the project end 2027-03-31 and lasts over a year. Is the year right?"
+    );
+    // A period that runs a few days past the end is left alone, and so are dates in the project.
+    expect(suggestPeriodYear(p, "2027-03-29..2027-04-09")).toBeUndefined();
+    expect(suggestPeriodYear(p, "2026-12-21..2026-12-31")).toBeUndefined();
+  });
+
+  it("counts time off after the project end once the work runs that late", () => {
+    const milestone = md("# M1", "", "- [ ] Migration @est:480h @owner:jordan ^T1");
+    const team = (off: string) => md("# Team", "", "## Jordan", "", "capacity: 40h/week", off);
+    const finish = (off: string) => {
+      const p = plan(milestone, { "team.md": team(off) });
+      return formatDate(
+        schedulePlan(p, { today: "2026-10-14" }).tasks.get(p.taskById("T1")!)!.finish!
+      );
+    };
+    const typo = "off: 2027-12-21..2027-12-31";
+    const fix = suggestPeriodYear(
+      plan(milestone, { "team.md": team(typo) }),
+      "2027-12-21..2027-12-31"
+    );
+    expect(fix).toBe("2026-12-21..2026-12-31");
+    expect(finish(typo)).toBe("2027-01-05");
+    expect(finish(`off: ${fix}`)).toBe("2027-01-18");
+    // Moving only the first date made it a year of time off.
+    expect(finish("off: 2026-12-21..2027-12-31")).toBe("2028-01-18");
+    expect(
+      validatePlan(plan(milestone, { "team.md": team(`off: ${fix}`) })).filter(
+        (i) => i.code === "date-outside-project"
+      )
+    ).toEqual([]);
   });
 
   it("flags a milestone target after the project end", () => {
@@ -244,6 +311,70 @@ describe("dependencies", () => {
     expect(cancelledMilestone?.message).toBe(
       "T2 is in the cancelled milestone M2, so this dependency is ignored."
     );
+  });
+
+  it("says nothing about the dates and dependencies of work in a cancelled milestone", () => {
+    // That work is not scheduled, so a dependency on cancelled work or a date after the end
+    // changes nothing there.
+    expect(
+      codes(md("# M1", "", "- [ ] a @est:1h ^T1"), {
+        "milestones/M2.md": md(
+          "# M2",
+          "",
+          "status: cancelled",
+          "",
+          "- [-] b @est:1h ^T2",
+          "- [ ] c @est:1h @dep:T2,T3 @due:2027-12-01 ^T4",
+          "- [ ] d @est:1h ^T3"
+        ),
+      })
+    ).toEqual([]);
+  });
+
+  it("only calls a dependency implied through work that still waits for it", () => {
+    const p = plan(
+      md(
+        "# M1",
+        "",
+        "- [ ] First @est:2d @owner:sam ^T1",
+        "- [-] Dropped @est:1d @owner:sam @dep:T1 ^T2",
+        "- [ ] After the dropped one @est:1d @owner:sam @dep:T1,T2 ^T3",
+        "- [x] Done early @est:1d @owner:sam @dep:T1 @started:2026-10-01 @done:2026-10-02 ^T4",
+        "- [ ] After the early one @est:1d @owner:sam @dep:T1,T4 ^T5",
+        "- [-] Old approach ^T6",
+        "  - [ ] Moot @est:1d @owner:sam @dep:T1 ^T7",
+        "- [ ] After the moot one @est:1d @owner:sam @dep:T1,T7 ^T8",
+        "- [ ] Group with all parts done @dep:T1 ^T9",
+        "  - [x] Part @est:1h @started:2026-10-01 @done:2026-10-02 ^T10",
+        "- [ ] After the group @est:1d @owner:sam @dep:T1,T9 ^T11",
+        "- [ ] Group with a waiting part ^T12",
+        "  - [ ] Waiting part @est:1h @owner:sam @dep:T1 ^T13",
+        "- [ ] After that group @est:1d @owner:sam @dep:T1,T12 ^T14"
+      ),
+      {
+        "milestones/M2.md": md(
+          "# M2",
+          "",
+          "status: cancelled",
+          "",
+          "- [ ] Shelved @est:1d @owner:sam @dep:T1 ^T20"
+        ),
+        "milestones/M3.md": md("# M3", "", "- [ ] After the shelved one @est:1d @dep:T1,T20 ^T30"),
+      }
+    );
+    const implied = (id: string) => impliedDeps(p, p.taskById(id)!);
+    for (const id of ["T3", "T5", "T8", "T11", "T30"]) expect(implied(id), id).toEqual([]);
+    // A subtask's dependency holds back its parent, so it counts.
+    expect(implied("T14")).toEqual([{ id: "T1", why: "T12 waits for it" }]);
+    // The scheduler agrees: T3 still waits for T1.
+    const s = schedulePlan(p, { today: "2026-10-14" });
+    const at = (id: string) => s.tasks.get(p.taskById(id)!)!;
+    expect(at("T3").start!).toBeGreaterThan(at("T1").finish!);
+    expect(
+      validatePlan(p)
+        .filter((i) => i.code === "implied-dep")
+        .map((i) => i.data?.implied)
+    ).toEqual(["T1"]);
   });
 
   it("explains dependencies on the task itself, its parent or its subtask", () => {

@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as vscode from "vscode";
+import { currentTask } from "../../src/extension/commands/args";
 import {
   docText,
   getApi,
@@ -314,6 +315,346 @@ describe("editor integration", () => {
     assert.match(text, /\[\$\(play-circle\) In progress\]\(command:planner\.setStatus\?/);
     assert.match(text, /Done\]\(command:planner\.setStatus\?/);
     assert.doesNotMatch(text, /To do\]\(command:/);
+  });
+
+  describe("a task line copied with its id", () => {
+    const ORIGINAL = "  - [ ] Order events schema @est:6h ^T104";
+    const COPY = "- [ ] Order events schema @est:6h ^T104";
+
+    /** Pastes a copy of T104 (same title, so it keeps its id) before `## Notes`. */
+    async function pasteCopy(): Promise<{ editor: vscode.TextEditor; line: number }> {
+      const api = await getApi();
+      const editor = await openPlanFile(M2);
+      const pos = await positionOf(M2, "## Notes");
+      await editor.edit((b) => b.insert(pos, `${COPY}\n\n`));
+      await waitFor(
+        () => api.state.plan.tasks.filter((t) => t.id === "T104").length === 2,
+        "copy indexed"
+      );
+      return { editor, line: pos.line };
+    }
+
+    function lineAt(line: number): string {
+      return docText(M2).split("\n")[line];
+    }
+
+    it("changes the copy under the cursor, also when the original is in another file", async () => {
+      const api = await getApi();
+      const M1 = "milestones/M1-discovery-design.md";
+      const original =
+        "- [ ] Internal review of the specification @est:4h @owner:sam @dep:T006 #review ^T011";
+      const editor = await openPlanFile(M2);
+      const pos = await positionOf(M2, "## Accounts");
+      await editor.edit((b) => b.insert(pos, `${original}\n\n`));
+      await waitFor(
+        () => api.state.plan.tasks.filter((t) => t.id === "T011").length === 2,
+        "copy indexed"
+      );
+      const before = docText(M2).split("\n");
+      editor.selection = new vscode.Selection(pos, pos);
+      assert.equal(await vscode.commands.executeCommand("planner.cycleStatus"), true);
+      const after = docText(M2).split("\n");
+      assert.match(
+        after[pos.line],
+        new RegExp(`^- \\[/\\] Internal review of the specification .*@started:${TODAY}.* \\^T011$`)
+      );
+      // Only the copy changed: not the M2 line on the original's line number, not the original.
+      assert.deepEqual(
+        after.filter((_, i) => i !== pos.line),
+        before.filter((_, i) => i !== pos.line)
+      );
+      assert.ok(docText(M1).split("\n").includes(original));
+    });
+
+    it("sets the status of the copy under the cursor, not of the original", async () => {
+      const { editor, line } = await pasteCopy();
+      editor.selection = new vscode.Selection(line, 2, line, 2);
+      assert.equal(
+        await vscode.commands.executeCommand("planner.setStatus", undefined, "done"),
+        true
+      );
+      assert.equal(lineAt(line), `- [x] Order events schema @est:6h @done:${TODAY} ^T104`);
+      assert.ok(docText(M2).split("\n").includes(ORIGINAL), "the original is unchanged");
+    });
+
+    it("sets the status of the copy a tree node shows", async () => {
+      const api = await getApi();
+      const { line } = await pasteCopy();
+      const copy = api.state.plan.file(M2)!.items.find((t) => t.line === line)!;
+      assert.equal(
+        await vscode.commands.executeCommand(
+          "planner.setStatus",
+          { kind: "task", task: copy },
+          "done"
+        ),
+        true
+      );
+      assert.equal(lineAt(line), `- [x] Order events schema @est:6h @done:${TODAY} ^T104`);
+      assert.ok(docText(M2).split("\n").includes(ORIGINAL), "the original is unchanged");
+    });
+
+    it("does not guess which copy an out-of-date tree node means", async () => {
+      const api = await getApi();
+      const { editor, line } = await pasteCopy();
+      const copy = api.state.plan.file(M2)!.items.find((t) => t.line === line)!;
+      // A line typed above it before the tree shows the change: the node's line is out of date.
+      await editor.edit((b) =>
+        b.insert(new vscode.Position(line, 0), "- [ ] Typed above @est:1h\n")
+      );
+      await waitFor(() => !api.state.plan.file(M2)!.items.includes(copy), "parsed again");
+      const before = docText(M2);
+      assert.equal(
+        await vscode.commands.executeCommand(
+          "planner.setStatus",
+          { kind: "task", task: copy },
+          "done"
+        ),
+        false
+      );
+      assert.equal(docText(M2), before);
+    });
+
+    it("finds an out-of-date tree node's copy on its line when nothing above it changed", async () => {
+      const api = await getApi();
+      const { editor, line } = await pasteCopy();
+      const copy = api.state.plan.file(M2)!.items.find((t) => t.line === line)!;
+      // A line typed below it: the plan is parsed again, but nothing above the copy moved.
+      const end = editor.document.lineAt(editor.document.lineCount - 1).range.end;
+      await editor.edit((b) => b.insert(end, "\nTyped below."));
+      await waitFor(() => !api.state.plan.file(M2)!.items.includes(copy), "parsed again");
+      assert.equal(
+        await vscode.commands.executeCommand(
+          "planner.setStatus",
+          { kind: "task", task: copy },
+          "done"
+        ),
+        true
+      );
+      assert.match(lineAt(line), /^- \[x\] Order events schema @est:6h .*@done:.*\^T104$/);
+      assert.match(docText(M2), /\n {2}- \[ \] Order events schema @est:6h \^T104\n/);
+    });
+
+    it("sets the status of the hovered copy as an editor edit, without saving", async () => {
+      const { editor, line } = await pasteCopy();
+      const disk = readFileSync(planUri(M2).fsPath, "utf8");
+      const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+        "vscode.executeHoverProvider",
+        planUri(M2),
+        new vscode.Position(line, 3)
+      );
+      const text = hovers
+        .flatMap((h) => h.contents.map((c) => (c as vscode.MarkdownString).value))
+        .join("\n");
+      const link = /\[\$\([\w-]+\) Done\]\(command:planner\.setStatus\?(\S+) "/.exec(text);
+      assert.ok(link, text);
+      const args = JSON.parse(decodeURIComponent(link[1])) as unknown[];
+      assert.equal(await vscode.commands.executeCommand("planner.setStatus", ...args), true);
+      assert.equal(lineAt(line), `- [x] Order events schema @est:6h @done:${TODAY} ^T104`);
+      assert.ok(docText(M2).split("\n").includes(ORIGINAL), "the original is unchanged");
+      assert.ok(editor.document.isDirty, "a change from the editor is not saved");
+      assert.equal(readFileSync(planUri(M2).fsPath, "utf8"), disk);
+    });
+
+    it("edits the copy in the task form, not the original", async () => {
+      const { line } = await pasteCopy();
+      const change = { status: "doing", attrs: { owner: "sam" } };
+      assert.equal(
+        await vscode.commands.executeCommand("planner.editTask", { file: M2, line }, change),
+        true
+      );
+      assert.equal(
+        lineAt(line),
+        `- [/] Order events schema @est:6h @owner:sam @started:${TODAY} ^T104`
+      );
+      assert.ok(docText(M2).split("\n").includes(ORIGINAL), "the original is unchanged");
+    });
+  });
+
+  it("finds a task again on its line after a save gave it an id, and no other task", async () => {
+    const api = await getApi();
+    const editor = await openPlanFile(M2);
+    const pos = await positionOf(M2, "## Notes");
+    await editor.edit((b) =>
+      b.insert(pos, "- [ ] Fresh task @est:4h\n- [ ] Next task @est:1h\n\n")
+    );
+    const items = () => api.state.plan.file(M2)!.items;
+    const fresh = await waitFor(() => items().find((t) => t.title === "Fresh task"), "indexed");
+    const next = items().find((t) => t.title === "Next task")!;
+    await editor.document.save();
+    const saved = await waitFor(
+      () => items().find((t) => t.line === pos.line && t.id),
+      "id given on save"
+    );
+    assert.equal(currentTask(api.state.plan, fresh), saved);
+    // Typed above it: its line now holds another task, which is not taken for it.
+    await editor.edit((b) => b.insert(pos, "- [ ] Typed above @est:1h\n"));
+    await waitFor(() => items().some((t) => t.title === "Typed above"), "parsed again");
+    assert.equal(currentTask(api.state.plan, next), undefined);
+  });
+
+  it("finds a copy again after a save gave it a new id, and no task in its place", async () => {
+    const api = await getApi();
+    const editor = await openPlanFile(M2);
+    const pos = await positionOf(M2, "## Notes");
+    // A copy of T104 made into another task, and two tasks with one title.
+    await editor.edit((b) =>
+      b.insert(
+        pos,
+        "- [ ] Payment events schema @est:6h ^T104\n" +
+          "- [ ] Review @est:1h ^T150\n- [ ] Review @est:1h ^T151\n\n"
+      )
+    );
+    const items = () => api.state.plan.file(M2)!.items;
+    const copy = await waitFor(
+      () => items().find((t) => t.title === "Payment events schema"),
+      "indexed"
+    );
+    const review = items().find((t) => t.id === "T150")!;
+    await editor.document.save();
+    const renumbered = await waitFor(
+      () => items().find((t) => t.line === pos.line && t.id !== "T104"),
+      "new id given on save"
+    );
+    assert.equal(currentTask(api.state.plan, copy), renumbered);
+    // Deleted: the task with its title that moved onto its line has another id, used once.
+    await editor.edit((b) => b.delete(new vscode.Range(pos.translate(1), pos.translate(2))));
+    await waitFor(() => !items().some((t) => t.id === "T150"), "parsed again");
+    assert.equal(items().find((t) => t.line === review.line)?.id, "T151");
+    assert.equal(currentTask(api.state.plan, review), undefined);
+  });
+
+  it("finds a task without an id that moved, not the task with its title now on its line", async () => {
+    const api = await getApi();
+    const editor = await openPlanFile(M2);
+    const pos = await positionOf(M2, "## Notes");
+    await editor.edit((b) =>
+      b.insert(
+        pos,
+        "- [ ] Typed first @est:1h\n- [ ] Review @est:1h\n- [ ] Review @est:1h ^T150\n\n"
+      )
+    );
+    const items = () => api.state.plan.file(M2)!.items;
+    const review = () => items().find((t) => t.title === "Review" && !t.id);
+    const captured = await waitFor(review, "indexed");
+    // The line above it is deleted: the task with the same title and an id moves onto its line.
+    await editor.edit((b) => b.delete(new vscode.Range(pos, pos.translate(1))));
+    await waitFor(() => !items().some((t) => t.title === "Typed first"), "parsed again");
+    assert.equal(items().find((t) => t.line === captured.line)?.id, "T150");
+    assert.equal(currentTask(api.state.plan, captured), review());
+  });
+
+  it("does not take the task now on its line for an out-of-date tree node", async () => {
+    const api = await getApi();
+    const editor = await openPlanFile(M2);
+    const pos = await positionOf(M2, "## Notes");
+    await editor.edit((b) => b.insert(pos, "- [ ] Review @est:1h\n- [ ] Review @est:1h\n\n"));
+    const items = () => api.state.plan.file(M2)!.items;
+    const node = await waitFor(() => items().find((t) => t.line === pos.line), "indexed");
+    // A line typed above before the tree shows the change: the node's line holds that one now.
+    await editor.edit((b) => b.insert(pos, "- [ ] Typed above @est:1h\n"));
+    await waitFor(() => items().some((t) => t.title === "Typed above"), "parsed again");
+    const before = docText(M2);
+    assert.equal(
+      await vscode.commands.executeCommand(
+        "planner.setStatus",
+        { kind: "task", task: node },
+        "done"
+      ),
+      false
+    );
+    assert.equal(docText(M2), before);
+  });
+
+  it("does not guess between two copies with one id and title for an out-of-date item", async () => {
+    const api = await getApi();
+    const editor = await openPlanFile(M2);
+    const pos = await positionOf(M2, "## Notes");
+    const done = "- [x] Review @est:1h @done:2026-10-01 ^T150";
+    await editor.edit((b) => b.insert(pos, `${done}\n- [ ] Review @est:1h ^T150\n\n`));
+    const items = () => api.state.plan.file(M2)!.items;
+    const node = await waitFor(() => items().find((t) => t.line === pos.line + 1), "indexed");
+    // A line typed above both before the tree shows it (or while a form is open on the to-do copy):
+    // the done copy is on the node's line now.
+    await editor.edit((b) => b.insert(pos, "Typed above.\n"));
+    await waitFor(() => !items().includes(node), "parsed again");
+    assert.equal(items().find((t) => t.line === node.line)?.status, "done");
+    assert.equal(currentTask(api.state.plan, node), undefined);
+    const before = docText(M2);
+    assert.equal(
+      await vscode.commands.executeCommand(
+        "planner.setStatus",
+        { kind: "task", task: node },
+        "doing"
+      ),
+      false
+    );
+    assert.equal(docText(M2), before);
+  });
+
+  it("does not guess between two copies without an id once a save gave them ids", async () => {
+    const api = await getApi();
+    const editor = await openPlanFile(M2);
+    const pos = await positionOf(M2, "## Notes");
+    await editor.edit((b) => b.insert(pos, "- [ ] Review @est:1h\n- [ ] Review @est:1h\n\n"));
+    const items = () => api.state.plan.file(M2)!.items;
+    const node = await waitFor(() => items().find((t) => t.line === pos.line + 1), "indexed");
+    // A line typed above both, then saved: the node's line holds the other copy, with an id now.
+    await editor.edit((b) => b.insert(pos, "Typed above.\n"));
+    await editor.document.save();
+    const reviews = () => items().filter((t) => t.title === "Review" && t.id);
+    await waitFor(() => reviews().length === 2, "ids given on save");
+    assert.equal(
+      items().find((t) => t.line === node.line),
+      reviews()[0]
+    );
+    assert.equal(currentTask(api.state.plan, node), undefined);
+  });
+
+  it("adds the plan folder to .prettierignore with an edit that can be undone", async () => {
+    const api = await getApi();
+    const uri = vscode.Uri.joinPath(vscode.workspace.workspaceFolders![0].uri, ".prettierignore");
+    try {
+      // No file yet: it is created with the plan folder.
+      await api.formatGuard.addToPrettierIgnore();
+      assert.equal(readFileSync(uri.fsPath, "utf8"), "plan/\n");
+      // An open file without a final line ending: the folder goes on a line of its own, the
+      // editor shows it, and the file is saved.
+      const doc = await vscode.workspace.openTextDocument(uri);
+      const edit = new vscode.WorkspaceEdit();
+      edit.replace(uri, new vscode.Range(0, 0, doc.lineCount, 0), "node_modules");
+      assert.ok(await vscode.workspace.applyEdit(edit));
+      await doc.save();
+      await vscode.window.showTextDocument(doc);
+      // It is an edit of the document, which Undo takes back like typing: the document changes
+      // before the file does, not after the file was written behind its back. (Undo itself only
+      // reaches the document while the window has the focus.)
+      const changes: { text: string; onDisk: string }[] = [];
+      const listening = vscode.workspace.onDidChangeTextDocument((e) => {
+        if (e.document === doc)
+          for (const c of e.contentChanges)
+            changes.push({ text: c.text, onDisk: readFileSync(uri.fsPath, "utf8") });
+      });
+      try {
+        await api.formatGuard.addToPrettierIgnore();
+      } finally {
+        listening.dispose();
+      }
+      assert.deepEqual(changes, [{ text: "\nplan/\n", onDisk: "node_modules" }]);
+      assert.equal(doc.getText(), "node_modules\nplan/\n");
+      assert.ok(!doc.isDirty);
+      assert.equal(readFileSync(uri.fsPath, "utf8"), "node_modules\nplan/\n");
+      // Already there: nothing changes.
+      await api.formatGuard.addToPrettierIgnore();
+      assert.equal(doc.getText(), "node_modules\nplan/\n");
+    } finally {
+      // Closing a dirty editor would ask whether to save it.
+      const doc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === uri.fsPath);
+      if (doc?.isDirty) await doc.save();
+      await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+      const remove = new vscode.WorkspaceEdit();
+      remove.deleteFile(uri, { ignoreIfNotExists: true });
+      await vscode.workspace.applyEdit(remove);
+    }
   });
 
   it("shows CodeLens above milestone headings", async () => {

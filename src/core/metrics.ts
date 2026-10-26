@@ -1,5 +1,7 @@
 // Project metrics: estimate accuracy, burn-up, attention lists, test and punch statistics.
+import { loggedWithinEstimate } from "./budget";
 import { type DayNumber, formatDate, parseDate, weekStart } from "./dates";
+import { isSchedulableTask } from "./graph";
 import { isOpen, type Task, type TestPlan } from "./model";
 import { deadlineOf, isOpenTask } from "./queries";
 import { type Plan } from "./resolve";
@@ -107,9 +109,20 @@ export function burnUp(plan: Plan, schedule: Schedule, milestoneId?: string): Bu
       (!milestoneId || t.milestoneId === milestoneId) &&
       schedule.tasks.has(t)
   );
-  const scope = leaves.reduce((s, t) => s + (estimateHours(t) ?? 0), 0);
+  // Hours logged on a parent that its own @est covers are planned work already done: its subtasks
+  // share only what is left of the estimate (see loggedWithinEstimate).
+  const onParents = plan.tasks.flatMap((t) => {
+    if (isLeaf(t) || !isSchedulableTask(plan, t) || (milestoneId && t.milestoneId !== milestoneId))
+      return [];
+    const hours = loggedWithinEstimate(t);
+    const day = (t.started ? parseDate(t.started) : undefined) ?? schedule.today;
+    return hours > 0 ? [{ hours, day }] : [];
+  });
+  const scope =
+    leaves.reduce((s, t) => s + (estimateHours(t) ?? 0), 0) +
+    onParents.reduce((s, p) => s + p.hours, 0);
   const projectStart = plan.project.start ? parseDate(plan.project.start)! : schedule.start;
-  let first = projectStart;
+  let first = Math.min(projectStart, ...onParents.map((p) => p.day));
   let last = schedule.today;
   const doneAt = new Map<Task, DayNumber>();
   for (const t of leaves) {
@@ -134,6 +147,7 @@ export function burnUp(plan: Plan, schedule: Schedule, milestoneId?: string): Bu
         if (d !== undefined && d <= Math.min(weekEnd, schedule.today))
           done += estimateHours(t) ?? 0;
       }
+      for (const p of onParents) if (p.day <= Math.min(weekEnd, schedule.today)) done += p.hours;
       point.done = done;
     }
     if (weekEnd >= schedule.today) {
@@ -145,6 +159,7 @@ export function burnUp(plan: Plan, schedule: Schedule, milestoneId?: string): Bu
         else if (t.status !== "done" && finish !== undefined)
           forecast += (estimateHours(t) ?? 0) - Math.max(0, remainingOf(t));
       }
+      for (const p of onParents) if (p.day <= weekEnd) forecast += p.hours;
       point.forecast = forecast;
     }
     points.push(point);

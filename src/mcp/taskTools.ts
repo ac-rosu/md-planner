@@ -14,7 +14,8 @@ import {
   type FileEdit,
   insertTasks,
   type InsertLocation,
-  moveTask as moveTaskEdits,
+  type MovedTask,
+  moveTaskTo,
   renameTaskId as renameTaskIdEdits,
   setNotes,
   startsWork,
@@ -24,7 +25,7 @@ import {
 import { deleteTaskWithLinks } from "../core/writer/entities";
 import { describeUnfinished, unfinishedMilestoneDeps } from "../core/queries";
 import { openSubtasks } from "../core/rollup";
-import { placeTask } from "../core/writer/structure";
+import { leavesSchedule, placeTask } from "../core/writer/structure";
 import { milestoneOf } from "./milestoneTools";
 import { workspaceSettings } from "./settings";
 import { type Staging } from "./staging";
@@ -272,8 +273,18 @@ export function updateTasks(tools: PlannerTools, args: { updates: TaskUpdate[] }
     rollUp: settings.parentStatus !== "off",
     confirmEarlyStart: settings.confirmEarlyStart !== false,
   };
-  const ids = args.updates.map((u) => stageTaskUpdate(st, u, tools.today, options));
-  return { updated: ids, changed: tools.commit(st) };
+  // A cycle names a task without an id by its title; the task keeps its line.
+  const renamed: Array<[string, string]> = [];
+  const ids = args.updates.map((u) => {
+    const t = findTask(st.plan, u.id);
+    const key = stageTaskUpdate(st, u, tools.today, options);
+    if (t && !t.id) {
+      const now = st.plan.file(t.file)?.items.find((x) => x.line === t.line);
+      if (now && now.title !== t.title) renamed.push([t.title, now.title]);
+    }
+    return key;
+  });
+  return { updated: ids, changed: tools.commit(st, { renamed }) };
 }
 
 export function moveTask(
@@ -287,24 +298,41 @@ export function moveTask(
     throw new ToolError(`Unknown task "${args.id}" (inbox items: use plan_inbox_item).`);
   const places = [args.parent, args.before, args.after].filter((x) => x !== undefined);
   if (places.length > 1) throw new ToolError("Give only one of parent, before and after.");
+  // Under a cancelled or done task, or in a cancelled milestone, open work leaves the schedule
+  // while its checkbox still looks open: the agent's version of the question the editor asks.
+  const refuse = (warning: string | undefined) => {
+    if (warning)
+      throw new ToolError(
+        `Nothing was moved: ${warning} Reopen the task or milestone it would be under, or set ${t.id ?? t.title} to done or cancelled first.`
+      );
+  };
+  // A task without an id is known by its place, which the move changes.
+  const moved = (m: MovedTask) => ({
+    id: t.id ?? `${m.file}#${m.line + 1}`,
+    changed: tools.commit(st),
+  });
   if (args.before !== undefined || args.after !== undefined) {
     const ref = (args.before ?? args.after)!;
     const target = findTask(plan, ref);
     if (!target || target.kind !== "task") throw new ToolError(`Unknown task "${ref}".`);
     const r = placeTask(plan, t, target, args.before !== undefined ? "before" : "after");
     if ("reason" in r) throw new ToolError(r.reason);
+    refuse(r.warning);
     st.apply(r.edits);
-    return { id: t.id ?? taskKey(t), changed: tools.commit(st) };
+    return moved(r.moved[0]);
   }
   let destFile: string;
   let location: InsertLocation;
+  let parent: Task | undefined;
+  let milestone: string | undefined;
   if (args.parent) {
-    const parent = findTask(plan, args.parent);
+    parent = findTask(plan, args.parent);
     if (!parent || parent.kind !== "task") throw new ToolError(`Unknown parent "${args.parent}".`);
     for (let p: Task | undefined = parent; p; p = p.parent)
       if (p === t) throw new ToolError("A task cannot move under itself or its subtasks.");
     destFile = parent.file;
     location = { kind: "child", task: parent };
+    milestone = parent.milestoneId;
   } else {
     const m = args.milestone
       ? milestoneOf(plan, args.milestone)
@@ -314,9 +342,12 @@ export function moveTask(
     location = args.section?.trim()
       ? { kind: "section", title: args.section.trim() }
       : { kind: "root" };
+    milestone = m.id;
   }
-  st.apply(moveTaskEdits(plan.file(t.file)!, t, plan.file(destFile)!, location));
-  return { id: t.id ?? taskKey(t), changed: tools.commit(st) };
+  refuse(leavesSchedule(plan, [t], parent, milestone));
+  const r = moveTaskTo(plan.file(t.file)!, t, plan.file(destFile)!, location);
+  st.apply(r.edits);
+  return moved(r.moved);
 }
 
 export function deleteTasks(tools: PlannerTools, args: { ids: string[] }) {
@@ -373,7 +404,16 @@ export function assignIds(tools: PlannerTools, args: { file?: string }) {
     edits: assignMissingIds(plan, f!, reserved),
   }));
   st.apply(edits);
-  return { assigned: reserved.size, ids: [...reserved], changed: tools.commit(st) };
+  // A cycle names a task without an id by its title; the task keeps its line.
+  const renamed: Array<[string, string]> = [];
+  for (const f of files) {
+    const ids = new Map(st.plan.file(f!.path)?.items.map((t) => [t.line, t.id]));
+    for (const t of f!.items) {
+      const id = ids.get(t.line);
+      if (!t.id && id) renamed.push([t.title, id]);
+    }
+  }
+  return { assigned: reserved.size, ids: [...reserved], changed: tools.commit(st, { renamed }) };
 }
 
 /** Renames a task id and every dependency on it, in all files. */
@@ -386,5 +426,5 @@ export function renameTaskId(tools: PlannerTools, args: { id: string; newId: str
   if (!isValidTaskId(id)) throw new ToolError(`"${args.newId}" is not a valid id (e.g. T142).`);
   if (id !== t.id && allIds(plan).has(id)) throw new ToolError(`The id ${id} is already in use.`);
   st.apply(renameTaskIdEdits(plan, t.id, id));
-  return { from: t.id, to: id, changed: tools.commit(st, { renamed: { [t.id]: id } }) };
+  return { from: t.id, to: id, changed: tools.commit(st, { renamed: [[t.id, id]] }) };
 }

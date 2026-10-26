@@ -40,7 +40,9 @@ export class PlanCodeLensProvider implements vscode.CodeLensProvider, vscode.Dis
           tooltip,
         })
       );
-    const taskArg = (t: Task) => t.id ?? { file: t.file, line: t.line };
+    // A copied line that kept its id is passed by its line: the id finds the first task with it.
+    const taskArg = (t: Task) =>
+      t.id && plan.taskById(t.id) === t ? t.id : { file: t.file, line: t.line };
     const ownerLens = (t: Task) => {
       const own = t.owner;
       let inherited: string | undefined;

@@ -13,7 +13,6 @@ import {
   type Task,
 } from "../../core/model";
 import { type Plan } from "../../core/resolve";
-import { findTaskByKey } from "../../core/scheduler";
 import { addPunchItem } from "../../core/testRun";
 import {
   type InsertLocation,
@@ -60,7 +59,7 @@ import {
   askValues,
 } from "../ui/inputs";
 import { pickMilestoneLocation, type PlanIntoTarget } from "./inbox";
-import { resolveTask, stringArg, type TaskArg, valuesArg } from "./args";
+import { findAgain, resolveTask, stringArg, type TaskArg, valuesArg } from "./args";
 import { statusEffects } from "./status";
 import { confirmNoNewErrors } from "../guard";
 
@@ -645,16 +644,13 @@ async function createTasks(
     const plan = service.plan;
     const file = plan.file(milestone.file);
     if (!file) return lastId;
-    // A subtask's parent may have moved since the form opened: find it again by key.
-    const loc =
-      location.kind === "child" || location.kind === "after"
-        ? (() => {
-            const t = location.task.id
-              ? plan.taskById(location.task.id)
-              : findTaskByKey(plan, `${location.task.file}#${location.task.line + 1}`);
-            return t ? { ...location, task: t } : location;
-          })()
-        : location;
+    // A subtask's parent may have moved since the form opened: find it again.
+    let loc = location;
+    if (location.kind === "child" || location.kind === "after") {
+      const t = findAgain(plan, location.task);
+      if (!t) return lastId;
+      loc = { ...location, task: t };
+    }
     const id = nextId(plan, "T");
     const ok = await applyCreation(service, {
       edits: [addTask(file, loc, newTaskFields(form, state.today), id)],
@@ -750,17 +746,12 @@ export async function editTaskCommand(
       placeholder: "Choose a field to change; ● marks changed fields; Enter saves",
     });
     if (!action) return false;
-    if (action === "subtask")
-      return !!(await addSubtaskCommand(state, t.id ?? { file: t.file, line: t.line }));
-    if (action === "move")
-      return !!(await moveTaskCommand(service, t.id ?? { file: t.file, line: t.line }));
-    if (action === "delete")
-      return deleteTaskCommand(service, t.id ?? { file: t.file, line: t.line });
+    // This task, not the first one with its id (a copied line keeps the id).
+    if (action === "subtask") return !!(await addSubtaskCommand(state, { task: t }));
+    if (action === "move") return !!(await moveTaskCommand(service, { task: t }));
+    if (action === "delete") return deleteTaskCommand(service, { task: t });
     if (action === "open") {
-      await vscode.commands.executeCommand(
-        "planner.revealTask",
-        t.id ?? { file: t.file, line: t.line }
-      );
+      await vscode.commands.executeCommand("planner.revealTask", { task: t });
       return false;
     }
     edit = diffTask(original, form);
@@ -769,9 +760,9 @@ export async function editTaskCommand(
   const status = edit.status !== undefined && edit.status !== t.status ? edit.status : undefined;
   const effects = status ? await statusEffects(state.plan, t, status) : {};
   if (!effects) return false;
-  const current = resolveTask(service, t.id ?? { file: t.file, line: t.line })?.task ?? t;
-  const file = service.plan.file(current.file);
-  if (!file) return false;
+  const current = findAgain(service.plan, t);
+  const file = current && service.plan.file(current.file);
+  if (!current || !file) return false;
   const edits = [
     ...changeTask(file.lines, current, edit, state.today),
     ...(status ? statusSideEdits(file.lines, current, status, state.today, effects) : []),
@@ -801,14 +792,15 @@ export async function moveTaskCommand(
   const chosen = target ?? (await pickMilestoneLocation(service, `Move ${t.id ?? t.title} to…`));
   if (!chosen) return undefined;
   const plan = service.plan;
+  const current = findAgain(plan, t);
   const m = plan.milestoneById(chosen.milestone);
   const source = plan.file(t.file);
   const dest = m ? plan.file(m.file) : undefined;
-  if (!m || !source || !dest) return undefined;
+  if (!current || !m || !source || !dest) return undefined;
   const location: InsertLocation = chosen.section
     ? { kind: "section", title: chosen.section }
     : { kind: "root" };
-  const edits = moveTask(source, t, dest, location);
+  const edits = moveTask(source, current, dest, location);
   if (!(await confirmNoNewErrors(service, edits, `Moving ${t.id ?? t.title}`))) return undefined;
   const ok = await service.apply(edits, { source: "view" });
   if (!ok) return undefined;
@@ -857,7 +849,9 @@ export async function deleteTaskCommand(
     );
     if (pick !== "Delete") return false;
   }
-  const ok = await service.apply(deleteTaskWithLinks(plan, t), { source: "view" });
+  const current = findAgain(service.plan, t);
+  if (!current) return false;
+  const ok = await service.apply(deleteTaskWithLinks(service.plan, current), { source: "view" });
   if (ok) {
     service.fireNow();
     message(`Deleted ${t.id ?? t.title}`);
@@ -1436,13 +1430,9 @@ async function editPunchItem(state: PlannerState, t: Task, change?: TaskChange):
       ],
     });
     if (!action) return false;
-    if (action === "delete")
-      return deleteTaskCommand(service, t.id ?? { file: t.file, line: t.line });
+    if (action === "delete") return deleteTaskCommand(service, { task: t });
     if (action === "open") {
-      await vscode.commands.executeCommand(
-        "planner.revealTask",
-        t.id ?? { file: t.file, line: t.line }
-      );
+      await vscode.commands.executeCommand("planner.revealTask", { task: t });
       return false;
     }
     edit = {
@@ -1458,12 +1448,12 @@ async function editPunchItem(state: PlannerState, t: Task, change?: TaskChange):
       addTags: form.tags.filter((x) => !original.tags.includes(x)),
     };
   }
-  const file = service.plan.file(t.file);
-  const fresh = resolveTask(service, t.id ?? { file: t.file, line: t.line })?.task ?? t;
-  if (!file) return false;
+  const fresh = findAgain(service.plan, t);
+  const file = fresh && service.plan.file(fresh.file);
+  if (!fresh || !file) return false;
   const edits = changeTask(file.lines, fresh, edit, state.today);
   if (edits.length === 0) return false;
-  const ok = await service.apply([{ path: t.file, edits }], { source: "view" });
+  const ok = await service.apply([{ path: fresh.file, edits }], { source: "view" });
   if (ok) message(`Saved ${t.id ?? t.title}`);
   return ok;
 }

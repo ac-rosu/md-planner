@@ -238,13 +238,16 @@ export function resolveProject(file: ProjectFile | undefined, issues: Issue[]): 
   const b = getProp(props, "budget");
   if (b && b.value !== "") {
     budget = parseBudget(b.value, hoursPerDay);
+    const readings = ambiguousBudget(b.value);
     if (budget === undefined)
       issue(
         issues,
         path,
         b,
         "invalid-value",
-        `Invalid budget "${b.value}": hours such as 1200h, or days or weeks (150d, 30w).`
+        readings
+          ? `Budget "${b.value}" can mean ${readings[0]} or ${readings[1]}: write the one you mean.`
+          : `Invalid budget "${b.value}": hours such as 1200h, or days or weeks (150d, 30w).`
       );
   }
   const start = dateProp(path, props, "start", issues);
@@ -279,11 +282,42 @@ export function resolveProject(file: ProjectFile | undefined, issues: Issue[]): 
   };
 }
 
-/** `1200h`, `150d`, `30w` or a plain number of hours; undefined when invalid or not positive. */
+/**
+ * `1200h`, `150d`, `30w` or a plain number of hours; undefined when invalid or not positive. The
+ * number may have a decimal point or a decimal comma (`12.5h`, `12,5h`), and thousands separators
+ * where they cannot be decimals (`1,200,000h`, `1.200,5h`). One separator before three digits
+ * (`1,200h`, `1.200h`) is 1200 to some and 1.2 to others: undefined.
+ */
 export function parseBudget(text: string, hoursPerDay: number): number | undefined {
-  const t = text.trim().replace(/,/g, "");
-  const hours = /^\d+(\.\d+)?$/.test(t) ? Number(t) : parseDuration(t, hoursPerDay);
+  const m = /^([\d.,]+)([hdw]?)$/i.exec(text.trim());
+  const n = m ? parseAmount(m[1]) : undefined;
+  if (!m || n === undefined) return undefined;
+  const hours = m[2] ? parseDuration(`${n}${m[2]}`, hoursPerDay) : n;
   return hours !== undefined && hours > 0 ? hours : undefined;
+}
+
+/** `1,200h` or `1.200h`: the two readings of a budget that parseBudget leaves undecided. */
+export function ambiguousBudget(text: string): [string, string] | undefined {
+  const m = /^([1-9]\d{0,2})[.,](\d{3})([hdw]?)$/i.exec(text.trim());
+  return m ? [`${m[1]}${m[2]}${m[3]}`, `${Number(`${m[1]}.${m[2]}`)}${m[3]}`] : undefined;
+}
+
+/** See parseBudget: digits with a decimal point or comma, and thousands separators. */
+function parseAmount(text: string): number | undefined {
+  if (!/^\d+(?:[.,]\d+)*$/.test(text)) return undefined;
+  const runs = text.split(/[.,]/);
+  const seps = text.replace(/\d+/g, "");
+  if (seps === "") return Number(text);
+  // Groups of three digits after the first one to three, between the given runs.
+  const grouped = (upTo: number) =>
+    /^[1-9]\d{0,2}$/.test(runs[0]) && runs.slice(1, upTo).every((r) => r.length === 3);
+  const mark = seps[seps.length - 1];
+  if (seps.length === 1) return grouped(2) ? undefined : Number(`${runs[0]}.${runs[1]}`);
+  if ([...seps].every((s) => s === mark))
+    return grouped(runs.length) ? Number(runs.join("")) : undefined;
+  // Thousands separators, then the other character as the decimal mark.
+  if (seps.slice(0, -1).includes(mark) || !grouped(runs.length - 1)) return undefined;
+  return Number(`${runs.slice(0, -1).join("")}.${runs[runs.length - 1]}`);
 }
 
 /** `2026-11-02..2026-11-27 +8h/week` or `2026-11-05 +2h/day`: a period and the extra hours. */
@@ -647,6 +681,9 @@ function applyAttr(t: Task, a: Attr, hpd: number, issues: Issue[]): void {
       return;
     }
     case "blocked":
+      // `@blocked:` or `@blocked:""` gives no reason: the same as no `@blocked` at all.
+      t.blocked = v.trim() || undefined;
+      return;
     case "test":
     case "eq":
     case "src":

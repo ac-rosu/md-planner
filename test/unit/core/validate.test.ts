@@ -58,6 +58,109 @@ describe("diagnostics", () => {
     ]);
   });
 
+  it("reports a cycle through other dependencies of tasks that also depend on their own subtask", () => {
+    const text = md(
+      "# M1",
+      "",
+      "- [ ] A @dep:T2,T3 ^T1",
+      "  - [ ] Part of A @est:1h ^T2",
+      "- [ ] B @dep:T4,T1 ^T3",
+      "  - [ ] Part of B @est:1h ^T4"
+    );
+    expect(codes({ "milestones/M1.md": text })).toEqual([
+      "error:family-dep:2",
+      "error:family-dep:4",
+      "error:circular-dep:2",
+      "error:circular-dep:4",
+    ]);
+    const cycle = validatePlan(planFrom({ "milestones/M1.md": text })).find(
+      (i) => i.code === "circular-dep"
+    );
+    expect(cycle?.message).toBe("Circular dependency: T2 → T4. These tasks are not scheduled.");
+    // A parent waits for its own subtask, which waits for a sibling: only the sibling dependency
+    // is a circular one, the parent's is explained on its own.
+    expect(
+      codes({
+        "milestones/M1.md": md(
+          "# M1",
+          "",
+          "- [ ] Parent @dep:T2 ^T1",
+          "  - [ ] First @est:1h @dep:T3 ^T2",
+          "  - [ ] Second @est:1h ^T3"
+        ),
+      })
+    ).toEqual(["error:family-dep:2", "error:circular-dep:3"]);
+  });
+
+  it("reports a parent's dependency only for the cycle it is part of", () => {
+    const plan = planFrom({
+      "milestones/M1.md": md(
+        "# M1",
+        "",
+        "- [ ] Parent @dep:T4 ^T1",
+        "  - [ ] One @est:1h ^T2",
+        "  - [ ] Two @est:1h @dep:T5 ^T3",
+        "- [ ] Waits for one @est:1h @dep:T2 ^T4",
+        "- [ ] Waits for two @est:1h @dep:T3 ^T5"
+      ),
+    });
+    const cycles = validatePlan(plan).filter((i) => i.code === "circular-dep");
+    expect(cycles.map((i) => `${i.range.start.line}: ${i.message}`).sort()).toEqual([
+      "2: Circular dependency: T2 → T4. These tasks are not scheduled.",
+      "4: Circular dependency: T3 → T5. These tasks are not scheduled.",
+      "5: Circular dependency: T2 → T4. These tasks are not scheduled.",
+      "6: Circular dependency: T3 → T5. These tasks are not scheduled.",
+    ]);
+  });
+
+  it("does not report a family dependency the graph ignores (cancelled work)", () => {
+    const dropped = {
+      "milestones/M1.md": md(
+        "# M1",
+        "",
+        "- [ ] Parent @dep:T2 ^T1",
+        "  - [-] Dropped part ^T2",
+        "  - [ ] Open part @est:1h ^T3"
+      ),
+    };
+    expect(codes(dropped)).toEqual(["info:cancelled-dep:2"]);
+    expect(buildDepGraph(planFrom(dropped)).cycles).toEqual([]);
+    const ignored = [
+      // The declaring task is cancelled, under a cancelled parent, or in a cancelled milestone.
+      md("# M1", "", "- [-] Dropped @dep:T1 ^T1"),
+      md("# M1", "", "- [-] Dropped parent ^T1", "  - [ ] Child @est:1h @dep:T1 ^T2"),
+      md("# M1", "", "status: cancelled", "", "- [ ] A @dep:T2 ^T1", "  - [ ] Part @est:1h ^T2"),
+      // The subtask is part of a cancelled subtask.
+      md(
+        "# M1",
+        "",
+        "- [ ] A @dep:T3 ^T1",
+        "  - [-] Dropped ^T2",
+        "    - [ ] Moot @est:1h ^T3",
+        "  - [ ] Open @est:1h ^T4"
+      ),
+    ];
+    for (const text of ignored) {
+      const plan = planFrom({ "team.md": TEAM, "milestones/M1.md": text });
+      expect(validatePlan(plan).filter((i) => i.severity === "error")).toEqual([]);
+      expect(buildDepGraph(plan).cycles).toEqual([]);
+    }
+    // A finished task's dependencies are in the graph too: reported exactly when it has the cycle.
+    const done = planFrom({
+      "team.md": TEAM,
+      "milestones/M1.md": md(
+        "# M1",
+        "",
+        "- [x] Done parent @done:2026-10-01 @dep:T2 ^T1",
+        "  - [x] Part @est:1h @done:2026-10-01 ^T2",
+        "- [ ] Next @est:1h @dep:T1 ^T3"
+      ),
+    });
+    expect(validatePlan(done).some((i) => i.code === "family-dep")).toBe(
+      buildDepGraph(done).cycles.length > 0
+    );
+  });
+
   it("puts tasks in a cycle (and only those) into the graph's cyclic set", () => {
     const plan = planFrom({
       "milestones/M1.md": md(
@@ -94,6 +197,16 @@ describe("diagnostics", () => {
         ),
       })
     ).toEqual(["info:missing-estimate:3"]);
+  });
+
+  it("does not ask for estimates of work that is not scheduled because it is cancelled", () => {
+    // The open child of the cancelled parent gets its own note (cancelled-parent-open-subtasks).
+    expect(
+      codes({
+        "milestones/M1.md": md("# M1", "", "- [-] Dropped parent ^T1", "  - [ ] Child ^T2"),
+        "milestones/M2.md": md("# M2", "", "status: cancelled", "", "- [ ] Task ^T3"),
+      }).filter((c) => c.includes("missing-estimate"))
+    ).toEqual([]);
   });
 
   it("reports invalid dates and durations from parsing", () => {

@@ -2,7 +2,7 @@
 // project settings, and an overview of the whole plan for an agent to start from.
 import { budgetSummary, overBudgetReasons } from "../core/budget";
 import { formatDate, isValidDate, parseWorkweek } from "../core/dates";
-import { parseBudget } from "../core/resolve";
+import { ambiguousBudget, parseBudget } from "../core/resolve";
 import { listItems, type ProjectChange, changeProject } from "../core/writer/entities";
 import { defaultEndDate, instantiateTemplate } from "../core/templates";
 import { milestoneStats } from "../core/queries";
@@ -111,8 +111,14 @@ export function applySettings(st: Staging, args: ProjectSettings): void {
     args.budget !== undefined &&
     args.budget.trim() !== "" &&
     parseBudget(args.budget, args.hoursPerDay ?? plan.project.hoursPerDay) === undefined
-  )
-    throw new ToolError(`Invalid budget "${args.budget}" (hours such as 1200h, or 150d, 30w).`);
+  ) {
+    const both = ambiguousBudget(args.budget);
+    throw new ToolError(
+      both
+        ? `Budget "${args.budget}" can mean ${both[0]} or ${both[1]}: write the one you mean.`
+        : `Invalid budget "${args.budget}" (hours such as 1200h, or 150d, 30w).`
+    );
+  }
   let holidays: string[] | undefined;
   if (args.holidays || args.addHolidays || args.removeHolidays) {
     const current = listItems(

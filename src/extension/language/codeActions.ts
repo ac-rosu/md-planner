@@ -1,12 +1,12 @@
 // Quick fixes: add estimate, assign id, remove broken dependency, change unknown owner, turn a
 // mistyped line into a task, and the fixes of the consistency checks (dates, status dates, ids).
 import * as vscode from "vscode";
-import { type Task } from "../../core/model";
+import { isOpen, type Task } from "../../core/model";
 import { type TextEdit } from "../../core/text";
-import { impliedDeps, suggestYear } from "../../core/consistency";
+import { impliedDeps, suggestPeriodYear, suggestYear } from "../../core/consistency";
 import { nearMissCheckbox } from "../../core/parser/taskLine";
 import { formatHours } from "../../core/duration";
-import { budgetSplit, openSubtasks } from "../../core/rollup";
+import { budgetSplit, isEffectivelyDone, openSubtasks } from "../../core/rollup";
 import {
   assignMissingIds,
   insertTasks,
@@ -18,7 +18,7 @@ import {
   setProperty,
   setStatus,
 } from "../../core/writer";
-import { previousMilestone } from "../../core/queries";
+import { isFloatingMilestone, isOpenTask, previousMilestone } from "../../core/queries";
 import { newTaskFrom } from "../../core/writer/entities";
 import { siblingsOf } from "../../core/writer/structure";
 import { itemAtLine } from "../commands/args";
@@ -56,25 +56,31 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
         continue;
       }
       if (file.kind === "team" && diagnostic.code === "date-outside-project") {
-        // A date in a team.md property: the same day a year earlier or later, when that fits.
+        // A date or period in a team.md property: its dates after the project end a year
+        // earlier, when that fits. The diagnostic covers exactly the date or period.
+        const { start, end } = diagnostic.range;
+        const period = document.getText(diagnostic.range);
+        const suggestion = start.line === end.line ? suggestPeriodYear(plan, period) : undefined;
         const text = document.lineAt(lineNo).text;
-        const date = /\d{4}-\d{2}-\d{2}/.exec(document.getText(diagnostic.range))?.[0];
-        const suggestion = date ? suggestYear(plan, date) : undefined;
-        const at = date ? text.indexOf(date, diagnostic.range.start.character) : -1;
         const edit =
-          date && suggestion && at >= 0
-            ? minimalLineEdit(lineNo, text, text.slice(0, at) + suggestion + text.slice(at + 10))
-            : undefined;
+          suggestion &&
+          minimalLineEdit(
+            lineNo,
+            text,
+            text.slice(0, start.character) + suggestion + text.slice(end.character)
+          );
         if (edit)
           actions.push(
-            this.fix(`Change ${date} to ${suggestion}`, document, [edit], diagnostic, true)
+            this.fix(`Change ${period} to ${suggestion}`, document, [edit], diagnostic, true)
           );
         continue;
       }
       const milestone = plan.milestones.find((m) => m.file === rel);
       if (milestone && diagnostic.code === "floating-milestone") {
+        // Asked again: by now an earlier milestone may wait for it, and depends: on the one before
+        // it could make a cycle.
         const prev = previousMilestone(plan, milestone);
-        if (prev)
+        if (prev && isFloatingMilestone(plan, milestone))
           actions.push(
             this.fix(
               `Add depends: ${prev.id} (start after ${prev.id} is finished)`,
@@ -139,6 +145,8 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
           );
           {
             // A task without an estimate is often a group whose tasks were not indented under it.
+            // Indent asks first when the move would add errors, so it stays a command; "editor"
+            // makes it an edit in this editor like the other fixes (not saved, focus stays here).
             const siblings = siblingsOf(file, task);
             const next = siblings[siblings.indexOf(task) + 1];
             if (next && task.children.length === 0)
@@ -146,21 +154,16 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
                 this.command(
                   `Make the next task (${next.id ?? next.title}) a subtask of this one`,
                   "planner.indentTask",
-                  [taskArg(next)],
+                  [taskArg(next), "editor"],
                   diagnostic
                 )
               );
           }
           break;
         case "missing-id": {
+          const id = nextId(plan, idPrefix(task));
           actions.push(
-            this.fix(
-              `Assign id ^${nextId(plan)}`,
-              document,
-              setId(file.lines, task, nextId(plan)),
-              diagnostic,
-              true
-            )
+            this.fix(`Assign id ^${id}`, document, setId(file.lines, task, id), diagnostic, true)
           );
           const all = assignMissingIds(plan, file);
           if (all.length > 1)
@@ -188,10 +191,10 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
           break;
         }
         case "duplicate-id": {
-          const id = nextId(plan);
+          const id = nextId(plan, idPrefix(task));
           actions.push(
             this.fix(
-              `Give this task a new id ^${id}`,
+              `Give this ${task.kind === "task" ? "task" : "item"} a new id ^${id}`,
               document,
               setId(file.lines, task, id),
               diagnostic
@@ -331,6 +334,51 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
           );
           break;
         }
+        case "cancelled-parent-open-subtasks": {
+          // No preferred fix: the subtasks may have been cancelled with this task on purpose, or
+          // put under it by mistake.
+          const today = this.service.today();
+          const open = openSubtasks(task);
+          if (open.length === 0) break;
+          actions.push(
+            this.fix(
+              `Cancel the ${open.length === 1 ? "open subtask" : `${open.length} open subtasks`} too`,
+              document,
+              open.flatMap((t) => setStatus(file.lines, t, "cancelled", today)),
+              diagnostic
+            )
+          );
+          // Moving a subtask out or reopening this task only gets work scheduled when nothing above
+          // it is done or cancelled (a task, or the milestone), and only the open subtasks that no
+          // done subtask holds.
+          const freed = open.filter((t) => !isEffectivelyDone(t));
+          if (
+            freed.length === 0 ||
+            plan.milestoneById(task.milestoneId)?.status === "cancelled" ||
+            (task.parent && !isOpenTask(task.parent))
+          )
+            break;
+          const kids = task.children.filter((c) => isOpen(c.status));
+          if (kids.length === 1)
+            actions.push(
+              this.command(
+                `Move ${kids[0].id ?? kids[0].title} out of this task (outdent)`,
+                "planner.outdentTask",
+                [taskArg(kids[0])],
+                diagnostic
+              )
+            );
+          const started = freed.some((t) => t.status === "doing" || t.status === "review");
+          actions.push(
+            this.fix(
+              `Reopen this task (${started ? "in progress" : "to do"})`,
+              document,
+              setStatus(file.lines, task, started ? "doing" : "todo", today),
+              diagnostic
+            )
+          );
+          break;
+        }
         case "started-early":
           actions.push(
             this.fix(
@@ -402,4 +450,9 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
 
 function taskArg(t: Task): string | { file: string; line: number } {
   return t.id ?? { file: t.file, line: t.line };
+}
+
+/** Punch items get `P` ids; tasks and inbox items (which become tasks) `T` ids. */
+function idPrefix(t: Task): string {
+  return t.kind === "punch" ? "P" : "T";
 }

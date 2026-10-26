@@ -5,8 +5,10 @@ import { type DayNumber, formatDate, parseDate } from "../core/dates";
 import { type Milestone, type Person, type Section, type Task } from "../core/model";
 import { type Plan } from "../core/resolve";
 import {
+  activeChildren,
   actualHours,
   estimateHours,
+  hasLoggedWork,
   initials,
   isLeaf,
   ownerOf,
@@ -149,6 +151,36 @@ export function exportMspdi(plan: Plan, schedule: Schedule, options: MspdiOption
   const durationHours = (start: DayNumber, finish: DayNumber) =>
     Math.max(0, cal.workingDaysBetween(start, finish + 1)) * hpd;
 
+  /**
+   * The day work began: `@started`, also on a to-do task with logged work (see stale-started),
+   * which the schedule leaves out.
+   */
+  const actualStart = (t: Task): DayNumber | undefined => {
+    const iso = hasLoggedWork(t) ? t.started : startedOn(t);
+    return iso ? parseDate(iso) : undefined;
+  };
+  // A row starts on its scheduled (or rolled-up) start, or on its actual start when that is
+  // earlier, like a task under way: MS Project expects no actual start before the start. A
+  // summary row starts no later than the rows in it.
+  const startOf = new Map<Task, DayNumber | undefined>();
+  const taskStart = (t: Task): DayNumber | undefined => {
+    if (!startOf.has(t)) {
+      const rolled = isLeaf(t) ? schedule.tasks.get(t)?.start : schedule.parents.get(t)?.start;
+      startOf.set(t, startWithin(rolled, activeChildren(t), actualStart(t)));
+    }
+    return startOf.get(t);
+  };
+  /** A start, or an earlier actual start or start of one of the tasks in its row. */
+  const startWithin = (start: DayNumber | undefined, tasks: Task[], actual?: DayNumber) => {
+    if (start === undefined) return undefined;
+    let first = actual !== undefined && actual < start ? actual : start;
+    for (const t of tasks) {
+      const s = taskStart(t);
+      if (s !== undefined && s < first) first = s;
+    }
+    return first;
+  };
+
   const summary = (
     name: string,
     outline: string,
@@ -170,7 +202,8 @@ export function exportMspdi(plan: Plan, schedule: Schedule, options: MspdiOption
     const leaf = isLeaf(t);
     const ts = schedule.tasks.get(t);
     const roll = schedule.parents.get(t);
-    const start = leaf ? ts?.start : roll?.start;
+    const started = actualStart(t);
+    const start = taskStart(t);
     const finish = leaf ? ts?.finish : roll?.finish;
     const id = ++uid;
     uidOf.set(t, id);
@@ -198,8 +231,7 @@ export function exportMspdi(plan: Plan, schedule: Schedule, options: MspdiOption
       act > 0 ? `<ActualWork>${msDuration(act)}</ActualWork>` : "",
       leaf ? `<RemainingWork>${msDuration(remaining)}</RemainingWork>` : "",
     ];
-    const started = startedOn(t);
-    if (started) parts.push(`<ActualStart>${dt(parseDate(started)!)}</ActualStart>`);
+    if (started !== undefined) parts.push(`<ActualStart>${dt(started)}</ActualStart>`);
     if (t.status === "done" && t.done)
       parts.push(`<ActualFinish>${dt(parseDate(t.done)!, true)}</ActualFinish>`);
     if (leaf && ts && !ts.done && start !== undefined) {
@@ -242,11 +274,15 @@ export function exportMspdi(plan: Plan, schedule: Schedule, options: MspdiOption
       const ms = schedule.milestones.get(m.id);
       const target = m.target ? parseDate(m.target) : undefined;
       const mOutline = String(mi + 1);
+      const start = startWithin(
+        ms?.start,
+        m.tasks.filter((t) => t.status !== "cancelled")
+      );
       const mid = summary(
         m.title,
         mOutline,
         1,
-        ms?.start,
+        start,
         ms?.forecast,
         ms?.progress ?? 0,
         target !== undefined ? `<Deadline>${dt(target, true)}</Deadline>` : ""
@@ -264,7 +300,8 @@ export function exportMspdi(plan: Plan, schedule: Schedule, options: MspdiOption
         if (!tasks.length) continue;
         const roll = schedule.sections.get(s);
         const sOutline = `${mOutline}.${++n}`;
-        uidOf.set(s, summary(s.title, sOutline, 2, roll?.start, roll?.finish, roll?.progress ?? 0));
+        const start = startWithin(roll?.start, tasks);
+        uidOf.set(s, summary(s.title, sOutline, 2, start, roll?.finish, roll?.progress ?? 0));
         tasks.forEach((t, i) => taskNode(t, `${sOutline}.${i + 1}`, 3));
       }
     });

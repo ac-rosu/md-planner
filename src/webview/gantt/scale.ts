@@ -61,6 +61,55 @@ export function anchoredScroll(
   return Math.max(0, chartLeft + (day - scale.start) * scale.px - pointerX);
 }
 
+/**
+ * A zoom gesture (a trackpad pinch, or Ctrl/Cmd + wheel): wheel events add up until the next frame
+ * draws them, and the day under the pointer when the gesture began stays under it. The gesture ends
+ * once its zoom is laid out, when a frame has nothing to draw (at a zoom limit, or no movement) and
+ * when the zoom changes by other means, so the next one starts at the pointer again.
+ */
+export class ZoomGesture {
+  /** Pixels per day the wheel events ask for; undefined between gestures. */
+  private px?: number;
+  /** The day under the pointer when the gesture began, and the pointer's x in the scroll area. */
+  private day = 0;
+  private pointerX = 0;
+
+  /** `chartLeft`: where the chart starts in the scroll area (after the task list). */
+  constructor(private readonly chartLeft: number) {}
+
+  /** A wheel event over the chart as it is drawn now (`shown`, scrolled to `scrollLeft`). */
+  wheel(shown: Scale, scrollLeft: number, pointerX: number, deltaY: number, deltaMode = 0): void {
+    if (this.px === undefined) {
+      this.day = shown.start + (scrollLeft + pointerX - this.chartLeft) / shown.px;
+      this.pointerX = pointerX;
+    }
+    this.px = zoomPx(this.px ?? shown.px, deltaY, deltaMode);
+  }
+
+  /** At the next frame: the pixels per day to draw, or undefined when nothing changes. */
+  frame(shown: Scale): number | undefined {
+    if (this.px !== undefined && this.px !== shown.px) return this.px;
+    this.px = undefined;
+    return undefined;
+  }
+
+  /**
+   * Once the chart is laid out at `scale`: the scroll that keeps the day under the pointer, or
+   * undefined when no gesture is under way. `more`: wheel events wait for the next frame, so the
+   * gesture goes on around the same day.
+   */
+  scrollLeft(scale: Scale, more: boolean): number | undefined {
+    if (this.px === undefined) return undefined;
+    if (!more) this.px = undefined;
+    return anchoredScroll(scale, this.day, this.pointerX, this.chartLeft);
+  }
+
+  /** The zoom changed by other means (a zoom button, Fit). */
+  end(): void {
+    this.px = undefined;
+  }
+}
+
 /** The named zoom closest to a pixel density (for labelling and tick choice). */
 export function zoomFor(px: number): GanttZoom {
   if (px >= 24) return "day";

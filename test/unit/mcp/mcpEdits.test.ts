@@ -3,7 +3,13 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { deleteTasks, moveTask, renameTaskId, updateTasks } from "../../../src/mcp/taskTools";
+import {
+  assignIds,
+  deleteTasks,
+  moveTask,
+  renameTaskId,
+  updateTasks,
+} from "../../../src/mcp/taskTools";
 import { buildPlan } from "../../../src/mcp/buildPlan";
 import { listPunchItems } from "../../../src/mcp/inboxTools";
 import { findWorkspace } from "../../../src/mcp/settings";
@@ -103,6 +109,120 @@ describe("refusing writes that add errors", () => {
     const { tools, read } = planWith(files);
     renameTaskId(tools, { id: "T1", newId: "T10" });
     expect(read("milestones/M1-a.md")).toContain("- [ ] Cycle two @dep:T10 ^T2");
+  });
+
+  it("renames a task that a dependency on its own parent or subtask names", () => {
+    const { tools, read } = planWith({
+      "milestones/M1-a.md": md(
+        "# M1 – A",
+        "",
+        "id: M1",
+        "",
+        "- [ ] Parent @dep:T2 ^T1",
+        "  - [ ] Part @est:1h ^T2",
+        "- [ ] Child first @dep:T4 ^T3",
+        "  - [ ] Child @est:1h @dep:T3 ^T4"
+      ),
+    });
+    renameTaskId(tools, { id: "T2", newId: "T7" });
+    renameTaskId(tools, { id: "T3", newId: "T8" });
+    expect(read("milestones/M1-a.md")).toBe(
+      md(
+        "# M1 – A",
+        "",
+        "id: M1",
+        "",
+        "- [ ] Parent @dep:T7 ^T1",
+        "  - [ ] Part @est:1h ^T7",
+        "- [ ] Child first @dep:T4 ^T8",
+        "  - [ ] Child @est:1h @dep:T8 ^T4"
+      )
+    );
+  });
+
+  it("renames ids that other errors name: an invalid dependency, a duplicate id", () => {
+    const { tools, read } = planWith({
+      "milestones/M1-a.md": md(
+        "# M1 – A",
+        "",
+        "id: M1",
+        "",
+        "- [ ] Lag typo @est:1h @dep:T2+3x ^T1",
+        "- [ ] Target @est:1h ^T2",
+        "- [ ] Twice @est:1h ^T3",
+        "- [ ] Twice again @est:1h ^T3",
+        "- [ ] Unrelated @est:1h ^T101"
+      ),
+    });
+    renameTaskId(tools, { id: "T2", newId: "T7" });
+    renameTaskId(tools, { id: "T3", newId: "T9" });
+    // T101 is also the example in the invalid dependency message: that message is unchanged.
+    renameTaskId(tools, { id: "T101", newId: "T200" });
+    expect(read("milestones/M1-a.md")).toBe(
+      md(
+        "# M1 – A",
+        "",
+        "id: M1",
+        "",
+        "- [ ] Lag typo @est:1h @dep:T7+3x ^T1",
+        "- [ ] Target @est:1h ^T7",
+        "- [ ] Twice @est:1h ^T9",
+        "- [ ] Twice again @est:1h ^T9",
+        "- [ ] Unrelated @est:1h ^T200"
+      )
+    );
+  });
+
+  it("still refuses a rename that adds an error", () => {
+    const { tools, read } = planWith({
+      "milestones/M1-a.md": md(
+        "# M1 – A",
+        "",
+        "id: M1",
+        "",
+        "- [ ] Parent @dep:T9 ^T1",
+        "  - [ ] Part @est:1h ^T2"
+      ),
+    });
+    const before = read("milestones/M1-a.md");
+    // The unknown T9 would become the parent's own subtask.
+    expect(() => renameTaskId(tools, { id: "T2", newId: "T9" })).toThrow(
+      /Nothing was written.*Depends on its own subtask T9/s
+    );
+    expect(read("milestones/M1-a.md")).toBe(before);
+  });
+
+  it("assigns ids to tasks in an existing cycle, also to tasks with the same title", () => {
+    const { tools, read } = planWith({
+      "milestones/M1-a.md": md(
+        "# M1 – A",
+        "",
+        "id: M1",
+        "depends: M2",
+        "",
+        "- [ ] Test @est:1h",
+        "- [ ] Test @est:2h"
+      ),
+      "milestones/M2-b.md": md("# M2 – B", "", "id: M2", "depends: M1", "", "- [ ] B @est:1h ^T1"),
+    });
+    expect(assignIds(tools, {}).ids).toEqual(["T2", "T3"]);
+    expect(read("milestones/M1-a.md")).toContain("- [ ] Test @est:1h ^T2\n- [ ] Test @est:2h ^T3");
+  });
+
+  it("retitles a task without an id in an existing cycle", () => {
+    const { tools, read } = planWith({
+      "milestones/M1-a.md": md("# M1 – A", "", "id: M1", "depends: M2", "", "- [ ] Draft @est:1h"),
+      "milestones/M2-b.md": md("# M2 – B", "", "id: M2", "depends: M1", "", "- [ ] B @est:1h ^T1"),
+    });
+    updateTasks(tools, { updates: [{ id: "milestones/M1-a.md#6", title: "Second draft" }] });
+    expect(read("milestones/M1-a.md")).toContain("- [ ] Second draft @est:1h\n");
+    updateTasks(tools, {
+      updates: [
+        { id: "milestones/M1-a.md#6", title: "Third draft" },
+        { id: "milestones/M1-a.md#6", title: "Final text" },
+      ],
+    });
+    expect(read("milestones/M1-a.md")).toContain("- [ ] Final text @est:1h\n");
   });
 
   it("still refuses a new cycle or a second unknown dependency", () => {
@@ -411,5 +531,66 @@ describe("task notes", () => {
     expect(read("milestones/M1-a.md")).toContain(
       "      Check:\n        - wiring\n        - labels\n\n      Then sign off.\n"
     );
+  });
+});
+
+describe("move_task", () => {
+  const M1 = md(
+    "# M1 – A",
+    "",
+    "id: M1",
+    "",
+    "- [-] Old approach @est:8h ^T1",
+    "  - [-] Old part @est:2h ^T4",
+    "- [ ] New approach @est:16h ^T2",
+    "- [x] Setup @est:2h @done:2026-10-02 ^T3",
+    "- [ ] Next @est:4h"
+  );
+  const M2 = md("# M2 – B", "", "id: M2", "status: cancelled");
+
+  it("refuses to put open work under a cancelled or done task, or into a cancelled milestone", () => {
+    const { tools, read } = planWith({ "milestones/M1-a.md": M1, "milestones/M2-b.md": M2 });
+    expect(() => moveTask(tools, { id: "T2", parent: "T1" })).toThrow(
+      "Nothing was moved: T2 would end up under T1, which is cancelled, and no longer be scheduled. Reopen the task or milestone it would be under, or set T2 to done or cancelled first."
+    );
+    expect(() => moveTask(tools, { id: "T2", after: "T4" })).toThrow(
+      /T2 would end up under T1, which is cancelled/
+    );
+    expect(() => moveTask(tools, { id: "T2", parent: "T3" })).toThrow(
+      /T2 would end up under T3, which is done/
+    );
+    expect(() => moveTask(tools, { id: "T2", milestone: "M2" })).toThrow(
+      /T2 would move into M2, which is cancelled/
+    );
+    expect(read("milestones/M1-a.md")).toBe(M1);
+    expect(read("milestones/M2-b.md")).toBe(M2);
+    // Finished work can go there, and open work next to a cancelled task.
+    moveTask(tools, { id: "T3", parent: "T1" });
+    moveTask(tools, { id: "T2", before: "T1" });
+    expect(read("milestones/M1-a.md")).toBe(
+      md(
+        "# M1 – A",
+        "",
+        "id: M1",
+        "",
+        "- [ ] New approach @est:16h ^T2",
+        "- [-] Old approach @est:8h ^T1",
+        "  - [-] Old part @est:2h ^T4",
+        "  - [x] Setup @est:2h @done:2026-10-02 ^T3",
+        "- [ ] Next @est:4h"
+      )
+    );
+  });
+
+  it("returns the new key of a task without an id", () => {
+    const { tools, read } = planWith({ "milestones/M1-a.md": M1 });
+    expect(moveTask(tools, { id: "milestones/M1-a.md#9", before: "T2" }).id).toBe(
+      "milestones/M1-a.md#7"
+    );
+    expect(read("milestones/M1-a.md").split("\n")[6]).toBe("- [ ] Next @est:4h");
+    expect(moveTask(tools, { id: "milestones/M1-a.md#7", parent: "T2" }).id).toBe(
+      "milestones/M1-a.md#8"
+    );
+    expect(read("milestones/M1-a.md").split("\n")[7]).toBe("  - [ ] Next @est:4h");
   });
 });

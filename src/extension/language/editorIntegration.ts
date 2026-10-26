@@ -4,7 +4,7 @@ import * as vscode from "vscode";
 import { matchCheckbox } from "../../core/parser/taskLine";
 import { applyEdits } from "../../core/text";
 import { assignMissingIds, nextStatus, renumberCopiedIds, setStatus } from "../../core/writer";
-import { itemAtLine } from "../commands/args";
+import { findAgain, itemAtLine } from "../commands/args";
 import { statusEffects } from "../commands/status";
 import { type FormatGuard } from "../formatGuard";
 import { type PlanService } from "../planService";
@@ -84,9 +84,10 @@ async function onSelection(
   if (!task || task.line !== pos.line) return;
   const next = nextStatus(task.status);
   const effects = await statusEffects(service.plan, task, next);
-  const file = service.fileFor(doc);
-  const current = itemAtLine(service.plan, rel, pos.line);
-  if (!effects || !file || current?.line !== pos.line) return;
+  if (!effects) return;
+  const current = findAgain(service.plan, task);
+  const file = current && service.plan.file(current.file);
+  if (!current || !file) return;
   const edits = setStatus(file.lines, current, next, service.today(), effects);
-  await service.apply([{ path: rel, edits }], { source: "editor" });
+  await service.apply([{ path: current.file, edits }], { source: "editor" });
 }

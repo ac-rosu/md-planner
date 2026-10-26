@@ -3,13 +3,15 @@
 import { type DayNumber, formatDate } from "./dates";
 import { formatHours } from "./duration";
 import { describeLateCause, lateCause, unscheduledCause } from "./lateCause";
-import { type Issue } from "./model";
+import { type Issue, type Person } from "./model";
 import { isFloatingMilestone, previousMilestone } from "./queries";
 import { type Plan } from "./resolve";
 import { remainingHours } from "./rollup";
 import { range } from "./text";
 import { type Schedule } from "./scheduler";
 import { lineContentRange } from "./validate";
+
+const EPS = 1e-6;
 
 export function scheduleDiagnostics(
   plan: Plan,
@@ -70,12 +72,14 @@ export function scheduleDiagnostics(
 
 /**
  * Info on a milestone that nothing ties to earlier milestones and whose work starts before the
- * milestone before it finishes: often a milestone added without `depends:`.
+ * milestone before it finishes: often a milestone added without `depends:`. Not when an earlier
+ * milestone waits for it: then it comes first, whatever its place in the plan.
  */
 function floatingMilestones(plan: Plan, schedule: Schedule): Issue[] {
   const issues: Issue[] = [];
   for (const m of plan.milestones) {
-    if (m.status === "done" || m.status === "cancelled" || !isFloatingMilestone(plan, m)) continue;
+    if (m.status === "done" || m.status === "cancelled") continue;
+    if (!isFloatingMilestone(plan, m, schedule.graph)) continue;
     const prev = previousMilestone(plan, m);
     const start = openStart(plan, schedule, m.id);
     const finish = prev ? schedule.milestones.get(prev.id)?.forecast : undefined;
@@ -126,8 +130,6 @@ export function workloadDiagnostics(plan: Plan, schedule: Schedule): Issue[] {
     });
     if (late.length === 0) continue;
     const hours = mine.reduce((sum, ts) => sum + remainingHours(ts.task), 0);
-    const days = p.workweek?.size ?? plan.project.workweek.size;
-    const weekly = p.capacityPer === "week" ? p.capacityHours : p.capacityHours * days;
     const finishes = mine.flatMap((ts) => (ts.finish !== undefined ? [ts.finish] : []));
     const until = finishes.length ? formatDate(Math.max(...finishes)) : undefined;
     const waiting = mine.filter((ts) => ts.unscheduled).length;
@@ -146,9 +148,7 @@ export function workloadDiagnostics(plan: Plan, schedule: Schedule): Issue[] {
       code: "overbooked",
       message:
         `${p.name} has ${formatHours(Math.round(hours * 10) / 10)} of open work` +
-        (weekly > 0
-          ? `, about ${Math.ceil(hours / weekly)} weeks at ${formatHours(weekly)} a week`
-          : "") +
+        workPace(schedule, p, hours) +
         (until ? `, planned until ${until}` : "") +
         (waiting
           ? ` (${waiting} more task${waiting === 1 ? "" : "s"} cannot be scheduled yet)`
@@ -158,4 +158,51 @@ export function workloadDiagnostics(plan: Plan, schedule: Schedule): Issue[] {
     });
   }
   return issues;
+}
+
+/**
+ * How long a person needs for `hours` of open work, day by day on their calendar from the start of
+ * the schedule (time off, holidays, overtime and capacity changes count): ", about 6 weeks at 40h
+ * a week, then 20h a week from 2026-11-02". When their working hours end first: ", but only about
+ * 470h fit before Alex's working hours end on 2027-01-04 (40h a week)".
+ */
+function workPace(schedule: Schedule, p: Person, hours: number): string {
+  if (hours <= EPS) return "";
+  const cal = schedule.calendar;
+  const id = p.id.toLowerCase();
+  const start = schedule.start;
+  const limit = start + 3650;
+  let left = hours;
+  let day = start;
+  let last: DayNumber | undefined;
+  while (left > EPS && day < limit) {
+    const next = cal.nextWorkdayOf(id, day, limit - day);
+    if (next === undefined) break;
+    left -= cal.capacity(id, next);
+    last = next;
+    day = next + 1;
+  }
+  if (last === undefined) return "";
+  // The weekly hours in force on the way: at the start, and from every change up to the last day.
+  const rates = [{ from: start, weekly: cal.nominalWeeklyCapacity(id, start) }];
+  for (const c of p.capacityChanges) {
+    const weekly = cal.nominalWeeklyCapacity(id, c.from);
+    if (c.from > start && c.from <= last && weekly !== rates[rates.length - 1].weekly)
+      rates.push({ from: c.from, weekly });
+  }
+  while (rates.length > 1 && rates[0].weekly === 0) rates.shift();
+  const parts = rates.map(
+    (r) =>
+      `${r.weekly > 0 ? `${formatHours(r.weekly)} a week` : "no hours"}${r.from > start ? ` from ${formatDate(r.from)}` : ""}`
+  );
+  const at = rates.some((r) => r.weekly > 0) ? parts.join(", then ") : "";
+  const done = left <= EPS;
+  if (!done && cal.nextWorkdayOf(id, day, 3650) === undefined) {
+    // Their working hours end before the work is done: say how much fits, and when they end.
+    const change = p.capacityChanges[p.capacityChanges.length - 1];
+    const end = change?.hours === 0 && change.from > last ? change.from : last + 1;
+    return `, but only about ${formatHours(Math.round(hours - left))} fit before ${p.name}'s working hours end on ${formatDate(end)}${at ? ` (${at})` : ""}`;
+  }
+  const weeks = Math.ceil(((done ? day : limit) - start) / 7);
+  return `, ${done ? "about" : "more than"} ${weeks} week${weeks === 1 ? "" : "s"}${at ? ` at ${at}` : ""}`;
 }

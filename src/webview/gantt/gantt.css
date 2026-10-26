@@ -339,6 +339,12 @@
   stroke-width: 2.5;
 }
 
+/* Only drawn: presses reach the bars, resize handles and link dots under a highlighted line, and
+   the line's own copy below the bars everywhere else. */
+.chart .focus-layer {
+  pointer-events: none;
+}
+
 .chart .arrow-head.focus {
   fill: var(--vscode-focusBorder);
 }

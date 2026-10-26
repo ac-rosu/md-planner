@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { describeUnfinished, unfinishedMilestoneDeps } from "../../../src/core/queries";
+import {
+  describeUnfinished,
+  isFloatingMilestone,
+  unfinishedMilestoneDeps,
+} from "../../../src/core/queries";
 import { scheduleDiagnostics } from "../../../src/core/scheduleDiagnostics";
 import { schedulePlan } from "../../../src/core/scheduler";
 import { validatePlan } from "../../../src/core/validate";
@@ -95,6 +99,92 @@ describe("milestones that wait for others", () => {
         (i) => i.code === "floating-milestone"
       )
     ).toBe(false);
+  });
+
+  it("does not ask a milestone to wait for one that waits for it", () => {
+    /** Whether M2 gets the info (and its quick fix "Add depends: M1"). */
+    const floating = (files: Record<string, string>) => {
+      const p = planFrom({ "project.md": PROJECT, "team.md": TEAM, ...files });
+      const shown = scheduleDiagnostics(p, schedulePlan(p, { today: TODAY })).some(
+        (i) => i.code === "floating-milestone" && i.file === "milestones/M2.md"
+      );
+      // The quick fix asks the same question before it offers depends: M1.
+      expect(isFloatingMilestone(p, p.milestoneById("M2")!)).toBe(shown);
+      return shown;
+    };
+    const m2 = md("# M2", "", "- [ ] Platform @est:2d @owner:alex ^T3");
+    // M1 waits for M2 (depends:, a task @dep, or through another milestone): depends: M1 would
+    // be a cycle.
+    expect(
+      floating({
+        "milestones/M1.md": md(
+          "# M1",
+          "",
+          "depends: M2",
+          "",
+          "- [ ] Design @est:2d @owner:sam ^T1"
+        ),
+        "milestones/M2.md": m2,
+      })
+    ).toBe(false);
+    expect(
+      floating({
+        "milestones/M1.md": md("# M1", "", "- [ ] Design @est:2d @owner:sam @dep:T3 ^T1"),
+        "milestones/M2.md": m2,
+      })
+    ).toBe(false);
+    expect(
+      floating({
+        "milestones/M1.md": md(
+          "# M1",
+          "",
+          "depends: M3",
+          "",
+          "- [ ] Design @est:2d @owner:sam ^T1"
+        ),
+        "milestones/M2.md": m2,
+        "milestones/M3.md": md("# M3", "", "- [ ] Spike @est:1d @owner:sam @dep:T3 ^T4"),
+      })
+    ).toBe(false);
+    // A later milestone waiting for M2 says nothing about M1: M2 still starts before M1 is done.
+    expect(
+      floating({
+        "milestones/M1.md": md("# M1", "", "- [ ] Design @est:2d @owner:sam ^T1"),
+        "milestones/M2.md": m2,
+        "milestones/M3.md": md("# M3", "", "depends: M2", "", "- [ ] Spike @est:1d @owner:sam ^T4"),
+      })
+    ).toBe(true);
+  });
+
+  it("leaves a milestone alone when a milestone further back waits for it", () => {
+    // M1 needs M3's platform first, and M2 has nothing to do with either: depends: M2 on M3 would
+    // make M1 wait for M2 too. Only M2 floats.
+    const floating = (m1: string, more: Record<string, string> = {}) => {
+      const p = planFrom({
+        "project.md": PROJECT,
+        "team.md": TEAM,
+        "milestones/M1.md": m1,
+        "milestones/M2.md": md("# M2", "", "- [ ] Middle @est:10d @owner:sam ^T5"),
+        "milestones/M3.md": md("# M3", "", "- [ ] Platform @est:2d @owner:alex ^T3"),
+        ...more,
+      });
+      expect(isFloatingMilestone(p, p.milestoneById("M3")!)).toBe(false);
+      return scheduleDiagnostics(p, schedulePlan(p, { today: TODAY }))
+        .filter((i) => i.code === "floating-milestone")
+        .map((i) => i.file);
+    };
+    expect(
+      floating(md("# M1", "", "depends: M3", "", "- [ ] Design @est:5d @owner:sam ^T1"))
+    ).toEqual(["milestones/M2.md"]);
+    expect(floating(md("# M1", "", "- [ ] Design @est:5d @owner:sam @dep:T3 ^T1"))).toEqual([
+      "milestones/M2.md",
+    ]);
+    // Also by way of a later milestone.
+    expect(
+      floating(md("# M1", "", "depends: M4", "", "- [ ] Design @est:5d @owner:sam ^T1"), {
+        "milestones/M4.md": md("# M4", "", "- [ ] Rollout @est:1d @owner:alex @dep:T3 ^T4"),
+      })
+    ).toEqual(["milestones/M2.md"]);
   });
 
   it("gives a new milestone the last milestone as its dependency", () => {

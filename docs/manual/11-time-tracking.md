@@ -21,13 +21,19 @@ Rules:
 - **One timer at a time.** Starting a timer on another task stops the running one first and logs
   its time.
 - **Starting work moves the task to in progress.** A task that is still to do becomes `[/]` with
-  `@started:<today>`.
+  `@started:<today>`, and its parents follow (a done parent reopens).
+- **The timer follows its task** while you edit: lines typed above it, a new id from a save. When
+  its line is copied next to it (Copy Line Down or Up), it finds the task by its id and title when
+  it stops, not the copy you go on editing. When it cannot tell its task from a copy with the same
+  id and title, it logs nothing and a message gives the hours ("more than one task has the id
+  T104; 1h not logged"), so you can add them with **Log time**.
 - **The timer survives a reload** of the window: it is kept with the workspace.
 
 Stop the timer by clicking it in the status bar or running **Planner: Stop timer**. The elapsed
 time is rounded **up** to `planner.time.roundingMinutes` (15 minutes by default) and added to the
 task's `@act`. Less than one minute is discarded with a message, and a task the timer moved to in
-progress goes back to to do (a timer started by mistake leaves no trace).
+progress goes back to to do, and its parents are put back as they were (a timer started by
+mistake leaves no trace).
 
 ## Log time by hand
 

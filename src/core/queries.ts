@@ -1,6 +1,7 @@
 // Read-only questions about a plan used by several views: deadlines, overdue and blocked items,
 // per-person task lists and milestone progress.
 import { parseDate } from "./dates";
+import { buildDepGraph, type DepGraph, type DepNode } from "./graph";
 import { isOpen, type Milestone, type Task } from "./model";
 import { type Plan } from "./resolve";
 import {
@@ -72,12 +73,14 @@ export function previousMilestone(plan: Plan, m: Milestone): Milestone | undefin
 }
 
 /**
- * True when nothing ties a milestone to other milestones: no `depends:`, and none of its tasks
- * depends on a task elsewhere. Its work starts as soon as possible, in parallel with the rest.
+ * True when nothing ties a milestone to earlier milestones: no `depends:`, none of its tasks
+ * depends on a task elsewhere, and no milestone before it waits for it (through `depends:` or
+ * `@dep`, also by way of other milestones). Its work starts as soon as possible, in parallel with
+ * the rest, and `depends:` on the milestone before it would not make a cycle.
  */
-export function isFloatingMilestone(plan: Plan, m: Milestone): boolean {
+export function isFloatingMilestone(plan: Plan, m: Milestone, graph?: DepGraph): boolean {
   if (m.depends.length) return false;
-  return !plan.tasks.some(
+  const tied = plan.tasks.some(
     (t) =>
       t.milestoneId === m.id &&
       t.deps.some((d) => {
@@ -85,6 +88,31 @@ export function isFloatingMilestone(plan: Plan, m: Milestone): boolean {
         return !!x && x.milestoneId !== m.id;
       })
   );
+  if (tied) return false;
+  const before = plan.milestones.slice(0, Math.max(0, plan.milestones.indexOf(m)));
+  const earlier = new Set(before.map((x) => x.id));
+  return earlier.size === 0 || !milestonesWaitFor(graph ?? buildDepGraph(plan), earlier, m);
+}
+
+/** True when work of the milestones `ids` waits, directly or through other work, for work of `m`. */
+function milestonesWaitFor(graph: DepGraph, ids: Set<string>, m: Milestone): boolean {
+  const stack = graph.leaves.filter((l) => l.milestoneId !== undefined && ids.has(l.milestoneId));
+  const seen = new Set<Task>(stack);
+  const expanded = new Set<DepNode>();
+  while (stack.length) {
+    for (const r of graph.requirements.get(stack.pop()!) ?? []) {
+      if (expanded.has(r.node)) continue;
+      expanded.add(r.node);
+      for (const t of r.node.kind === "leaf" ? [r.node.task] : r.node.members) {
+        if (t.milestoneId === m.id) return true;
+        if (!seen.has(t)) {
+          seen.add(t);
+          stack.push(t);
+        }
+      }
+    }
+  }
+  return false;
 }
 
 /** "M1 (6 open tasks: T011, T012, …)" for messages. */

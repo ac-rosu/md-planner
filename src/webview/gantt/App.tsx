@@ -1,4 +1,5 @@
 // Gantt webview: toolbar, accessible task tree (left) and the SVG timeline (right).
+import { type RefObject } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { type GanttLink, type GanttModel, type GanttRow } from "../../core/views/gantt";
 import {
@@ -13,21 +14,21 @@ import { getState, isoDate, onMessage, post, setState } from "../shared/vscode";
 import { Chart, type DragResult, ROW_H } from "./Chart";
 import { EditDialog, type EditResult } from "./EditDialog";
 import { describeFocus, linkFocus, stepWorkingDays, visibleRows, vscodeContext } from "./rows";
-import {
-  anchoredScroll,
-  dayToX,
-  fitPx,
-  headerTicks,
-  makeScale,
-  type Scale,
-  ZOOM_PX,
-  zoomPx,
-} from "./scale";
+import { dayToX, fitPx, headerTicks, makeScale, type Scale, ZOOM_PX, ZoomGesture } from "./scale";
 
 const LEFT_W = 320;
 
 interface Persisted {
   collapsed: string[];
+}
+
+/**
+ * Where to scroll once the chart is drawn: to today when it opens, and to a task asked for with
+ * "Open in Gantt". A new object per request, so the same task asked for again is shown again.
+ */
+interface PendingScroll {
+  today?: boolean;
+  key?: string;
 }
 
 const send = (m: GanttToHost) => post(m);
@@ -49,18 +50,30 @@ export function App() {
   const scroller = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const tooltip = useMemo(() => new Tooltip(), []);
-  const pendingFocus = useRef<string | undefined>(undefined);
+  const [pendingScroll, setPendingScroll] = useState<PendingScroll | undefined>({ today: true });
+  // A pinch zoom (see below): the gesture, its next frame, and its save once the gesture pauses.
+  const gesture = useMemo(() => new ZoomGesture(LEFT_W), []);
+  const pinch = useRef<{ frame: number; save?: number }>({ frame: 0 });
+  const opened = useRef(false);
 
   useEffect(() => {
     const off = onMessage<HostToGantt>((m) => {
       switch (m.type) {
-        case "model":
+        case "model": {
+          // The zoom comes from the host when the chart opens; after that it changes only here (the
+          // host stores it). A later model can have left the host before the latest zoom reached
+          // it, and a pinch is sent only once it pauses, so the zoom shown stays.
+          const keepZoom = opened.current;
+          opened.current = true;
           setModel(m.model);
-          setOptions(m.options);
+          setOptions((shown) =>
+            keepZoom ? { ...m.options, zoom: shown.zoom, pxPerDay: shown.pxPerDay } : m.options
+          );
           setBaselines(m.baselines);
           break;
+        }
         case "focus":
-          pendingFocus.current = m.key;
+          setPendingScroll((p) => ({ ...p, key: m.key }));
           setSelected(m.key);
           break;
         case "history":
@@ -88,13 +101,12 @@ export function App() {
     return makeScale(model.start, model.end, options.pxPerDay ?? ZOOM_PX[options.zoom]);
   }, [model, options.zoom, options.pxPerDay]);
 
-  // Scroll a focused task (from "Open in Gantt") or today into view.
+  // Scroll today and a focused task (from "Open in Gantt") into view.
   useEffect(() => {
-    if (!model || !scroller.current) return;
-    const key = pendingFocus.current;
-    if (key) {
-      pendingFocus.current = undefined;
-      // Expand ancestors of the focused row.
+    if (!model || !scroller.current || !pendingScroll) return;
+    const { today, key } = pendingScroll;
+    if (key !== undefined) {
+      // Expand ancestors of the focused row; this runs again with the new rows.
       const byKey = new Map(model.rows.map((r) => [r.key, r]));
       const open = new Set(collapsed);
       let changed = false;
@@ -102,14 +114,22 @@ export function App() {
         if (open.delete(p)) changed = true;
       if (changed) {
         setCollapsed(open);
-        pendingFocus.current = key;
         return;
       }
-      scrollToRow(key);
     }
-  }, [model, rows]);
+    // Done with this request only: a task asked for while the chart was opening is shown next.
+    setPendingScroll((p) => (p === pendingScroll ? undefined : p));
+    if (today) scrollToToday();
+    if (key !== undefined) scrollToRow(key);
+  }, [model, rows, pendingScroll]);
 
   const updateOptions = (patch: Partial<GanttViewOptions>) => {
+    // The toolbar takes over from a pinch: a frame not drawn yet is dropped, and these options
+    // carry the zoom shown, so it needs no save of its own.
+    cancelAnimationFrame(pinch.current.frame);
+    clearTimeout(pinch.current.save);
+    pinch.current = { frame: 0 };
+    gesture.end();
     const next = { ...options, ...patch };
     setOptions(next);
     send({ type: "options", options: next });
@@ -143,57 +163,38 @@ export function App() {
   // zoom is saved once the gesture pauses.
   const live = useRef<{ scale: Scale; options: GanttViewOptions }>({ scale, options });
   live.current = { scale, options };
-  const zoom = useRef<{ px?: number; day: number; pointerX: number; frame: number; save?: number }>(
-    {
-      day: 0,
-      pointerX: 0,
-      frame: 0,
-    }
-  );
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
-      const z = zoom.current;
-      const shown = live.current.scale;
       const pointerX = Math.max(LEFT_W, e.clientX - el.getBoundingClientRect().left);
-      if (z.px === undefined) {
-        // The day under the pointer, on the chart as it is drawn now.
-        z.day = shown.start + (el.scrollLeft + pointerX - LEFT_W) / shown.px;
-        z.pointerX = pointerX;
-      }
-      z.px = zoomPx(z.px ?? shown.px, e.deltaY, e.deltaMode);
-      if (z.frame) return;
-      z.frame = requestAnimationFrame(() => {
-        z.frame = 0;
-        const next = { ...live.current.options, pxPerDay: z.px };
-        setOptions(next);
-        clearTimeout(z.save);
-        z.save = window.setTimeout(() => send({ type: "options", options: next }), 400);
+      gesture.wheel(live.current.scale, el.scrollLeft, pointerX, e.deltaY, e.deltaMode);
+      if (pinch.current.frame) return;
+      pinch.current.frame = requestAnimationFrame(() => {
+        pinch.current.frame = 0;
+        // Nothing to draw at a zoom limit: the gesture is over.
+        const px = gesture.frame(live.current.scale);
+        if (px === undefined) return;
+        setOptions((shown) => ({ ...shown, pxPerDay: px }));
+        clearTimeout(pinch.current.save);
+        // Sends the options as they are by then, so a change made in the meantime is kept.
+        pinch.current.save = window.setTimeout(() => {
+          pinch.current.save = undefined;
+          send({ type: "options", options: live.current.options });
+        }, 400);
       });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, [model !== undefined]);
-  // After the zoomed chart is laid out, scroll so the same day is under the pointer again.
+  // After the zoomed chart is laid out, scroll so the same day is under the pointer again. More
+  // wheel events already waiting for the next frame keep zooming around the same day.
   useLayoutEffect(() => {
-    const z = zoom.current;
-    if (z.px === undefined || !scroller.current) return;
-    scroller.current.scrollLeft = anchoredScroll(scale, z.day, z.pointerX, LEFT_W);
-    // More wheel events already waiting for the next frame keep zooming around the same day.
-    if (!z.frame) z.px = undefined;
+    const left = gesture.scrollLeft(scale, pinch.current.frame !== 0);
+    if (left !== undefined && scroller.current) scroller.current.scrollLeft = left;
   }, [scale]);
-
-  // Start at today the first time a model arrives.
-  const scrolledOnce = useRef(false);
-  useEffect(() => {
-    if (model && !scrolledOnce.current) {
-      scrolledOnce.current = true;
-      requestAnimationFrame(scrollToToday);
-    }
-  }, [model]);
 
   const toggle = (key: string) => {
     const next = new Set(collapsed);
@@ -302,8 +303,6 @@ export function App() {
 
   if (!model) return <div class="empty">Loading the schedule…</div>;
   const focusText = describeFocus(model, focus, selected, selectedLink);
-  // Pixels per day that show the whole project (a pinch zoom presses none of the zoom buttons).
-  const fit = fitPx(model.start, model.end, (scroller.current?.clientWidth ?? 1200) - LEFT_W - 20);
   const ticks = headerTicks(scale);
   const editRow = editing ? model.rows.find((r) => r.key === editing) : undefined;
   const zoomLabel: Record<GanttZoom, string> = {
@@ -368,17 +367,15 @@ export function App() {
             </button>
           ))}
         </span>
-        <button
-          class="btn"
-          title="Fit the whole project"
-          aria-pressed={options.pxPerDay !== undefined && Math.abs(options.pxPerDay - fit) < 0.01}
-          onClick={() => {
-            updateOptions({ pxPerDay: fit });
+        <FitButton
+          model={model}
+          scroller={scroller}
+          pxPerDay={options.pxPerDay}
+          onFit={(px) => {
+            updateOptions({ pxPerDay: px });
             if (scroller.current) scroller.current.scrollLeft = 0;
           }}
-        >
-          <span class="codicon codicon-screen-full" /> Fit
-        </button>
+        />
         <button class="btn" onClick={scrollToToday} title="Scroll to today">
           <span class="codicon codicon-calendar" /> Today
         </button>
@@ -540,6 +537,46 @@ export function App() {
       )}
       <Notice notice={notice} onUndo={() => send({ type: "undo" })} />
     </>
+  );
+}
+
+/**
+ * Fit: the pixels per day that show the whole project in the width the chart has now. It follows
+ * the panel's width on its own, so resizing the panel re-renders this button only.
+ */
+function FitButton({
+  model,
+  scroller,
+  pxPerDay,
+  onFit,
+}: {
+  model: GanttModel;
+  scroller: RefObject<HTMLDivElement | null>;
+  pxPerDay: number | undefined;
+  onFit: (px: number) => void;
+}) {
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      // A hidden panel measures 0: keep the last width.
+      if (el.clientWidth > 0) setWidth(el.clientWidth);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  // Pixels per day that show the whole project (a pinch zoom presses none of the zoom buttons).
+  const fit = fitPx(model.start, model.end, (width || 1200) - LEFT_W - 20);
+  return (
+    <button
+      class="btn"
+      title="Fit the whole project"
+      aria-pressed={pxPerDay !== undefined && Math.abs(pxPerDay - fit) < 0.01}
+      onClick={() => onFit(fit)}
+    >
+      <span class="codicon codicon-screen-full" /> Fit
+    </button>
   );
 }
 

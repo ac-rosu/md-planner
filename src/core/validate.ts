@@ -1,7 +1,7 @@
 // Diagnostics for a plan. Parse/value problems come from the resolver; this module adds the
 // cross-reference checks. Schedule-based checks live in scheduleDiagnostics() (see schedule.ts).
 import { UNASSIGNED } from "./calendar";
-import { buildDepGraph, cycleDeclarations, type DepGraph } from "./graph";
+import { buildDepGraph, type DepGraph, type DepNode, isSchedulableTask } from "./graph";
 import { type Issue, isOpen, type Task, TEST_TYPES } from "./model";
 import { type Plan } from "./resolve";
 import { estimateHours, isEffectivelyDone, isLeaf } from "./rollup";
@@ -27,7 +27,13 @@ export function validatePlan(plan: Plan, options: ValidateOptions = {}): Issue[]
 
   for (const t of plan.tasks) {
     checkOwner(plan, t, issues);
-    if (isLeaf(t) && isOpen(t.status) && !isEffectivelyDone(t) && estimateHours(t) === undefined) {
+    if (
+      isLeaf(t) &&
+      isOpen(t.status) &&
+      !isEffectivelyDone(t) &&
+      isSchedulableTask(plan, t) &&
+      estimateHours(t) === undefined
+    ) {
       issues.push({
         file: t.file,
         range: lineContentRange(plan, t),
@@ -73,39 +79,8 @@ export function validatePlan(plan: Plan, options: ValidateOptions = {}): Issue[]
   }
 
   // A dependency on the task itself, its parent or its subtask is a cycle too; say so plainly.
-  const family = checkFamilyDeps(plan, issues);
-
-  if (graph.cycles.length > 0) {
-    const declarations = cycleDeclarations(graph);
-    const label = (cycle: Task[]) => cycle.map((t) => t.id ?? t.title).join(" → ");
-    for (const cycle of graph.cycles) {
-      const message = `Circular dependency: ${label(cycle)}. These tasks are not scheduled.`;
-      for (const d of declarations.tasks) {
-        if (family.has(d)) continue;
-        if (!cycle.includes(d) && !cycle.some((c) => isAncestor(d, c))) continue;
-        issues.push({
-          file: d.file,
-          range: d.attrs.find((a) => a.key === "dep")?.range ?? lineContentRange(plan, d),
-          severity: "error",
-          code: "circular-dep",
-          message,
-        });
-      }
-      for (const id of declarations.milestones) {
-        const m = plan.milestoneById(id);
-        if (!m || !cycle.some((c) => c.milestoneId === m.id)) continue;
-        const entry = m.props.entries.find((e) => e.key.toLowerCase() === "depends");
-        if (!entry) continue;
-        issues.push({
-          file: m.file,
-          range: entry.valueRange,
-          severity: "error",
-          code: "circular-dep",
-          message,
-        });
-      }
-    }
-  }
+  checkFamilyDeps(plan, graph, issues);
+  checkCycles(plan, graph, issues);
 
   for (const m of plan.milestones) {
     for (const dep of m.depends) {
@@ -129,9 +104,12 @@ export function validatePlan(plan: Plan, options: ValidateOptions = {}): Issue[]
   return dedupe(issues);
 }
 
-/** Reports dependencies on the task itself, an ancestor or a descendant; returns the declarers. */
-function checkFamilyDeps(plan: Plan, issues: Issue[]): Set<Task> {
-  const declarers = new Set<Task>();
+/**
+ * Reports dependencies on the task itself, an ancestor or a descendant: each one is a cycle in the
+ * graph. The graph ignores those of cancelled work, so they are not reported (a dependency on a
+ * cancelled task gets `cancelled-dep` instead).
+ */
+function checkFamilyDeps(plan: Plan, graph: DepGraph, issues: Issue[]): void {
   for (const t of plan.tasks) {
     for (const d of t.deps) {
       const target = plan.taskById(d.id);
@@ -142,8 +120,7 @@ function checkFamilyDeps(plan: Plan, issues: Issue[]): Set<Task> {
         message = `Depends on its own parent ${d.id}, which only finishes when its subtasks do, so it can never start. Subtasks already wait for what their parent waits for.`;
       else if (isAncestor(t, target))
         message = `Depends on its own subtask ${d.id}: a task cannot wait for a part of itself.`;
-      if (!message) continue;
-      declarers.add(t);
+      if (!message || !keepsFamilyCycle(graph, t, target)) continue;
       issues.push({
         file: t.file,
         range: depIdRange(t, d.id),
@@ -154,7 +131,66 @@ function checkFamilyDeps(plan: Plan, issues: Issue[]): Set<Task> {
       });
     }
   }
-  return declarers;
+}
+
+/** True when a leaf of `target` waits for `target` through the dependency `t` declares on it. */
+function keepsFamilyCycle(graph: DepGraph, t: Task, target: Task): boolean {
+  const node = graph.leafNode.get(target) ?? graph.groups.get(`task:${target.id}`);
+  if (!node) return false;
+  return leavesIn(node).some(
+    (l) =>
+      graph.cyclic.has(l) &&
+      graph.requirements.get(l)?.some((r) => r.node === node && r.declaredBy === t)
+  );
+}
+
+/**
+ * Reports each cycle on the dependencies it is made of: a task's `@dep`, a milestone's `depends:`.
+ * A dependency on the task itself, its parent or its subtask is reported as `family-dep` instead,
+ * but a cycle through the other dependencies of that task is still reported on it.
+ */
+function checkCycles(plan: Plan, graph: DepGraph, issues: Issue[]): void {
+  const label = (cycle: Task[]) => cycle.map((t) => t.id ?? t.title).join(" → ");
+  for (const cycle of graph.cycles) {
+    const message = `Circular dependency: ${label(cycle)}. These tasks are not scheduled.`;
+    const inCycle = new Set(cycle);
+    // Every leaf of a milestone's group has the same requirement: report each declarer once.
+    const reported = new Set<Task | string>();
+    for (const leaf of cycle) {
+      for (const r of graph.requirements.get(leaf) ?? []) {
+        const by = r.declaredBy;
+        if (reported.has(by)) continue;
+        const targets = leavesIn(r.node);
+        if (!targets.some((x) => inCycle.has(x))) continue;
+        if (typeof by === "string") {
+          reported.add(by);
+          const m = plan.milestoneById(by);
+          const entry = m?.props.entries.find((e) => e.key.toLowerCase() === "depends");
+          if (!m || !entry) continue;
+          issues.push({
+            file: m.file,
+            range: entry.valueRange,
+            severity: "error",
+            code: "circular-dep",
+            message,
+          });
+        } else if (!targets.some((x) => x === by || isAncestor(by, x))) {
+          reported.add(by);
+          issues.push({
+            file: by.file,
+            range: by.attrs.find((a) => a.key === "dep")?.range ?? lineContentRange(plan, by),
+            severity: "error",
+            code: "circular-dep",
+            message,
+          });
+        }
+      }
+    }
+  }
+}
+
+function leavesIn(node: DepNode): Task[] {
+  return node.kind === "leaf" ? [node.task] : node.members;
 }
 
 function isAncestor(a: Task, b: Task): boolean {

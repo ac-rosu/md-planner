@@ -14,7 +14,7 @@ import { parseFileAs } from "../parser/files";
 import { formatAttr } from "../parser/taskLine";
 import { type Plan } from "../resolve";
 import { hasLoggedWork, openSubtasks } from "../rollup";
-import { applyEdits, pos, range, type TextEdit, TextLines } from "../text";
+import { comparePositions, pos, range, type TextEdit, type TextLines } from "../text";
 import { minimalLineEdit, TaskLineEditor } from "./lineEditor";
 
 export { TaskLineEditor, minimalLineEdit } from "./lineEditor";
@@ -236,21 +236,6 @@ export function replaceLines(
   if (a > b) return middle.length ? [insertLines(lines, a, middle)] : [];
   if (!middle.length) return [deleteLines(lines, a, b)];
   return [{ range: { start: pos(a, 0), end: lines.lineEnd(b) }, newText: middle.join(lines.eol) }];
-}
-
-/** One edit that turns `lines` into `after`, touching only the lines between the common parts. */
-export function linesDiff(lines: TextLines, after: string): TextEdit[] {
-  const next = TextLines.parse(after);
-  const a = lines.lineCount;
-  const b = next.lineCount;
-  let p = 0;
-  while (p < a && p < b && lines.line(p) === next.line(p)) p++;
-  let q = 0;
-  while (q < a - p && q < b - p && lines.line(a - 1 - q) === next.line(b - 1 - q)) q++;
-  if (p === a && p === b) return [];
-  const middle: string[] = [];
-  for (let i = p; i < b - q; i++) middle.push(next.line(i));
-  return replaceLines(lines, p, a - 1 - q, middle);
 }
 
 /** Deletes lines `from`..`to` (inclusive), including their line endings. */
@@ -494,34 +479,242 @@ export function moveTask(
   location: InsertLocation,
   transform?: (firstLine: string) => string
 ): FileEdit[] {
-  const block = blockLines(source.lines, task);
-  const insert = insertionEdit(target, location, (indent) => {
-    const moved = reindent(block, task.indentText, indent);
-    if (transform) moved[0] = transform(moved[0]);
-    return moved;
-  });
+  return moveTaskTo(source, task, target, location, transform).edits;
+}
+
+/** Where a moved task lands: the line of its task line once the edits are applied. */
+export interface MovedTask {
+  /** The task as it was before the move. */
+  task: Task;
+  file: string;
+  line: number;
+  /** Its indentation there. */
+  indent: string;
+}
+
+/** moveTask, and where the task lands. */
+export function moveTaskTo(
+  source: ParsedFile,
+  task: Task,
+  target: ParsedFile,
+  location: InsertLocation,
+  transform?: (firstLine: string) => string
+): { edits: FileEdit[]; moved: MovedTask } {
   if (source.path === target.path) {
-    // Within one file the insertion may fall inside the deleted range (at the end of a file without
-    // a final line ending): insert first, then delete the block where it ended up, and emit one
-    // edit of the lines in between.
-    const lines = source.lines;
-    const inserted = applyEdits(lines.serialize(), [insert]);
-    const at = insert.range.start;
-    const shift =
-      at.line < task.line || (at.line === task.line && at.character === 0)
-        ? insert.newText.split(lines.eol).length - 1
-        : 0;
-    const after = TextLines.parse(inserted);
-    const removed = applyEdits(inserted, [
-      deleteLines(after, task.line + shift, task.endLine + shift),
-    ]);
-    return [{ path: source.path, edits: linesDiff(lines, removed) }];
+    const r = moveBlocks(source, [{ tasks: [task], location, transform }]);
+    return { edits: [{ path: source.path, edits: r.edits }], moved: r.moved[0] };
   }
-  const del = deleteTask(source.lines, task);
-  return [
-    { path: source.path, edits: [del] },
-    { path: target.path, edits: [insert] },
-  ];
+  const run = runInsertion(target, location, source.lines, [task], transform);
+  return {
+    edits: [
+      { path: source.path, edits: [deleteTask(source.lines, task)] },
+      { path: target.path, edits: [run.edit] },
+    ],
+    moved: {
+      task,
+      file: target.path,
+      line: run.edit.range.start.line + run.first,
+      indent: run.indent,
+    },
+  };
+}
+
+/** Consecutive sibling tasks (often just one) that move together, and where they go. */
+export interface BlockMove {
+  tasks: Task[];
+  location: InsertLocation;
+  /** Rewrites the first line, as in moveTask. */
+  transform?: (firstLine: string) => string;
+}
+
+/**
+ * The edits of moves within one file. Each run of blocks is deleted where it is and inserted at its
+ * location, so only the moved lines change; a run that goes back into its own place (Indent under
+ * the task right above it, Outdent of the last subtasks, a new section at the end of the file it
+ * ends) only gets its indentation changed and the new lines around it, and blank lines between its
+ * blocks stay. Runs never move into their own blocks (callers refuse that) and do not contain each
+ * other.
+ */
+export function moveBlocks(
+  file: ParsedFile,
+  moves: BlockMove[]
+): { edits: TextEdit[]; moved: MovedTask[] } {
+  const lines = file.lines;
+  const eol = lines.eol;
+  const reindented: TextEdit[] = [];
+  const deleted: Array<[number, number]> = [];
+  // The moved tasks: at a line of an insertion's text, or where they are.
+  const inserts: Array<{
+    edit: TextEdit;
+    depth: number;
+    tasks: Array<{ task: Task; index: number; indent: string }>;
+  }> = [];
+  const stayed: Array<{ task: Task; indent: string }> = [];
+  const blank = (from: number, to: number) => {
+    for (let i = from; i < to; i++) if (lines.line(i).trim() !== "") return false;
+    return true;
+  };
+  for (const m of moves) {
+    const run = runInsertion(file, m.location, lines, m.tasks, m.transform);
+    const first = m.tasks[0];
+    const last = m.tasks[m.tasks.length - 1];
+    const at = run.edit.range.start;
+    const end =
+      last.endLine + 1 < lines.lineCount ? pos(last.endLine + 1, 0) : lines.lineEnd(last.endLine);
+    // Back into its own place: only the indentation changes, and the lines the insertion adds
+    // around the blocks (a new section heading when they end the file) go right before or after
+    // them. Deleting and inserting would overlap there at the end of a file without a final line
+    // ending.
+    const own =
+      m.tasks.every((t, i) => i === 0 || blank(m.tasks[i - 1].endLine + 1, t.line)) &&
+      comparePositions(at, pos(first.line, 0)) >= 0 &&
+      comparePositions(at, end) <= 0;
+    if (own) {
+      // The inserted lines: "lines" + eol before a line, or eol + "lines" after the last one.
+      const added = run.edit.newText.split(eol);
+      const from = at.character === 0 ? run.first : run.first - 1;
+      if (at.character === 0) added.pop();
+      else added.shift();
+      const before = added.slice(0, from);
+      const after = added.slice(from + run.body.length);
+      if (before.length) reindented.push(insertLines(lines, first.line, before));
+      let k = 0;
+      for (const t of m.tasks)
+        for (let i = t.line; i <= t.endLine; i++) {
+          const e = minimalLineEdit(i, lines.line(i), run.body[k++]);
+          if (e) reindented.push(e);
+        }
+      if (after.length) reindented.push(insertLines(lines, last.endLine + 1, after));
+      for (const t of m.tasks) stayed.push({ task: t, indent: run.indent });
+      continue;
+    }
+    let index = run.first;
+    const tasks = m.tasks.map((t) => {
+      deleted.push([t.line, t.endLine]);
+      const placed = { task: t, index, indent: run.indent };
+      index += t.endLine - t.line + 1;
+      return placed;
+    });
+    inserts.push({ edit: run.edit, depth: depthOf(first), tasks });
+  }
+  // Runs inserted at the same place become one insertion; the deeper run goes first, as it stays
+  // inside the block the other one moves past.
+  inserts.sort(
+    (a, b) => comparePositions(a.edit.range.start, b.edit.range.start) || b.depth - a.depth
+  );
+  const merged: typeof inserts = [];
+  for (const ins of inserts) {
+    const prev = merged[merged.length - 1];
+    if (!prev || comparePositions(prev.edit.range.start, ins.edit.range.start) !== 0) {
+      merged.push({ ...ins, tasks: [...ins.tasks] });
+      continue;
+    }
+    const before = lineBreaks(prev.edit.newText);
+    prev.edit = { range: prev.edit.range, newText: prev.edit.newText + ins.edit.newText };
+    prev.tasks.push(...ins.tasks.map((t) => ({ ...t, index: t.index + before })));
+  }
+  // At the end of a file without a final line ending, deleting the last block takes the line
+  // ending before it. The blocks deleted there (the last one and those right above it) and the
+  // lines inserted among them become one edit after the line before them.
+  deleted.sort((a, b) => a[0] - b[0]);
+  const lastLine = lines.lineCount - 1;
+  let tail: number | undefined;
+  if (deleted.length && deleted[deleted.length - 1][1] === lastLine) {
+    tail = deleted[deleted.length - 1][0];
+    for (let k = deleted.length - 2; k >= 0 && deleted[k][1] + 1 === tail; k--)
+      tail = deleted[k][0];
+  }
+  const deletions = deleted
+    .filter(([from]) => tail === undefined || from < tail)
+    .map(([from, to]) => deleteLines(lines, from, to));
+  let placed = merged;
+  if (tail !== undefined) {
+    const from = tail;
+    const inside = (e: TextEdit) =>
+      e.range.start.character === 0 && e.range.start.line >= from && e.range.start.line <= lastLine;
+    let text = "";
+    const tasks: (typeof inserts)[number]["tasks"] = [];
+    for (const ins of merged.filter((x) => inside(x.edit))) {
+      // Lines inserted before a line ("lines" + eol) go after the line before (eol + "lines").
+      const shift = lineBreaks(text) + 1;
+      text += eol + ins.edit.newText.slice(0, -eol.length);
+      tasks.push(...ins.tasks.map((t) => ({ ...t, index: t.index + shift })));
+    }
+    // From the first line on, nothing is left before the inserted lines.
+    if (from === 0) {
+      text = text.slice(eol.length);
+      for (const t of tasks) t.index--;
+    }
+    const edit = { range: deleteLines(lines, from, lastLine).range, newText: text };
+    placed = [...merged.filter((x) => !inside(x.edit)), { edit, depth: 0, tasks }];
+  }
+  // Insertions before the re-indented lines: at the same position, inserted lines come first.
+  const edits = [...deletions, ...placed.map((x) => x.edit), ...reindented];
+  const landed = new Map<Task, MovedTask>();
+  for (const ins of placed)
+    for (const { task, index, indent } of ins.tasks)
+      landed.set(task, {
+        task,
+        file: file.path,
+        line: insertedLine(edits, ins.edit, index),
+        indent,
+      });
+  for (const { task, indent } of stayed)
+    landed.set(task, { task, file: file.path, line: shiftedLine(edits, task.line), indent });
+  return { edits, moved: moves.flatMap((m) => m.tasks.map((t) => landed.get(t)!)) };
+}
+
+/**
+ * The insertion of a run of sibling blocks at a location: the edit, the re-indented lines, their
+ * indentation and the line of the edit's text where they start (a blank line or a new heading may
+ * come first; neither can be a task line).
+ */
+function runInsertion(
+  target: ParsedFile,
+  location: InsertLocation,
+  source: TextLines,
+  tasks: Task[],
+  transform?: (firstLine: string) => string
+): { edit: TextEdit; body: string[]; indent: string; first: number } {
+  let body: string[] = [];
+  let indent = "";
+  const edit = insertionEdit(target, location, (ind) => {
+    indent = ind;
+    body = tasks.flatMap((t) => reindent(blockLines(source, t), t.indentText, ind));
+    if (transform) body[0] = transform(body[0]);
+    return body;
+  });
+  return { edit, body, indent, first: edit.newText.split(target.lines.eol).indexOf(body[0]) };
+}
+
+function depthOf(task: Task): number {
+  let depth = 0;
+  for (let t = task.parent; t; t = t.parent) depth++;
+  return depth;
+}
+
+function lineBreaks(text: string): number {
+  return text.match(/\r\n|\r|\n/g)?.length ?? 0;
+}
+
+/** Lines an edit adds (negative: removes). */
+function lineDelta(e: TextEdit): number {
+  return lineBreaks(e.newText) - (e.range.end.line - e.range.start.line);
+}
+
+/** Where a line that no edit touches ends up once the (non-overlapping) edits are applied. */
+export function shiftedLine(edits: TextEdit[], line: number): number {
+  let out = line;
+  for (const e of edits) if (comparePositions(e.range.end, pos(line, 0)) <= 0) out += lineDelta(e);
+  return out;
+}
+
+/** Where line `index` of the text `edit` inserts ends up once all the edits are applied. */
+function insertedLine(edits: TextEdit[], edit: TextEdit, index: number): number {
+  let out = edit.range.start.line + index;
+  for (const e of edits)
+    if (e !== edit && comparePositions(e.range.end, edit.range.start) <= 0) out += lineDelta(e);
+  return out;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -584,8 +777,9 @@ export function assignMissingIds(
  * with that id it is clearly a new task. Only occurrences beyond those in the file's saved text
  * count as copies (saved ones keep their id: unchanged titles first, then in file order). A copy
  * with the same title is left alone: it may be a task being moved (pasted here, to be deleted
- * there), and the duplicate-id quick fix handles it. Ids in `reserved` are avoided and the new ones
- * are added to it.
+ * there), and the duplicate-id quick fix handles it. The subtasks copied along with a renumbered
+ * task get fresh ids too where theirs are duplicates, and `@dep`s within the copied block follow
+ * them. Ids in `reserved` are avoided and the new ones are added to it.
  */
 export function renumberCopiedIds(
   plan: Plan,
@@ -605,7 +799,7 @@ export function renumberCopiedIds(
   for (const t of file.items)
     if (t.id && (users.get(t.id)?.length ?? 0) > 1) byId.set(t.id, [...(byId.get(t.id) ?? []), t]);
 
-  const copies: Task[] = [];
+  const copies = new Set<Task>();
   for (const [id, items] of byId) {
     const titles = [...(savedTitles.get(id) ?? [])];
     const unmatched: Task[] = [];
@@ -617,13 +811,42 @@ export function renumberCopiedIds(
     // Saved occurrences whose title was edited since keep their id in file order.
     for (const t of unmatched.slice(titles.length)) {
       const others = users.get(id)!.filter((u) => u !== t);
-      if (others.every((u) => u.title !== t.title)) copies.push(t);
+      if (others.every((u) => u.title !== t.title)) copies.add(t);
     }
   }
-  copies.sort((a, b) => a.line - b.line);
-  const ids = nextIds(plan, file.kind === "punch" ? "P" : "T", copies.length, reserved);
+  // A copied block: the outermost copy with everything under it. Its subtasks came along with it,
+  // so the duplicated ids among them are copies too, whatever their titles.
+  const blocks = [...copies].filter((t) => !hasAncestorIn(t, copies)).map(subtree);
+  const duplicate = (t: Task) => !!t.id && (users.get(t.id)?.length ?? 0) > 1;
+  const renumbered = blocks.flatMap((b) => b.filter((t) => copies.has(t) || duplicate(t)));
+  renumbered.sort((a, b) => a.line - b.line);
+  const ids = nextIds(plan, file.kind === "punch" ? "P" : "T", renumbered.length, reserved);
   for (const id of ids) reserved.add(id);
-  return copies.flatMap((t, i) => setId(file.lines, t, ids[i]));
+  const newIds = new Map(renumbered.map((t, i) => [t, ids[i]]));
+  return blocks.flatMap((block) => {
+    const renames = block
+      .filter((t) => newIds.has(t))
+      .map((t): [string, string] => [t.id!, newIds.get(t)!]);
+    return block.flatMap((t) => {
+      const id = newIds.get(t);
+      const dep = t.attrs.find((a) => a.key === "dep")?.value;
+      const deps = renames.reduce((v, [from, to]) => renameInDepList(v, from, to), dep ?? "");
+      return editTaskLine(file.lines, t, (e) => {
+        if (id) e.setId(id);
+        if (dep !== undefined && deps !== dep) e.setAttr("dep", deps);
+      });
+    });
+  });
+}
+
+function hasAncestorIn(t: Task, tasks: Set<Task>): boolean {
+  for (let p = t.parent; p; p = p.parent) if (tasks.has(p)) return true;
+  return false;
+}
+
+/** A task and all its subtasks, in file order. */
+function subtree(t: Task): Task[] {
+  return [t, ...t.children.flatMap(subtree)];
 }
 
 /** Renames a task id and every `@dep` reference to it, across all files. */

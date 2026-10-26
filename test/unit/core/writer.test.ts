@@ -19,6 +19,7 @@ import {
   removeProperty,
   removeTag,
   renameTaskId,
+  renumberCopiedIds,
   replaceLines,
   setAttr,
   setId,
@@ -260,6 +261,103 @@ describe("ids", () => {
     );
     expect(m1).toBe(md("# M1", "", "- [ ] a ^T100", "- [ ] b @dep:T100+2d,T10 ^T2"));
     expect(m2).toBe(md("# M2", "", "- [ ] c @dep:T10,T100 ^T3", "- [ ] d @dep:T11 ^T4"));
+  });
+
+  describe("a copied block", () => {
+    const head = ["# M1", ""];
+    const block = [
+      "- [ ] Login page @est:1d ^T1",
+      "  - [ ] Form @est:4h ^T2",
+      "  - [ ] Validation @est:4h @dep:T2 ^T3",
+      "    - [ ] Error texts @est:1h @dep:T2,T9 ^T4",
+      "- [ ] Review @dep:T1,T3 ^T9",
+    ];
+    const renumber = (now: string, saved: string, reserved?: Set<string>) => {
+      const plan = indexFrom({ "milestones/M1.md": now }).plan;
+      const file = plan.file("milestones/M1.md")!;
+      return applyEdits(now, renumberCopiedIds(plan, file, saved, reserved));
+    };
+
+    it("gives the copied subtasks new ids too, and dependencies within the copy follow", () => {
+      const saved = md(...head, ...block);
+      const now = md(
+        ...head,
+        ...block,
+        "- [ ] Signup page @est:1d ^T1",
+        "  - [ ] Form @est:4h ^T2",
+        "  - [ ] Validation @est:4h @dep:T2 ^T3",
+        "    - [ ] Error texts @est:1h @dep:T2,T9 ^T4"
+      );
+      const reserved = new Set<string>();
+      expect(renumber(now, saved, reserved)).toBe(
+        md(
+          ...head,
+          // The originals, and the dependencies on them, are unchanged.
+          ...block,
+          "- [ ] Signup page @est:1d ^T10",
+          "  - [ ] Form @est:4h ^T11",
+          "  - [ ] Validation @est:4h @dep:T11 ^T12",
+          "    - [ ] Error texts @est:1h @dep:T11,T9 ^T13"
+        )
+      );
+      expect([...reserved]).toEqual(["T10", "T11", "T12", "T13"]);
+    });
+
+    it("renumbers only the copies, wherever the block was pasted", () => {
+      const saved = md(...head, ...block);
+      const now = md(
+        ...head,
+        "- [ ] Signup page @est:1d ^T1",
+        "  - [ ] Form @est:4h ^T2",
+        "  - [ ] Password rules @est:2h ^T20",
+        ...block
+      );
+      expect(renumber(now, saved)).toBe(
+        md(
+          ...head,
+          "- [ ] Signup page @est:1d ^T21",
+          "  - [ ] Form @est:4h ^T22",
+          // Not a copy: its id is used once.
+          "  - [ ] Password rules @est:2h ^T20",
+          ...block
+        )
+      );
+    });
+
+    it("leaves a block pasted with its parent's title alone: it may be moving", () => {
+      const saved = md(...head, ...block);
+      const now = md(...head, ...block, ...block.slice(0, 2));
+      expect(renumber(now, saved)).toBe(now);
+    });
+
+    it("goes together with the ids for tasks that have none, as on save", () => {
+      const original = ["- [ ] Login page ^T1", "  - [ ] Form ^T2", "  - [ ] Check @dep:T2"];
+      const now = md(
+        ...head,
+        ...original,
+        "- [ ] Signup page ^T1",
+        "  - [ ] Form ^T2",
+        "  - [ ] Check @dep:T2"
+      );
+      const plan = indexFrom({ "milestones/M1.md": now }).plan;
+      const file = plan.file("milestones/M1.md")!;
+      const reserved = new Set<string>();
+      const edits = [
+        ...renumberCopiedIds(plan, file, md(...head, ...original), reserved),
+        ...assignMissingIds(plan, file, reserved),
+      ];
+      expect(applyEdits(now, edits)).toBe(
+        md(
+          ...head,
+          "- [ ] Login page ^T1",
+          "  - [ ] Form ^T2",
+          "  - [ ] Check @dep:T2 ^T5",
+          "- [ ] Signup page ^T3",
+          "  - [ ] Form ^T4",
+          "  - [ ] Check @dep:T4 ^T6"
+        )
+      );
+    });
   });
 });
 

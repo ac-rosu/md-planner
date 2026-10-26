@@ -3,7 +3,13 @@
 // day, holidays). Forms as in edit.ts; values passed as an argument skip the form.
 import * as vscode from "vscode";
 import { isOpen, type Person } from "../../core/model";
-import { parseBudget, parseOvertime, parseWorkday, personIdFromName } from "../../core/resolve";
+import {
+  ambiguousBudget,
+  parseBudget,
+  parseOvertime,
+  parseWorkday,
+  personIdFromName,
+} from "../../core/resolve";
 import { parseCapacity } from "../../core/duration";
 import {
   addPerson,
@@ -843,10 +849,13 @@ export async function editProjectCommand(
             title: "Project budget in hours (empty: no budget)",
             value: s.budget,
             placeHolder: "e.g. 1200h, 150d or 30w",
-            validate: (x) =>
-              x.trim() === "" || parseBudget(x, hpd) !== undefined
-                ? undefined
-                : "Hours such as 1200h, or days or weeks (150d, 30w)",
+            validate: (x) => {
+              if (x.trim() === "" || parseBudget(x, hpd) !== undefined) return undefined;
+              const both = ambiguousBudget(x);
+              return both
+                ? `${x.trim()} can mean ${both[0]} or ${both[1]}: write the one you mean`
+                : "Hours such as 1200h, or days or weeks (150d, 30w)";
+            },
           });
           if (v !== undefined) s.budget = v.trim();
         },

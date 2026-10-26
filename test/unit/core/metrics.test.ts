@@ -25,7 +25,7 @@ import { addActual, formatElapsed, parseLoggedTime, roundMinutes } from "../../.
 import { burnUpGeometry, niceMax } from "../../../src/core/views/charts";
 import { buildDashboardModel } from "../../../src/core/views/dashboard";
 import { buildResourcesModel, overloadedWeeks } from "../../../src/core/views/resources";
-import { loadSample, SAMPLE_PLAN, TODAY } from "../helpers";
+import { loadSample, md, planFrom, SAMPLE_PLAN, TODAY } from "../helpers";
 
 const plan = loadSample().plan;
 const schedule = schedulePlan(plan, { today: TODAY });
@@ -66,6 +66,25 @@ describe("burn-up", () => {
     expect(b.points[0].forecast).toBeUndefined();
     const m1 = burnUp(plan, schedule, "M1");
     expect(m1.scope).toBe(94);
+  });
+
+  it("counts hours logged on a parent within its estimate, like the budget does", () => {
+    // Its unestimated subtasks share only the 30h left, so the 10h logged are planned and done.
+    const p = planFrom({
+      "project.md": md("# P", "", "start: 2026-10-01", "end: 2027-03-31"),
+      "team.md": md("# Team", "", "## Sam", "", "capacity: 40h/week"),
+      "milestones/M1.md": md(
+        "# M1",
+        "",
+        "- [/] Feature @est:40h @act:10h @owner:sam @started:2026-10-01 ^T1",
+        "  - [ ] Backend ^T2",
+        "  - [ ] Frontend ^T3"
+      ),
+    });
+    const b = burnUp(p, schedulePlan(p, { today: "2026-10-05" }));
+    expect(b.scope).toBe(40);
+    expect(b.points.find((x) => x.week === weekStart(parseDate("2026-10-05")!))!.done).toBe(10);
+    expect(b.points.at(-1)!.forecast).toBe(40);
   });
 
   it("produces chart geometry with ticks and a today line", () => {
@@ -230,5 +249,35 @@ describe("dashboard model", () => {
     expect(d.tests.map((t) => t.id)).toEqual(["UAT-01", "UAT-02"]);
     expect(d.baseline).toBe("kickoff");
     expect(d.personNames.alex).toBe("Alex");
+  });
+
+  it("reads an empty @blocked as no reason", () => {
+    const p = planFrom({
+      "project.md": md("# P", "", "start: 2026-10-05"),
+      "team.md": md("# Team", "", "## Sam", "", "capacity: 40h/week"),
+      "milestones/M1.md": md(
+        "# M1",
+        "",
+        "id: M1",
+        "",
+        "- [!] Keys @est:8h @owner:sam @blocked: ^T1",
+        '- [!] Sign-off @est:4h @owner:sam @blocked:"" ^T2',
+        '- [!] Review @est:4h @owner:sam @blocked:"  " ^T3',
+        '- [!] Access @est:4h @owner:sam @blocked:" waiting for VPN access " ^T4'
+      ),
+    });
+    expect(p.tasks.map((t) => t.blocked)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      "waiting for VPN access",
+    ]);
+    const d = buildDashboardModel(p, schedulePlan(p, { today: "2026-10-05" }));
+    expect(d.lists.blocked.map((i) => i.detail.split(" · ")[0])).toEqual([
+      "no reason given",
+      "no reason given",
+      "no reason given",
+      "waiting for VPN access",
+    ]);
   });
 });

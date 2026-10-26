@@ -117,6 +117,39 @@ describe("parent and subtask status", () => {
     ]);
   });
 
+  it("says when open subtasks are not scheduled because their parent is cancelled", () => {
+    const lines = [
+      "- [-] Old approach @est:8h @owner:sam ^T1",
+      "  - [ ] New approach @est:16h @owner:sam ^T2",
+      "- [-] Dropped feature ^T3",
+      "  - [/] Started part @est:4h @owner:sam @started:2026-10-12 ^T4",
+      "    - [ ] Its part @est:2h ^T5",
+      "  - [-] Dropped part @est:1h ^T6",
+      "    - [ ] Moot @est:1h ^T7",
+      "  - [x] Finished part @est:1h @done:2026-10-02 ^T8",
+      "    - [ ] Left open @est:1h ^T9",
+      "- [-] Cancelled with its subtasks ^T10",
+      "  - [-] A @est:1h ^T11",
+      "- [x] Done parent @done:2026-10-01 ^T12",
+      ...["A", "B", "C", "D", "E", "F"].map((x, i) => `  - [ ] ${x} @est:1h ^T${13 + i}`),
+    ];
+    expect(codes(...lines)).toEqual([
+      "info:cancelled-parent-open-subtasks:2",
+      "info:cancelled-parent-open-subtasks:4",
+      "info:cancelled-parent-open-subtasks:7",
+      "warning:done-parent-open-subtasks:13",
+    ]);
+    expect(validatePlan(plan(...lines)).map((i) => i.message)).toEqual([
+      "Cancelled, so its open subtask (T2) is not scheduled either.",
+      "Cancelled, so its 3 open subtasks (T4, T5, T9) are not scheduled either.",
+      "Cancelled, so its open subtask (T7) is not scheduled either.",
+      "Done, but 6 subtasks are still open (T13, T14, T15, T16, T17, …); they are no longer scheduled.",
+    ]);
+    // What the info says: nothing of T1's subtree is scheduled.
+    const p = plan(...lines);
+    expect(schedulePlan(p, { today: "2026-10-14" }).tasks.has(p.taskById("T2")!)).toBe(false);
+  });
+
   const change = (lines: string[], id: string, status: Status, effects: StatusEffects) => {
     const p = plan(...lines);
     const f = p.file(PATH)!;
@@ -176,5 +209,18 @@ describe("parent and subtask status", () => {
       "    - [-] A1 @est:1h @started:2026-10-01 ^T3",
     ]);
     expect(change(lines, "T1", "done", { subtasks: "keep" }).slice(1)).toEqual(lines.slice(1));
+  });
+
+  it("leaves no warning when a parent with open subtasks is cancelled from the planner", () => {
+    const lines = [
+      "- [ ] Export feature ^T1",
+      "  - [ ] CSV export @est:8h @owner:sam ^T2",
+      "  - [ ] PDF export @est:8h @owner:sam ^T3",
+    ];
+    // Cancelling changes only the parent: its subtasks are cancelled with it.
+    const cancelled = change(lines, "T1", "cancelled", { rollUp: true });
+    expect(cancelled).toEqual(["- [-] Export feature ^T1", ...lines.slice(1)]);
+    // An info, so `validate --strict` (which fails on warnings) still passes.
+    expect(codes(...cancelled)).toEqual(["info:cancelled-parent-open-subtasks:2"]);
   });
 });

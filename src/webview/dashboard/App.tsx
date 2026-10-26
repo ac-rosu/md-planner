@@ -2,6 +2,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { burnUpGeometry } from "../../core/views/charts";
 import {
+  type BudgetBarPart,
   type DashboardItem,
   type DashboardModel,
   type MilestoneCard,
@@ -394,8 +395,9 @@ function BudgetKpi({ b }: { b: DashboardModel["budget"] }) {
 }
 
 /**
- * Budget against the plan: a meter (logged and remaining hours make up the forecast; red past the
- * budget line), the figures, why it goes over, and the hours per milestone.
+ * Budget against the plan: a meter (logged hours, work done without logged hours and the work
+ * left make up the forecast; red past the budget line), the figures, why it goes over, and the
+ * hours per milestone.
  */
 function BudgetPanel({ model }: { model: DashboardModel }) {
   const b = model.budget;
@@ -413,7 +415,13 @@ function BudgetPanel({ model }: { model: DashboardModel }) {
         <div>
           <BudgetMeter b={b} />
           <div class="chart-legend">
-            <span class="swatch logged" /> logged <span class="swatch remaining" /> remaining
+            <span class="swatch logged" /> logged
+            {b.unlogged > 0 && (
+              <>
+                <span class="swatch unlogged" /> done, not logged
+              </>
+            )}
+            <span class="swatch remaining" /> remaining
             {over && (
               <>
                 <span class="swatch overrun" /> over budget
@@ -432,10 +440,13 @@ function BudgetPanel({ model }: { model: DashboardModel }) {
             <Figure
               label="Forecast"
               value={hours(b.forecast)}
-              detail="logged + remaining"
+              detail={b.unlogged > 0 ? "logged + done + remaining" : "logged + remaining"}
               bad={over}
             />
             <Figure label="Logged" value={hours(b.spent)} detail="@act" />
+            {b.unlogged > 0 && (
+              <Figure label="Done, not logged" value={hours(b.unlogged)} detail="at the estimate" />
+            )}
             {b.budget !== undefined && (
               <Figure
                 label={over ? "Over budget" : "Left"}
@@ -529,7 +540,10 @@ function Figure({
   );
 }
 
-/** One bar on an hours scale: logged, then remaining up to the forecast; the budget line on top. */
+/**
+ * One bar on an hours scale: logged, done without logged hours, then remaining up to the forecast
+ * (the parts come from the model); the budget line on top.
+ */
 function BudgetMeter({ b }: { b: DashboardModel["budget"] }) {
   const W = 600;
   const H = 46;
@@ -537,49 +551,50 @@ function BudgetMeter({ b }: { b: DashboardModel["budget"] }) {
   const top = 18;
   const max = Math.max(b.budget ?? 0, b.forecast, b.planned, 1) * 1.04;
   const x = (h: number) => (Math.min(h, max) / max) * W;
-  const limit = b.budget ?? Number.POSITIVE_INFINITY;
-  const spentEnd = x(Math.min(b.spent, b.forecast));
-  const withinEnd = x(Math.min(b.forecast, limit));
-  const forecastEnd = x(b.forecast);
   const gap = 2;
+  const title: Record<BudgetBarPart["kind"], string> = {
+    logged: `Logged ${hours(b.spent)}`,
+    unlogged: `Done, not logged ${hours(b.unlogged)} (at the estimate)`,
+    remaining: `Remaining ${hours(b.remaining)} · forecast ${hours(b.forecast)}`,
+    overrun: `Over budget ${hours(b.forecast - (b.budget ?? b.forecast))}`,
+  };
+  const parts = `${hours(b.spent)} logged${b.unlogged > 0 ? `, ${hours(b.unlogged)} done, not logged` : ""}, ${hours(b.remaining)} remaining`;
   const label =
     b.budget === undefined
-      ? `Forecast ${hours(b.forecast)}, of which ${hours(b.spent)} logged; planned ${hours(b.planned)}; no budget set`
-      : `Budget ${hours(b.budget)}; forecast ${hours(b.forecast)}, of which ${hours(b.spent)} logged; planned ${hours(b.planned)}`;
+      ? `Forecast ${hours(b.forecast)}: ${parts}; planned ${hours(b.planned)}; no budget set`
+      : `Budget ${hours(b.budget)}; forecast ${hours(b.forecast)}: ${parts}; planned ${hours(b.planned)}`;
   return (
     <svg class="budget-meter" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label}>
+      <defs>
+        <pattern
+          id="unlogged-hatch"
+          width={6}
+          height={6}
+          patternUnits="userSpaceOnUse"
+          patternTransform="rotate(45)"
+        >
+          <line class="hatch" x1={1.5} y1={0} x2={1.5} y2={6} />
+        </pattern>
+      </defs>
       <rect class="track" x={0} y={top} width={W} height={BAR} rx={4} />
-      {spentEnd > 0 && (
-        <rect class="logged" x={0} y={top} width={spentEnd} height={BAR} rx={4}>
-          <title>Logged {hours(b.spent)}</title>
-        </rect>
-      )}
-      {withinEnd - spentEnd > gap && (
-        <rect
-          class="remaining"
-          x={spentEnd + (spentEnd > 0 ? gap : 0)}
-          y={top}
-          width={withinEnd - spentEnd - (spentEnd > 0 ? gap : 0)}
-          height={BAR}
-          rx={4}
-        >
-          <title>
-            Remaining {hours(b.remaining)} · forecast {hours(b.forecast)}
-          </title>
-        </rect>
-      )}
-      {forecastEnd - withinEnd > gap && (
-        <rect
-          class="overrun"
-          x={withinEnd + gap}
-          y={top}
-          width={forecastEnd - withinEnd - gap}
-          height={BAR}
-          rx={4}
-        >
-          <title>Over budget {hours(b.forecast - limit)}</title>
-        </rect>
-      )}
+      {b.bar.map((p, i) => {
+        // A small gap between the parts keeps them apart.
+        const from = x(p.from) + (i > 0 ? gap : 0);
+        const width = x(p.to) - from;
+        return width > 0 ? (
+          <rect
+            class={p.kind}
+            x={from}
+            y={top}
+            width={width}
+            height={BAR}
+            rx={4}
+            fill={p.kind === "unlogged" ? "url(#unlogged-hatch)" : undefined}
+          >
+            <title>{title[p.kind]}</title>
+          </rect>
+        ) : null;
+      })}
       <path class="planned" d={`M${x(b.planned)},${top + BAR + 2} l-4,7 h8 z`}>
         <title>Planned {hours(b.planned)}</title>
       </path>

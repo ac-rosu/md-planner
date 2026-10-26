@@ -65,6 +65,9 @@ describe("MCP tools on the sample plan", () => {
       "Invalid work week"
     );
     expect((await call("update_project", { budget: "a lot" })).text).toContain("Invalid budget");
+    expect((await call("update_project", { budget: "1,200h" })).text).toContain(
+      'Budget "1,200h" can mean 1200h or 1.2h: write the one you mean.'
+    );
     const b = (await call("update_project", { budget: "900h" })).json;
     expect(b.changed[0].after).toEqual(["budget: 900h # hours agreed with the customer"]);
     const hours = (await call("get_plan_overview")).json.project.hours;

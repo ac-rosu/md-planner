@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Calendar } from "../../../src/core/calendar";
 import { formatDate, parseDate as d } from "../../../src/core/dates";
 import { describeOvertime, taskOvertime, weekLoadAt } from "../../../src/core/load";
@@ -170,6 +170,88 @@ describe("overtime and extra working days", () => {
     expect(w.normal).toBe(40);
     expect(w.overtimeCapacity).toBe(14);
     expect(w.overtime).toBe(12);
+  });
+
+  it("finds the next day with hours, and stops looking once the hours end", () => {
+    const p = planFrom({
+      "project.md": PROJECT,
+      "team.md": md(
+        "# Team",
+        "",
+        "## Alex",
+        "",
+        "capacity: 40h/week",
+        "off: 2026-10-07..2026-10-09",
+        "capacityFrom: 2026-10-26 0h/week",
+        "workday: 2026-10-31 4h",
+        "",
+        "## Sam",
+        "",
+        "capacity: 4h/day",
+        "capacityFrom: 2026-10-20 0h/week",
+        "overtime: 2026-10-26..2026-10-27 +2h/day"
+      ),
+    });
+    const cal = new Calendar(p.project, p.people);
+    expect(cal.nextWorkdayOf("alex", d("2026-10-05")!, 30)).toBe(d("2026-10-05"));
+    expect(cal.nextWorkdayOf("alex", d("2026-10-07")!, 30)).toBe(d("2026-10-12")); // off, weekend
+    expect(cal.nextWorkdayOf("alex", d("2026-10-07")!, 3)).toBeUndefined(); // looks 3 days only
+    // After the last working day, an extra working day still counts; then nothing follows.
+    expect(cal.nextWorkdayOf("alex", d("2026-10-24")!, 3650)).toBe(d("2026-10-31"));
+    expect(cal.nextWorkdayOf("alex", d("2026-11-01")!, Number.POSITIVE_INFINITY)).toBeUndefined();
+    // Overtime alone gives hours too.
+    expect(cal.nextWorkdayOf("sam", d("2026-10-20")!, 3650)).toBe(d("2026-10-26"));
+    expect(cal.nextWorkdayOf("sam", d("2026-10-28")!, 3650)).toBeUndefined();
+    expect(cal.nextWorkdayOf("nobody", d("2026-10-05")!, 30)).toBeUndefined();
+  });
+
+  it("knows at once that someone's hours ended, even with holidays listed years ahead", () => {
+    const christmas = Array.from({ length: 10 }, (_, i) => `${2026 + i}-12-25`);
+    const p = planFrom({
+      "project.md": md("# P", "", `holidays: ${christmas.join(", ")}`),
+      "team.md": md(
+        "# Team",
+        "",
+        "## Jordan",
+        "",
+        "capacity: 40h/week",
+        "capacityFrom: 2026-11-02 0h/week",
+        "",
+        "## Priya",
+        "",
+        "capacity: 40h/week"
+      ),
+    });
+    const cal = new Calendar(p.project, p.people);
+    const looked = vi.spyOn(cal, "capacity");
+    expect(cal.nextWorkdayOf("jordan", d("2026-12-01")!, 3650)).toBeUndefined();
+    expect(looked).not.toHaveBeenCalled();
+    // Holidays only take days away: the next one with hours comes right after them.
+    expect(cal.nextWorkdayOf("priya", d("2027-12-25")!, 3650)).toBe(d("2027-12-27"));
+    expect(cal.nextWorkdayOf("jordan", d("2026-10-30")!, 3650)).toBe(d("2026-10-30"));
+  });
+
+  it("counts working days in a range like a walk over the days", () => {
+    const p = planFrom({
+      "project.md": md(
+        "# P",
+        "",
+        "workweek: sun-thu",
+        "holidays: 2026-10-01..2026-10-03, 2026-10-09, 2026-12-25, 2027-01-01"
+      ),
+    });
+    const cal = new Calendar(p.project, []);
+    const walk = (from: number, to: number) => {
+      let n = 0;
+      for (let x = Math.min(from, to); x < Math.max(from, to); x++) if (cal.isWorkingDay(x)) n++;
+      return to < from ? -n : n;
+    };
+    const base = d("2026-09-20")!;
+    for (let from = base; from < base + 40; from += 3)
+      for (let to = base - 10; to < base + 140; to += 7)
+        expect(cal.workingDaysBetween(from, to), `${formatDate(from)} → ${formatDate(to)}`).toBe(
+          walk(from, to)
+        );
   });
 
   it("spreads the hours of done tasks over the days the person worked", () => {

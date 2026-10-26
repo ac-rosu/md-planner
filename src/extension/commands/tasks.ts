@@ -7,7 +7,7 @@ import { type ParsedFile } from "../../core/model";
 import { assignMissingIds, type FileEdit, nextStatus, setAttr, setStatus } from "../../core/writer";
 import { type PlanService } from "../planService";
 import { toRange } from "../util";
-import { resolveTask, stringArg, type TaskArg } from "./args";
+import { findAgain, resolveTask, stringArg, type TaskArg } from "./args";
 import { offerUndo } from "./edit";
 import { type StatusAnswers, statusEffects, SUBTASK_CHOICES } from "./status";
 
@@ -126,12 +126,16 @@ export async function changeStatus(
   }
   const effects = await statusEffects(service.plan, t, next, answers);
   if (!effects) return false;
-  const current = resolveTask(service, t.id ?? { file: t.file, line: t.line })?.task ?? t;
+  // The questions take time: change the task as it is now, on its own line (a copy has its id).
+  const current = findAgain(service.plan, t);
+  if (!current) return false;
   const edits = setStatus(fileOf(service, current).lines, current, next, service.today(), {
     blockedReason,
     ...effects,
   });
-  return service.apply([{ path: t.file, edits }], { source: r.fromEditor ? "editor" : "view" });
+  return service.apply([{ path: current.file, edits }], {
+    source: r.fromEditor ? "editor" : "view",
+  });
 }
 
 export async function cycleStatus(service: PlanService, arg: TaskArg): Promise<boolean> {
@@ -141,9 +145,12 @@ export async function cycleStatus(service: PlanService, arg: TaskArg): Promise<b
   const next = nextStatus(t.status);
   const effects = await statusEffects(service.plan, t, next);
   if (!effects) return false;
-  const current = resolveTask(service, t.id ?? { file: t.file, line: t.line })?.task ?? t;
+  const current = findAgain(service.plan, t);
+  if (!current) return false;
   const edits = setStatus(fileOf(service, current).lines, current, next, service.today(), effects);
-  return service.apply([{ path: t.file, edits }], { source: r.fromEditor ? "editor" : "view" });
+  return service.apply([{ path: current.file, edits }], {
+    source: r.fromEditor ? "editor" : "view",
+  });
 }
 
 export async function assignOwner(
@@ -176,8 +183,17 @@ export async function assignOwner(
     if (!pick) return false;
     value = pick.id ?? "";
   }
-  const edits = setAttr(fileOf(service, t).lines, t, "owner", value === "" ? undefined : value);
-  return service.apply([{ path: t.file, edits }], { source: r.fromEditor ? "editor" : "view" });
+  const current = findAgain(service.plan, t);
+  if (!current) return false;
+  const edits = setAttr(
+    fileOf(service, current).lines,
+    current,
+    "owner",
+    value === "" ? undefined : value
+  );
+  return service.apply([{ path: current.file, edits }], {
+    source: r.fromEditor ? "editor" : "view",
+  });
 }
 
 export async function addEstimate(
@@ -198,8 +214,12 @@ export async function addEstimate(
         parseDuration(v, hpd) === undefined ? "Use a number with h, d or w" : undefined,
     }));
   if (!text || parseDuration(text, hpd) === undefined) return false;
-  const edits = setAttr(fileOf(service, t).lines, t, "est", text.trim());
-  return service.apply([{ path: t.file, edits }], { source: r.fromEditor ? "editor" : "view" });
+  const current = findAgain(service.plan, t);
+  if (!current) return false;
+  const edits = setAttr(fileOf(service, current).lines, current, "est", text.trim());
+  return service.apply([{ path: current.file, edits }], {
+    source: r.fromEditor ? "editor" : "view",
+  });
 }
 
 /** Removes `@start`, so the scheduler places the task again as early as it can. */
@@ -271,5 +291,5 @@ async function showAttention(service: PlanService): Promise<void> {
   const pick = await vscode.window.showQuickPick(items, {
     placeHolder: "Overdue and blocked tasks",
   });
-  if (pick) await revealTask(service, pick.t.id ?? { file: pick.t.file, line: pick.t.line });
+  if (pick) await revealTask(service, { task: pick.t });
 }

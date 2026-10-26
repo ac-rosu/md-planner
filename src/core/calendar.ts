@@ -20,10 +20,17 @@ interface Resource {
   off: Array<[DayNumber, DayNumber]>;
   overtime: Overtime[];
   workdays: ExtraWorkday[];
+  /**
+   * From this day on (after the last capacity change, time off, overtime and extra working day)
+   * only the workweek and the holidays count.
+   */
+  steady: DayNumber;
 }
 
 export class Calendar {
   private readonly holidays = new Set<DayNumber>();
+  /** Holidays that fall on a day of the workweek, in order. */
+  private readonly workweekHolidays: DayNumber[];
   private readonly resources = new Map<string, Resource>();
   private readonly capacityCache = new Map<string, Map<DayNumber, number>>();
 
@@ -34,7 +41,15 @@ export class Calendar {
   ) {
     for (const [from, to] of project.holidays)
       for (let d = from; d <= to; d++) this.holidays.add(d);
+    this.workweekHolidays = [...this.holidays]
+      .filter((d) => project.workweek.has(isoWeekday(d)))
+      .sort((a, b) => a - b);
     for (const p of people) {
+      let last = Number.NEGATIVE_INFINITY;
+      for (const c of p.capacityChanges) last = Math.max(last, c.from);
+      for (const [, to] of p.off) last = Math.max(last, to);
+      for (const o of p.overtime) last = Math.max(last, o.to);
+      for (const w of p.workdays) last = Math.max(last, w.to);
       this.resources.set(p.id.toLowerCase(), {
         workweek: p.workweek ?? project.workweek,
         base: { hours: p.capacityHours, per: p.capacityPer },
@@ -42,6 +57,7 @@ export class Calendar {
         off: p.off,
         overtime: p.overtime,
         workdays: p.workdays,
+        steady: last + 1,
       });
     }
     this.resources.set(UNASSIGNED, {
@@ -51,6 +67,7 @@ export class Calendar {
       off: [],
       overtime: [],
       workdays: [],
+      steady: Number.NEGATIVE_INFINITY,
     });
   }
 
@@ -91,9 +108,25 @@ export class Calendar {
   /** Number of working days in [from, to). Negative when to < from. */
   workingDaysBetween(from: DayNumber, to: DayNumber): number {
     if (to < from) return -this.workingDaysBetween(to, from);
-    let n = 0;
-    for (let d = from; d < to; d++) if (this.isWorkingDay(d)) n++;
-    return n;
+    // Whole weeks count the workweek and the days left are counted one by one, less the holidays
+    // on a day of the workweek in between.
+    const rest = (to - from) % 7;
+    let n = ((to - from - rest) / 7) * this.project.workweek.size;
+    for (let d = to - rest; d < to; d++) if (this.project.workweek.has(isoWeekday(d))) n++;
+    return n - (this.holidaysBefore(to) - this.holidaysBefore(from));
+  }
+
+  /** Number of holidays on a day of the workweek before `day`. */
+  private holidaysBefore(day: DayNumber): number {
+    const h = this.workweekHolidays;
+    let lo = 0;
+    let hi = h.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (h[mid] < day) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
   }
 
   /** Working days per week of the project calendar. */
@@ -134,6 +167,24 @@ export class Calendar {
     const value = this.computeCapacity(key, day);
     cache.set(day, value);
     return value;
+  }
+
+  /**
+   * The first day on or after `from`, looking at most `days` days ahead, on which the person has
+   * working hours; undefined when there is none. After their last capacity change, time off,
+   * overtime and extra working day only their workweek counts, and holidays only take hours away:
+   * when the capacity then is 0, no hours follow, so it does not walk the days ahead to find out.
+   */
+  nextWorkdayOf(personId: string, from: DayNumber, days: number): DayNumber | undefined {
+    const key = personId.toLowerCase();
+    const r = this.resources.get(key);
+    if (!r) return undefined;
+    const ended = r.workweek.size === 0 || this.dailyHours(r, r.steady) <= 0;
+    for (let d = from; d < from + days; d++) {
+      if (ended && d >= r.steady) return undefined;
+      if (this.capacity(key, d) > 0) return d;
+    }
+    return undefined;
   }
 
   /** Hours of a normal working day for the person (no overtime, no extra working days). */

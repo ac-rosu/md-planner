@@ -1,6 +1,6 @@
 // Before a move, checks whether it would add validation errors (a cycle through a milestone's
-// `depends:`, a dependency on its own parent …) and asks first. The same check makes the MCP server
-// refuse such writes; here the user may still go ahead.
+// `depends:`, a dependency on its own parent …) or take open tasks out of the schedule, and asks
+// first. The same checks make the MCP server refuse such writes; here the user may still go ahead.
 import * as vscode from "vscode";
 import { PlanIndex } from "../core/index";
 import { newErrors, planErrors } from "../core/newErrors";
@@ -31,6 +31,25 @@ export async function confirmNoNewErrors(
     {
       modal: true,
       detail: `${added.slice(0, 5).join("\n")}${added.length > 5 ? "\n…" : ""}\n\nIf you move it anyway, the errors are listed in the Problems panel.`,
+    },
+    go
+  );
+  return pick === go;
+}
+
+/**
+ * True when a move keeps its open tasks scheduled (no `warning` from the core move), or the user
+ * wants it anyway. Nothing else would show it: the moved tasks keep their open checkboxes.
+ */
+export async function confirmStillScheduled(warning: string | undefined): Promise<boolean> {
+  if (!warning) return true;
+  const go = "Move anyway";
+  const pick = await vscode.window.showWarningMessage(
+    warning,
+    {
+      modal: true,
+      detail:
+        "Open tasks under a cancelled task, or in a cancelled milestone, are cancelled with it; under a done task they count as finished. Their checkboxes still look open, but they no longer appear in the schedule, the Gantt chart or the workload.",
     },
     go
   );

@@ -126,6 +126,86 @@ describe("HTML status report", () => {
     );
   });
 
+  it("lists a blocked task whose owner's hours end as a risk", () => {
+    const p = planFrom({
+      "project.md": md("# P", "", "start: 2026-10-05"),
+      "team.md": md(
+        "# Team",
+        "",
+        "## Sam",
+        "",
+        "capacity: 40h/week",
+        "capacityFrom: 2026-10-19 0h/week"
+      ),
+      "milestones/M1.md": md(
+        "# M1",
+        "",
+        "id: M1",
+        "target: 2026-10-30",
+        "",
+        "- [ ] Docs @est:8h @owner:sam ^T2",
+        "- [!] Keys @est:40h @owner:sam @blocked:keys ^T1"
+      ),
+    });
+    // Keys has the least room: Sam's hours end before the target.
+    expect(computeRisks(p, schedulePlan(p, { today: "2026-10-05" }))).toContain(
+      "Blocked <b>T1</b> (keys): can stay blocked until 2026-10-09 (Sam has no working hours from 2026-10-19 on)."
+    );
+  });
+
+  it("lists such a blocked task only when it has no more room than the critical path", () => {
+    const blockedRisks = (alex: string, ...tasks: string[]) => {
+      const p = planFrom({
+        "project.md": md("# P", "", "start: 2026-10-05"),
+        "team.md": md("# Team", "", "## Alex", "", alex, "", "## Sam", "", "capacity: 40h/week"),
+        "milestones/M1.md": md("# M1", "", "id: M1", "target: 2027-06-30", "", ...tasks),
+      });
+      return computeRisks(p, schedulePlan(p, { today: "2026-10-05" })).filter((r) =>
+        r.startsWith("Blocked")
+      );
+    };
+    const leaving = md("capacity: 40h/week", "capacityFrom: 2027-03-01 0h/week");
+    const keys = "- [!] Keys @est:16h @owner:alex @blocked:keys ^T1";
+    // Alex works until Fri 26 Feb, so Keys can wait until the 24th: months more than Sam's Main,
+    // on the critical path, has left before the target. Not a risk yet.
+    expect(blockedRisks(leaving, keys, "- [ ] Main @est:1200h @owner:sam ^T2")).toEqual([]);
+    // When the critical path has even more room than Keys, Keys is listed: as it is when it is
+    // due on Alex's last day and that makes it critical.
+    expect(blockedRisks(leaving, keys, "- [ ] Main @est:400h @owner:sam ^T2")).toEqual([
+      "Blocked <b>T1</b> (keys): can stay blocked until 2027-02-24 (Alex has no working hours from 2027-03-01 on).",
+    ]);
+    expect(
+      blockedRisks(
+        "capacity: 40h/week",
+        "- [!] Keys @est:16h @owner:alex @due:2027-02-26 @blocked:keys ^T1",
+        "- [ ] Main @est:400h @owner:sam ^T2"
+      )
+    ).toEqual([
+      "Blocked <b>T1</b> (keys): can stay blocked until 2027-02-24 (critical path: after that the end date moves).",
+    ]);
+  });
+
+  it("says when a blocked task has no reason, also when @blocked is empty", () => {
+    const p = planFrom({
+      "project.md": md("# P", "", "start: 2026-10-05"),
+      "team.md": md("# Team", "", "## Sam", "", "capacity: 40h/week"),
+      "milestones/M1.md": md(
+        "# M1",
+        "",
+        "id: M1",
+        "",
+        "- [!] Keys @est:8h @owner:sam @blocked: ^T1",
+        '- [!] Sign-off @est:4h @owner:sam @blocked:"" ^T2'
+      ),
+    });
+    const report = renderStatusReport(p, schedulePlan(p, { today: "2026-10-05" }), {
+      sections: ["risks"],
+      periodDays: 7,
+      ganttWeeks: 4,
+    });
+    expect(report.match(/<td>no reason given<\/td>/g)).toHaveLength(2);
+  });
+
   it("shows the forecast against the budget in the key figures and the burn-up", () => {
     expect(html).toContain(
       '<b class="late">826h / 800h</b><span>forecast vs budget, 26h over</span>'
@@ -252,6 +332,74 @@ describe("MS Project XML (MSPDI)", () => {
     ).length;
     expect(count(/<Assignment>/g)).toBe(assigned);
     expect(xml).toContain("<ActualFinish>2026-10-13T17:00:00</ActualFinish>");
+  });
+
+  it("gives a to-do task with logged work its actual start", () => {
+    const p = planFrom({
+      "project.md": md("# P", "", "start: 2026-10-01"),
+      "team.md": md("# Team", "", "## Sam", "", "capacity: 40h/week"),
+      "milestones/M1.md": md(
+        "# M1",
+        "",
+        "id: M1",
+        "",
+        "- [ ] Paused @est:16h @act:6h @owner:sam @started:2026-10-02 ^T1",
+        "- [ ] Paused, with progress @est:10h @progress:30% @owner:sam @started:2026-10-05 ^T2",
+        "- [ ] Reopened @est:8h @owner:sam @started:2026-10-01 ^T3"
+      ),
+    });
+    const out = exportMspdi(p, schedulePlan(p, { today: "2026-10-07" }));
+    const task = (id: string) =>
+      out.match(
+        new RegExp(`<Task><UID>\\d+</UID><ID>\\d+</ID><Name>[^<]*\\[${id}\\]</Name>.*?</Task>`, "s")
+      )![0];
+    expect(task("T1")).toContain("<ActualWork>PT6H0M0S</ActualWork>");
+    expect(task("T1")).toContain("<ActualStart>2026-10-02T08:00:00</ActualStart>");
+    // Like a task under way, it starts on its actual start and runs to its planned finish.
+    expect(task("T1")).toContain(
+      "<Start>2026-10-02T08:00:00</Start><Finish>2026-10-08T17:00:00</Finish><Duration>PT40H0M0S</Duration>"
+    );
+    expect(task("T2")).toContain("<ActualStart>2026-10-05T08:00:00</ActualStart>");
+    // Without logged work, @started on a to-do task is left from an earlier status.
+    expect(task("T3")).not.toContain("<ActualStart>");
+    expect(task("T3")).toContain("<Start>2026-10-09T08:00:00</Start>");
+  });
+
+  it("starts a summary row no later than its actual start and the rows in it", () => {
+    const p = planFrom({
+      "project.md": md("# P", "", "start: 2026-10-01"),
+      "team.md": md("# Team", "", "## Sam", "", "capacity: 40h/week"),
+      "milestones/M1.md": md(
+        "# M1",
+        "",
+        "id: M1",
+        "",
+        "## Build",
+        "",
+        "- [ ] Feature @owner:sam ^T1",
+        "  - [ ] Paused @est:16h @act:6h @started:2026-10-02 ^T2",
+        "  - [ ] Next @est:8h ^T3",
+        "- [ ] Docs @act:2h @owner:sam @started:2026-10-01 ^T4",
+        "  - [ ] Guide @est:4h ^T5"
+      ),
+    });
+    const out = exportMspdi(p, schedulePlan(p, { today: "2026-10-07" }));
+    const row = (name: string) => {
+      const body = out.match(
+        new RegExp(`<Task><UID>\\d+</UID><ID>\\d+</ID><Name>${name}</Name>.*?</Task>`, "s")
+      )![0];
+      const start = /<Start>([^<]*)<\/Start>/.exec(body)?.[1].slice(0, 10);
+      const actual = /<ActualStart>([^<]*)<\/ActualStart>/.exec(body)?.[1].slice(0, 10);
+      return [start, actual];
+    };
+    // The schedule starts the open work on Wed 7 Oct; Paused began on Fri 2 and Docs on Thu 1.
+    expect(row("Paused \\[T2\\]")).toEqual(["2026-10-02", "2026-10-02"]);
+    expect(row("Next \\[T3\\]")).toEqual(["2026-10-08", undefined]);
+    expect(row("Feature \\[T1\\]")).toEqual(["2026-10-02", undefined]);
+    expect(row("Guide \\[T5\\]")).toEqual(["2026-10-09", undefined]);
+    expect(row("Docs \\[T4\\]")).toEqual(["2026-10-01", "2026-10-01"]);
+    expect(row("Build")).toEqual(["2026-10-01", undefined]);
+    expect(row("M1")).toEqual(["2026-10-01", undefined]);
   });
 
   it("formats durations and working times", () => {

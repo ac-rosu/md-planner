@@ -5,7 +5,7 @@ import { formatHours, parseDuration } from "../../core/duration";
 import { wouldCreateCycle } from "../../core/graph";
 import { isOpen, type Task } from "../../core/model";
 import { isLeaf } from "../../core/rollup";
-import { describeMoved, dragDay, movedTasks, remainingForFinish } from "../../core/drag";
+import { describeMove, describeResize, resizeTo, sharedIdReason } from "../../core/drag";
 import { findTaskByKey, schedulePlan } from "../../core/scheduler";
 import { buildGanttModel, type BaselineLookup } from "../../core/views/gantt";
 import {
@@ -138,8 +138,17 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
     return t;
   }
 
-  private editableLeaf(key: string): Task {
+  /** The task of a bar to change. */
+  private editable(key: string): Task {
     const t = this.task(key);
+    // Bars of tasks with the same id send the same key: the gesture may be on the other one.
+    const shared = sharedIdReason(this.ctx.state.plan, t);
+    if (shared) throw new Error(shared);
+    return t;
+  }
+
+  private editableLeaf(key: string): Task {
+    const t = this.editable(key);
     if (!isLeaf(t) || !isOpen(t.status) || t.kind !== "task") {
       throw new Error(
         `${t.id ?? t.title} cannot be changed from the Gantt (only open leaf tasks).`
@@ -163,33 +172,33 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
     const s = state.schedule;
     const snapped = s.calendar.nextWorkingDay(day);
     const date = formatDate(snapped);
-    // The schedule after the move, before writing it: where the bar ends up and what else moves.
+    const edits = setAttr(this.lines(t), t, "start", date);
+    if (edits.length === 0) {
+      // Dropped on its own fixed start (or on days off just before it): nothing to write or undo.
+      this.notice("info", describeMove(state.plan, s, s, t, day, snapped));
+      return false;
+    }
+    // The schedule after the move, before writing it: where the bar ends up, why, and what else
+    // moves. Every drag is reported with an Undo button, so an accidental one is noticed right away.
     const after = schedulePlan(state.plan, {
       ...state.scheduleOptions(),
       whatIf: { task: t, start: snapped },
     });
+    const message = describeMove(state.plan, s, after, t, day, snapped);
     const ok = await this.ctx.history.apply(
-      [{ path: t.file, edits: setAttr(this.lines(t), t, "start", date) }],
+      [{ path: t.file, edits }],
       `Move ${t.id ?? t.title} to ${date}`
     );
-    if (!ok) return false;
-    // Every drag is reported with an Undo button, so an accidental one is noticed right away.
-    const name = t.id ?? t.title;
-    const now = after.tasks.get(t);
-    let what = `${name}: fixed start ${t.start ?? "none"} → ${date}.`;
-    if (now?.start !== undefined && now.start > snapped)
-      what += ` It waits for its dependencies, so it starts ${dragDay(now.start)}.`;
-    else if (!t.start)
-      // Dragging pins the task; say so the first time, as it stays when the plan changes.
-      what += ` It is now pinned: it starts no earlier than that, even when its dependencies finish sooner (right-click → Remove fixed start).`;
-    if (now?.finish !== undefined) what += ` Ends ${dragDay(now.finish)}.`;
-    this.changed(`${what} ${describeMoved(state.plan, s, t, movedTasks(s, after, t))}`.trim());
-    return true;
+    if (ok) this.changed(message);
+    return ok;
   }
 
   /**
-   * Drag the end of a bar: the remaining work becomes what the owner can do on it up to the dropped
-   * day, next to their other work, written as `@est` in hours. The bar then ends on that day.
+   * Drag the end of a bar: the estimate becomes the largest one found near the current one with
+   * which the task ends on the dropped day, next to the owner's other work (resizeTo), written as
+   * `@est` in hours (and the `@est` of a parent whose budget the subtasks share, so the others keep
+   * their hours). When more work does not end it any later, or the work it gets by then does not
+   * end it there, nothing is written and the notice says why.
    */
   async resize(key: string, finishIso: string): Promise<boolean> {
     const t = this.editableLeaf(key);
@@ -199,43 +208,26 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
     const finish = parseDate(finishIso);
     if (!ts || ts.start === undefined || finish === undefined)
       throw new Error(`${t.id ?? t.title} has no scheduled dates to resize.`);
-    const from = s.calendar.nextWorkingDay(Math.max(ts.start, s.start));
-    const { hours: remaining, schedule: after } = remainingForFinish(
-      state.plan,
-      state.scheduleOptions(),
-      s,
-      t,
-      Math.max(from, finish)
-    );
-    // Rounded down to half hours, so the remaining work never grows past what fits.
-    const est = Math.max(
-      0.5,
-      Math.floor(
-        (t.progress !== undefined && t.progress < 1
-          ? remaining / (1 - t.progress)
-          : remaining + (t.act ?? 0)) * 2
-      ) / 2
-    );
-    const value = formatHours(est);
-    const before = t.attrs.find((a) => a.key === "est")?.value ?? "none";
-    const ok = await this.ctx.history.apply(
-      [{ path: t.file, edits: setAttr(this.lines(t), t, "est", value) }],
-      `Set ${t.id ?? t.title} estimate to ${value}`
-    );
-    if (ok) {
-      const ends = after.tasks.get(t)?.finish;
-      this.changed(
-        `${t.id ?? t.title}: estimate ${before} → ${value}${ends !== undefined ? `, ends ${dragDay(ends)}` : ""}. ${describeMoved(state.plan, s, t, movedTasks(s, after, t))}`.trim()
-      );
+    const r = resizeTo(state.plan, state.scheduleOptions(), s, t, finish);
+    if ("why" in r) {
+      this.notice("info", r.why);
+      return false;
     }
+    const message = describeResize(state.plan, s, t, r);
+    const parents = r.parents.map((p) => `${p.task.id ?? p.task.title} to ${formatHours(p.est)}`);
+    const ok = await this.ctx.history.apply(
+      r.edits,
+      `Set ${t.id ?? t.title} estimate to ${formatHours(r.est)}${parents.length ? ` (${parents.join(", ")})` : ""}`
+    );
+    if (ok) this.changed(message);
     return ok;
   }
 
   /** Drag from one bar to another: the target gets `@dep` on the source (ids added if missing). */
   async link(fromKey: string, toKey: string): Promise<boolean> {
     const plan = this.ctx.state.plan;
-    const pred = this.task(fromKey);
-    const succ = this.task(toKey);
+    const pred = this.editable(fromKey);
+    const succ = this.editable(toKey);
     if (pred === succ) return false;
     if (succ.kind !== "task" || pred.kind !== "task")
       throw new Error("Dependencies connect milestone tasks only.");
@@ -267,12 +259,21 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
     return ok;
   }
 
+  /**
+   * Remove an arrow: the target's `@dep` loses the source's id. That edit is the same whichever
+   * task with that id the arrow comes from, so only a target whose id another task has is refused.
+   */
   async unlink(fromKey: string, toKey: string): Promise<boolean> {
     const pred = this.task(fromKey);
-    const succ = this.task(toKey);
+    const succ = this.editable(toKey);
     if (!pred.id) return false;
+    const edits = removeDependency(this.lines(succ), succ, pred.id);
+    if (edits.length === 0) {
+      this.notice("info", `${succ.id ?? succ.title} does not depend on ${pred.id}.`);
+      return false;
+    }
     const ok = await this.ctx.history.apply(
-      [{ path: succ.file, edits: removeDependency(this.lines(succ), succ, pred.id) }],
+      [{ path: succ.file, edits }],
       `Remove dependency ${succ.id ?? succ.title} → ${pred.id}`
     );
     if (ok) this.changed(`${succ.id ?? succ.title} no longer waits for ${pred.id}.`);
@@ -284,7 +285,7 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
     key: string,
     change: { title?: string; owner?: string | null; estimate?: string }
   ): Promise<boolean> {
-    const t = this.task(key);
+    const t = this.editable(key);
     const hpd = this.ctx.state.plan.project.hoursPerDay;
     if (change.estimate !== undefined && parseDuration(change.estimate, hpd) === undefined) {
       throw new Error(`Invalid estimate "${change.estimate}" (e.g. 12h, 2d, 1w).`);

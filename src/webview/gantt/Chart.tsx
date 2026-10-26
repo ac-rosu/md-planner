@@ -230,7 +230,8 @@ function linkTooltip(from: GanttRow | undefined, to: GanttRow | undefined): stri
 
 /**
  * The highlighted lines drawn again above the bars, so they can be followed all the way, and an
- * outline around the bars at their other ends.
+ * outline around the bars at their other ends. Only drawn: presses and hovers go to what is under
+ * them (a bar, its resize handle and link dot, or the line's own copy below the bars).
  */
 function FocusLayer({
   focused,
@@ -270,9 +271,7 @@ function FocusLayer({
         {focused.map(({ link, d }) => (
           <g
             class={`link highlight${selectedLink && linkId(selectedLink) === linkId(link) ? " selected" : ""}`}
-            data-link={linkId(link)}
           >
-            <path class="link-hit" d={d} />
             <path class="link-line" d={d} marker-end="url(#arrow-focus)" />
           </g>
         ))}

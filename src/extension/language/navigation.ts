@@ -14,7 +14,7 @@ import {
 import { milestoneStats, openTasksOf } from "../../core/queries";
 import { estimateHours, remainingHours } from "../../core/rollup";
 import { allIds, renameTaskId } from "../../core/writer";
-import { itemAtLine } from "../commands/args";
+import { itemAtLine, type TaskArg } from "../commands/args";
 import { type PlanService } from "../planService";
 import { type PlannerState } from "../state";
 import { md, toRange } from "../util";
@@ -49,7 +49,8 @@ export class PlanHoverProvider implements vscode.HoverProvider {
     const rel = service.relPath(document.uri);
     const t = rel === undefined ? undefined : itemAtLine(this.state.plan, rel, position.line);
     if (!t || t.line !== position.line || t.kind === "step") return undefined;
-    const arg = t.id ?? { file: t.file, line: t.line };
+    // This line, not the id (a copied line keeps it); a change from the editor is not saved.
+    const arg: TaskArg = { file: t.file, line: t.line, fromEditor: true };
     const out = new vscode.MarkdownString(undefined, true);
     out.supportThemeIcons = true;
     out.isTrusted = { enabledCommands: ["planner.setStatus"] };

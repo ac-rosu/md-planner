@@ -156,6 +156,50 @@ describe("scheduler basics", () => {
     expect(dates("T1")).toEqual(["2026-10-06", "2026-10-13"]);
   });
 
+  it("does first the work that a later milestone waits for", () => {
+    // M3 depends on M2 and its build is due on Friday: Sam does M2 before the other work.
+    const { dates, get } = run(
+      ["- [ ] other work @est:20h @owner:sam ^T1"],
+      {},
+      {
+        "team.md": md(
+          "# Team",
+          "",
+          "## Alex",
+          "",
+          "capacity: 40h/week",
+          "",
+          "## Sam",
+          "",
+          "capacity: 20h/week"
+        ),
+        "milestones/M2.md": md(
+          "# M2",
+          "",
+          "id: M2",
+          "",
+          "- [ ] spec @est:8h @owner:sam ^T2",
+          "- [ ] review @est:4h @owner:sam ^T3"
+        ),
+        "milestones/M3.md": md(
+          "# M3",
+          "",
+          "id: M3",
+          "depends: M2",
+          "",
+          "- [ ] build @est:16h @owner:alex @due:2026-10-09 ^T4"
+        ),
+      }
+    );
+    expect(dates("T2")).toEqual(["2026-10-05", "2026-10-06"]);
+    expect(dates("T3")).toEqual(["2026-10-07", "2026-10-07"]);
+    expect(dates("T4")).toEqual(["2026-10-08", "2026-10-09"]);
+    expect(get("T4").late).toBe(false);
+    expect(dates("T1")[0]).toBe("2026-10-08");
+    // The slack runs through the milestone dependency too.
+    expect([get("T2").slack, get("T3").slack, get("T4").slack]).toEqual([1, 0, 0]);
+  });
+
   it("does first what a leaving person needs before their last day", () => {
     const team = md(
       "# Team",
@@ -258,6 +302,16 @@ describe("scheduler basics", () => {
     const { get } = run(tasks);
     expect(get("T5000").finish).toBeDefined();
     expect(get("T5000").unscheduled).toBeUndefined();
+  });
+
+  it("handles very deep chains of tasks without estimates", () => {
+    // Each one finishes the day it is ready and at once releases the next one.
+    const tasks = Array.from(
+      { length: 10000 },
+      (_, i) => `- [ ] s${i}${i ? ` @dep:T${i}` : ""} ^T${i + 1}`
+    );
+    const { dates } = run(tasks);
+    expect(dates("T10000")).toEqual(["2026-10-05", "2026-10-05"]);
   });
 
   it("spreads a task larger than one week over weeks", () => {

@@ -121,7 +121,7 @@ export class PlannerTools {
    */
   commit(
     st: Staging,
-    options: { allowErrors?: boolean; renamed?: Record<string, string> } = {}
+    options: { allowErrors?: boolean; renamed?: Array<[from: string, to: string]> } = {}
   ): ChangedLines[] {
     if (!options.allowErrors) {
       const added = this.newErrors(st, options.renamed);
@@ -140,9 +140,9 @@ export class PlannerTools {
 
   /**
    * Validation errors the staged plan has and the plan on disk does not (see core/newErrors.ts),
-   * with the ids in `renamed` (old → new) mapped first.
+   * with the names in `renamed` (old → new) taken as the same.
    */
-  newErrors(st: Staging, renamed: Record<string, string> = {}): string[] {
+  newErrors(st: Staging, renamed: Array<[from: string, to: string]> = []): string[] {
     const before =
       this.baselines.get(st) ??
       planErrors(this.hasPlan() ? loadPlanIndex(this.options.planDir).plan : undefined);

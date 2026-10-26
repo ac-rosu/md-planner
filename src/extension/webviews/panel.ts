@@ -80,7 +80,11 @@ export abstract class WebviewPanelHost<HostMessage, WebviewMessage extends { typ
 
   protected abstract onMessage(message: WebviewMessage): Promise<void> | void;
 
-  /** Reports an edit made from the view, with an Undo button, so an accidental drag is noticed. */
+  /**
+   * Reports an edit made from the view, with an Undo button, so an accidental drag is noticed.
+   * Only after an edit was written: the button undoes the last entry of the history all panels
+   * share, which after a gesture that changed nothing is someone else's edit (say so with notice).
+   */
   protected changed(message: string): void {
     this.post({ type: "notice", level: "info", message, undo: true } as HostMessage);
   }

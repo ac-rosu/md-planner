@@ -79,7 +79,11 @@ workspace.
 
 Hover a bar for its details. A late task's tooltip says what holds it back, following the
 dependencies to the cause: for example "Held back by the fixed start 2027-10-19 of T461 (via M1)"
-for every task after a mistyped date, or "Held back by Sam having other work first".
+for every task after a mistyped date, or "Held back by Sam having other work first". A fixed
+start is named only when it really holds the task back: when the people after it would be busy with
+other work anyway, that work is named instead (and counted in the person's workload note in
+`team.md`). Delays are counted in working days of the project, so a part-timer's week weighs as much
+as anyone's.
 
 ![The tooltip of a task bar](images/gantt-tooltip.png)
 
@@ -127,9 +131,9 @@ moved onto a Saturday starts on Monday, and keeps its number of working days):
 On release the task gets `@start:<date>` (snapped forward to a working day), a "not before"
 constraint, and a pin ▼ marks it. The pin stays when the plan changes: the task will not move
 earlier, even when its dependencies finish sooner. A notice says so the first time; to let the
-scheduler place the task again, right-click the bar → **Remove fixed start**. If the task's
-dependencies finish later than the date, the scheduler still keeps it after them, and a notice
-tells you so.
+scheduler place the task again, right-click the bar → **Remove fixed start**. If the task cannot
+start on that day, the scheduler places it later, and the notice says why: what it waits for (a
+task, a milestone's `depends:`, a parent's fixed start), or the owner's other work or time off.
 
 A pinned task goes first in its owner's day, so it can become shorter (it no longer shares the
 person with other work).
@@ -145,7 +149,7 @@ drag gives the new dates and says what else moves and why, with **Undo**:
   so moving an M1 task past the end of M1 moves M2 (and what waits for M2).
 - **More after those**: tasks that wait for one of the above.
 
-For example: "Ends Tue 2026-12-01. Also moves T430 (+2 d), which waits for it; VV's other work:
+For example: "Ends Tue 2026-12-01. Also moves T430 (+2 d), which waits for it; Sam's other work:
 T515 (−5 d) and T516 (−5 d); 25 tasks of M2–M5, which wait for M1 to finish."
 
 A press only becomes a drag after the pointer has moved a few pixels, so a click with a slight
@@ -161,12 +165,23 @@ so they can only be moved):
 
 The bar ends on the day you drop it on (on a weekend: the Friday before). The planner works out how
 many hours the owner can spend on the task up to that day next to their other work, time off and
-dependencies, by trying estimates with the scheduler, and writes the largest one that still ends
-there, rounded down to half hours. Hours already spent (`@act`) are added on top; with `@progress`
-set, the estimate is scaled so that the remaining part fits. Making a bar longer does not move its
-start. The notice gives the new end and the tasks that move with it, and why, such as "T121:
-estimate 3d → 32h, ends Fri 2026-10-23. Also moves T122 (+1 d), which waits for it; Sam's other
-work: T206 (+2 d)".
+dependencies, by trying estimates near the current one with the scheduler, and writes the largest
+one it finds that still ends there, rounded down to half hours. Hours already spent (`@act`) are added on top; with `@progress`
+set, the estimate is scaled so that the remaining part fits. When a shorter bar does not end on that
+day even with only the work it gets up to then (less work can make what it waits for less urgent,
+so it waits longer), nothing is written and the notice says why, such as "T3 cannot end by Tue
+2026-10-06 with only the work it gets by that day: then it waits longer for T1, as Sam's other work
+comes first." More work can make the bar start earlier (what it
+waits for becomes more urgent); the notice then says where it starts. The notice gives the new end
+and the tasks that move with it, and why, such as "T121: estimate 3d → 32h, ends Fri 2026-10-23.
+Also moves T122 (+1 d), which waits for it; Sam's other work: T206 (+2 d)".
+
+A subtask without its own `@est` gets a share of its parent's `@est`. Resizing it changes the
+parent's `@est` by as much, in the same edit, so the other subtasks keep their hours, and the notice
+says so ("T1: estimate 40h → 32h, so T2 keeps its hours").
+
+Bars whose id another task also has cannot be moved, resized, edited or linked: give each task its
+own id first (the duplicate id has a quick fix). An arrow out of such a bar can still be removed.
 
 ### Link two bars → `@dep`
 
@@ -228,8 +243,10 @@ in between.
 
 After every drag, link, unlink or dialog edit, a message at the bottom of the chart says exactly
 what changed, such as "T417: estimate 80h → 122.5h.", with an **Undo** button, so a drag you did
-not mean is noticed at once. **Remove fixed start** shows the same in a notification. The undo
-history does not survive closing VS Code or reloading the window.
+not mean is noticed at once. A drag that changes nothing (a bar dropped on its own fixed start, a
+resize that cannot end any closer) says so, without an **Undo** button. **Remove fixed start**
+shows the same in a notification. The undo history does not survive closing VS Code or reloading
+the window.
 
 ## Other groupings
 

@@ -92,9 +92,36 @@ export interface DashboardModel {
     overruns: DashboardItem[];
     unestimated: number;
     milestones: Array<BudgetFigures & { id: string; title: string }>;
+    /** The meter: the forecast split into its parts, in hours. */
+    bar: BudgetBarPart[];
   };
   /** Blocked tasks: the work that waits for them. */
   blockedWaiting: { tasks: number; hours: number };
+}
+
+/** A part of the budget meter, in hours from 0. */
+export interface BudgetBarPart {
+  /** Logged hours, work done without logged hours, work left, or what lies past the budget. */
+  kind: "logged" | "unlogged" | "remaining" | "overrun";
+  from: number;
+  to: number;
+}
+
+/**
+ * The budget meter from 0 to the forecast: the logged hours, the work done without logged hours,
+ * then the work left, each up to the budget; what lies past the budget is one overrun part.
+ */
+export function budgetBar(b: BudgetFigures & { budget?: number }): BudgetBarPart[] {
+  const limit = Math.min(b.budget ?? Number.POSITIVE_INFINITY, b.forecast);
+  const parts: BudgetBarPart[] = [];
+  const add = (kind: BudgetBarPart["kind"], from: number, to: number) => {
+    if (Math.min(to, limit) > from) parts.push({ kind, from, to: Math.min(to, limit) });
+  };
+  add("logged", 0, b.spent);
+  add("unlogged", b.spent, b.spent + b.unlogged);
+  add("remaining", b.spent + b.unlogged, b.forecast);
+  if (b.forecast > limit) parts.push({ kind: "overrun", from: limit, to: b.forecast });
+  return parts;
 }
 
 export function buildDashboardModel(
@@ -198,6 +225,7 @@ export function buildDashboardModel(
       budget: budget.budget,
       planned: budget.planned,
       spent: budget.spent,
+      unlogged: budget.unlogged,
       remaining: budget.remaining,
       forecast: budget.forecast,
       savings: budget.savings,
@@ -205,11 +233,12 @@ export function buildDashboardModel(
       overruns: budget.overruns.map((o) =>
         item(
           o.task,
-          `+${formatHours(o.hours)} over ${formatHours(estimateHours(o.task) ?? 0)}${o.task.status === "blocked" ? " · blocked" : ""} · ${owner(o.task)}`
+          `+${formatHours(o.hours)} over ${formatHours(o.planned)}${o.task.status === "blocked" ? " · blocked" : ""} · ${owner(o.task)}`
         )
       ),
       unestimated: budget.unestimated.length,
       milestones: budget.milestones,
+      bar: budgetBar(budget),
     },
     blockedWaiting: {
       tasks: waitingOnBlocked.size,

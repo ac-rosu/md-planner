@@ -77,18 +77,18 @@ Free description of the project.
 - Backend → M2
 ```
 
-| Property      | Example                              | Meaning                                                                                  |
-| ------------- | ------------------------------------ | ---------------------------------------------------------------------------------------- |
-| (heading)     | `# Customer Portal 2.0`              | Project name, shown in views and reports.                                                |
-| `code`        | `P-2026-014`                         | Project or order number, shown in reports.                                               |
-| `start`       | `2026-10-01`                         | First day anything can be scheduled.                                                     |
-| `end`         | `2027-03-31`                         | Planned end; the dashboard shows how far the forecast finish is from it.                 |
-| `workweek`    | `mon-fri`, `mon-thu`, `sun-thu`      | Working days of the project.                                                             |
-| `hoursPerDay` | `8`                                  | Hours in a working day (0–24). Defines `d` in durations.                                 |
-| `budget`      | `800h`, `100d`, `20w`                | Hours budgeted for the whole project. The dashboard compares it with the plan.           |
-| `holidays`    | `2026-12-25, 2026-12-28..2026-12-31` | Non-working days for everybody, comma-separated dates and ranges. `holiday:` also works. |
-| `template`    | `software`                           | Informational: the template the project was created from.                                |
-| `## Phases`   | `- Backend → M2`                     | Informational list of phases and their milestones.                                       |
+| Property      | Example                              | Meaning                                                                                                                                                          |
+| ------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (heading)     | `# Customer Portal 2.0`              | Project name, shown in views and reports.                                                                                                                        |
+| `code`        | `P-2026-014`                         | Project or order number, shown in reports.                                                                                                                       |
+| `start`       | `2026-10-01`                         | First day anything can be scheduled.                                                                                                                             |
+| `end`         | `2027-03-31`                         | Planned end; the dashboard shows how far the forecast finish is from it.                                                                                         |
+| `workweek`    | `mon-fri`, `mon-thu`, `sun-thu`      | Working days of the project.                                                                                                                                     |
+| `hoursPerDay` | `8`                                  | Hours in a working day (0–24). Defines `d` in durations.                                                                                                         |
+| `budget`      | `800h`, `100d`, `20w`                | Hours budgeted for the whole project. The dashboard compares it with the plan. A decimal comma works (`12,5h`); `1,200h` is refused as ambiguous: write `1200h`. |
+| `holidays`    | `2026-12-25, 2026-12-28..2026-12-31` | Non-working days for everybody, comma-separated dates and ranges. `holiday:` also works.                                                                         |
+| `template`    | `software`                           | Informational: the template the project was created from.                                                                                                        |
+| `## Phases`   | `- Backend → M2`                     | Informational list of phases and their milestones.                                                                                                               |
 
 ## team.md
 
@@ -276,7 +276,8 @@ Rules for writing a task line:
   offers to add a subtask for the rest or to set `@est` to the subtasks' total. When they add up
   to more, their estimates are used.
 - A parent marked done makes its open subtasks irrelevant (they are not scheduled). A cancelled
-  parent cancels its subtasks. Finishing a parent from the planner asks what happens to its open
+  parent cancels its subtasks (the editor points out open subtasks under a cancelled task, as
+  they are not scheduled either). Finishing a parent from the planner asks what happens to its open
   subtasks (finish them too, cancel them, or leave them), and the editor warns about a done parent
   with open subtasks.
 - When you change a status from the planner, parents follow their subtasks

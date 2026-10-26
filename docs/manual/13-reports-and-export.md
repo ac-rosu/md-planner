@@ -72,6 +72,7 @@ The **risks** are computed from the schedule, not written by the AI:
 - milestones forecast after their target, or with two working days of buffer or less
 - tasks scheduled after their deadline
 - the critical path (the chain that sets the end date)
+- blocked tasks with no more room than the critical path, or that already hold the plan up
 - people with more work than capacity in the next eight weeks (demand)
 - open tasks without an estimate or without an owner, and tasks that cannot be scheduled
 
@@ -131,7 +132,8 @@ calendars: the project calendar, plus a resource calendar per person with their 
 and extra working days. Overtime on working days is not part of an MS Project calendar and is not
 exported; the scheduled dates already include it. Tasks are fixed-duration with a "start no earlier than" constraint at their scheduled start, so
 that a project planning tool reproduces the planner's resource-levelled dates instead of levelling
-the plan again.
+the plan again. Work under way exports its `@started` as the actual start, and so does a to-do task
+with logged time.
 
 > [!NOTE]
 > The file is checked against the MSPDI structure in the extension's tests, but it has not yet been

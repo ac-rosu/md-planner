@@ -90,6 +90,8 @@ Delete milestone…; right-click a **section** for Add task….
 milestone with sections asks which one); onto another task asks whether it goes before it, after
 it, or as its subtask. With a task selected, Option+↑ / Option+↓ move it among its siblings and
 Option+→ / Option+← indent and outdent it. A task always moves with its notes and subtasks.
+Dropping open work under a cancelled or done task, or onto a cancelled milestone, asks first, as
+it would leave the schedule.
 
 Edits made from views are saved automatically (`planner.autoSave`) and can be undone with Cmd+Z
 in the file.

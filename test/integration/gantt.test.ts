@@ -5,10 +5,11 @@ import { formatDate } from "../../src/core/dates";
 import { scheduleJsonText } from "../../src/core/scheduleJson";
 import { type GanttPanel } from "../../src/extension/webviews/ganttPanel";
 import { type TeamNode } from "../../src/extension/views/teamTree";
-import { docText, getApi, planUri, restorePlan, waitFor } from "./helpers";
+import { docText, getApi, planUri, restorePlan, TODAY, waitFor } from "./helpers";
 
 const M2 = "milestones/M2-backend.md";
 const M3 = "milestones/M3-frontend.md";
+const M5 = "milestones/M5-launch.md";
 
 async function openGantt(): Promise<GanttPanel> {
   const api = await getApi();
@@ -37,9 +38,11 @@ describe("scheduler integration and Gantt", () => {
     const api = await getApi();
     api.state.recompute();
     const cache = planUri(".planner/schedule.json").fsPath;
+    // Written in the background: the one from activation has the real today.
     const text = await waitFor(() => {
       try {
-        return readFileSync(cache, "utf8");
+        const json = readFileSync(cache, "utf8");
+        return json.includes(`"today": "${TODAY}"`) ? json : undefined;
       } catch {
         return undefined;
       }
@@ -141,6 +144,157 @@ describe("scheduler integration and Gantt", () => {
       () => formatDate(api.state.schedule.byKey.get("T121")?.finish ?? 0) === "2026-10-23",
       "rescheduled"
     );
+  });
+
+  it("says when a drag changes nothing, without an Undo button for someone else's edit", async () => {
+    const api = await getApi();
+    const panel = await openGantt();
+    const notices: Array<{ message: string; undo?: boolean }> = [];
+    const post = panel.post.bind(panel);
+    panel.post = (m) => {
+      const n = m as { type: string; message: string; undo?: boolean };
+      if (n.type === "notice") notices.push({ message: n.message, undo: n.undo });
+      post(m);
+    };
+    const [m2, m5] = [docText(M2), docText(M5)];
+    // T405 (Priya) ends on a full Friday; T121 has no dependencies.
+    await panel.receive({ type: "resize", key: "T405", finish: "2027-03-06" });
+    await panel.receive({ type: "unlink", from: "T101", to: "T121" });
+    assert.equal(docText(M5), m5);
+    assert.equal(docText(M2), m2);
+    // A real move, then a drop on the Sunday before its new fixed start.
+    await panel.receive({ type: "move", key: "T104", start: "2026-11-07" });
+    await waitFor(() => api.state.plan.taskById("T104")?.start === "2026-11-09", "index");
+    const moved = docText(M2);
+    await panel.receive({ type: "move", key: "T104", start: "2026-11-08" });
+    assert.equal(docText(M2), moved);
+    assert.deepEqual(
+      notices.map((n) => [
+        n.message.replace(/^(T104: fixed start none → 2026-11-09\.).*/, "$1"),
+        n.undo,
+      ]),
+      [
+        [
+          "T405 still ends Fri 2027-03-05: Priya has no working hours on Sat 2027-03-06.",
+          undefined,
+        ],
+        ["T121 does not depend on T101.", undefined],
+        ["T104: fixed start none → 2026-11-09.", true],
+        [
+          "T104 already has the fixed start 2026-11-09 (Sun 2026-11-08 is not a working day).",
+          undefined,
+        ],
+      ]
+    );
+    // Undo still undoes the move, the last edit.
+    await panel.receive({ type: "undo" });
+    assert.equal(notices[notices.length - 1].message, "Undid: Move T104 to 2026-11-09");
+    assert.equal(docText(M2), m2);
+  });
+
+  it("refuses to change a bar whose id another task has, but removes an arrow out of it", async () => {
+    const api = await getApi();
+    const panel = await openGantt();
+    const notices: Array<{ level: string; message: string; undo?: boolean }> = [];
+    const post = panel.post.bind(panel);
+    panel.post = (m) => {
+      const n = m as { type: string; level: string; message: string; undo?: boolean };
+      if (n.type === "notice") notices.push({ level: n.level, message: n.message, undo: n.undo });
+      post(m);
+    };
+    // A copied line: T122 gets the id of T121.
+    const doc = await vscode.workspace.openTextDocument(planUri(M2));
+    const at = doc.getText().indexOf("^T122");
+    const copy = new vscode.WorkspaceEdit();
+    copy.replace(doc.uri, new vscode.Range(doc.positionAt(at), doc.positionAt(at + 5)), "^T121");
+    await vscode.workspace.applyEdit(copy);
+    await waitFor(() => !api.state.plan.taskById("T122"), "index");
+    const before = docText(M2);
+    await panel.receive({ type: "move", key: "T121", start: "2026-11-02" });
+    await panel.receive({ type: "resize", key: "T121", finish: "2026-10-30" });
+    await panel.receive({ type: "edit", key: "T121", title: "Shared library" });
+    await panel.receive({ type: "link", from: "T121", to: "T105" });
+    // The arrow into the copy, which waits for T121: which of the two would lose its @dep?
+    await panel.receive({ type: "unlink", from: "T121", to: "T121" });
+    assert.equal(docText(M2), before);
+    const refused = {
+      level: "error",
+      message: "2 tasks have the id T121: give each its own id first.",
+      undo: undefined,
+    };
+    assert.deepEqual(notices, [refused, refused, refused, refused, refused]);
+    // An arrow out of it: T110 loses @dep:T121, the same edit whichever T121 it comes from.
+    await panel.receive({ type: "unlink", from: "T121", to: "T110" });
+    assert.equal(
+      line(M2, "T110"),
+      "- [ ] Account and profile services @est:4d @owner:alex @eq:accounts #accounts ^T110"
+    );
+    assert.deepEqual(notices.slice(5), [
+      { level: "info", message: "T110 no longer waits for T121.", undo: true },
+    ]);
+  });
+
+  it("says why a moved bar starts later than where it was dropped", async () => {
+    const api = await getApi();
+    const panel = await openGantt();
+    const notices: string[] = [];
+    const post = panel.post.bind(panel);
+    panel.post = (m) => {
+      const n = m as { type: string; message: string };
+      if (n.type === "notice") notices.push(n.message);
+      post(m);
+    };
+    // M2 waits for M1, which ends on Monday 2026-10-19.
+    await panel.receive({ type: "move", key: "T121", start: "2026-10-14" });
+    assert.equal(
+      notices[0],
+      "T121: fixed start none → 2026-10-14. M2 waits for M1 to finish, so it starts Tue 2026-10-20. Ends Thu 2026-10-22."
+    );
+    await waitFor(() => api.state.plan.taskById("T121")?.start === "2026-10-14", "index");
+    // Sam is off from Tuesday to Saturday.
+    await panel.receive({ type: "move", key: "T105", start: "2026-11-17" });
+    assert.match(
+      notices[1],
+      /^T105: fixed start 2026-11-10 → 2026-11-17\. Sam has no working hours from Tue 2026-11-17 to Sun 2026-11-22, so it starts Mon 2026-11-23\. Ends Tue 2026-11-24\./
+    );
+  });
+
+  it("resizes a subtask that shares its parent's estimate, and changes the parent with it", async () => {
+    const api = await getApi();
+    const panel = await openGantt();
+    const notices: string[] = [];
+    const post = panel.post.bind(panel);
+    panel.post = (m) => {
+      const n = m as { type: string; message: string };
+      if (n.type === "notice") notices.push(n.message);
+      post(m);
+    };
+    // Without its own estimate, T104 gets what T103's 6 h leave of T102's 12 h.
+    const doc = await vscode.workspace.openTextDocument(planUri(M2));
+    const at = doc.getText().indexOf(" @est:6h ^T104");
+    const remove = new vscode.WorkspaceEdit();
+    remove.delete(doc.uri, new vscode.Range(doc.positionAt(at), doc.positionAt(at + 8)));
+    await vscode.workspace.applyEdit(remove);
+    await waitFor(() => api.state.plan.taskById("T104")?.budget === 6, "budget");
+    const before = docText(M2);
+    await panel.receive({ type: "resize", key: "T104", finish: "2026-10-27" });
+    assert.equal(line(M2, "T104"), "  - [ ] Order events schema @est:24h ^T104");
+    assert.equal(
+      line(M2, "T102"),
+      "- [/] Order state machine @est:30h @owner:sam @dep:T101 #checkout ^T102"
+    );
+    assert.match(
+      notices[0],
+      /^T104: estimate 6h → 24h, ends Tue 2026-10-27\. T102: estimate 12h → 30h, so its subtasks still add up to it\. /
+    );
+    await waitFor(() => api.state.plan.taskById("T104")?.est === 24, "index");
+    await waitFor(
+      () => formatDate(api.state.schedule.byKey.get("T104")?.finish ?? 0) === "2026-10-27",
+      "rescheduled"
+    );
+    // One Undo takes back both estimates.
+    await panel.receive({ type: "undo" });
+    assert.equal(docText(M2), before);
   });
 
   it("keeps a zoom without rebuilding the chart, and rebuilds for other options", async () => {

@@ -126,16 +126,16 @@ A `dryRun` first checks a large plan without writing. MCP clients that support p
 
 **Tasks**
 
-| Tool                          | Does                                                                                                                                    |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_tasks`, `get_task`      | Tasks with schedule data; one task in full.                                                                                             |
-| `create_tasks`                | Tasks in a milestone, section or under a parent, with refs, nested subtasks, dependencies (with lag), notes and any attribute.          |
-| `update_task`, `update_tasks` | Status, title, estimate, actual, owner, fixed start, due, priority, progress, blocked reason, tags, dependencies, any attribute, notes. |
-| `move_task`                   | To another milestone, section or parent (the id stays).                                                                                 |
-| `delete_tasks`                | Tasks, punch items or inbox items, with the dependencies on them.                                                                       |
-| `log_time`                    | Adds worked time to `@act`.                                                                                                             |
-| `rename_task_id`              | Renames an id; every `@dep` follows.                                                                                                    |
-| `assign_ids`                  | Ids for tasks typed without one.                                                                                                        |
+| Tool                          | Does                                                                                                                                                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_tasks`, `get_task`      | Tasks with schedule data; one task in full.                                                                                                                                                             |
+| `create_tasks`                | Tasks in a milestone, section or under a parent, with refs, nested subtasks, dependencies (with lag), notes and any attribute.                                                                          |
+| `update_task`, `update_tasks` | Status, title, estimate, actual, owner, fixed start, due, priority, progress, blocked reason, tags, dependencies, any attribute, notes.                                                                 |
+| `move_task`                   | To another milestone, section or parent (the id stays). Refuses to put open work under a cancelled or done task or into a cancelled milestone; returns the new `file#line` key of a task without an id. |
+| `delete_tasks`                | Tasks, punch items or inbox items, with the dependencies on them.                                                                                                                                       |
+| `log_time`                    | Adds worked time to `@act`.                                                                                                                                                                             |
+| `rename_task_id`              | Renames an id; every `@dep` follows.                                                                                                                                                                    |
+| `assign_ids`                  | Ids for tasks typed without one.                                                                                                                                                                        |
 
 **Inbox, punch list and tests**
 

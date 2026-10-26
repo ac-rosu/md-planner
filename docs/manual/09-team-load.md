@@ -68,9 +68,11 @@ The same demand calculation produces the "more work than capacity" lines in the 
 the status report. Demand above capacity is normal for someone with a queue of work: the schedule
 spreads it over the following weeks. What matters is whether tasks end up late. When someone's
 workload does that, their heading in `team.md` gets one plain message
-([Diagnostics](05-editor.md#diagnostics)), for example: "VV has 572.5h of open work, about 16
-weeks at 36h a week, planned until 2027-01-12. This task finishes after the deadline because VV has
-other work first: T464 (28 working days late)."
+([Diagnostics](05-editor.md#diagnostics)), for example: "Sam has 88h of open work, about 3 weeks
+at 40h a week, then 20h a week from 2026-10-26, planned until 2026-11-02. This task finishes after
+the deadline because Sam has other work first: T2 (1 working day late)." The weeks follow the
+person's capacity changes, time off and holidays; when their hours end first, it says how much
+fits before then ("but only about 64h fit before Sam's working hours end on 2026-10-26").
 
 ## Resolving overload
 

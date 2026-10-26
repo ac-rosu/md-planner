@@ -26,8 +26,10 @@ import {
   makeScale,
   MAX_PX,
   MIN_PX,
+  type Scale,
   xToDay,
   zoomFor,
+  ZoomGesture,
   zoomPx,
 } from "../../../src/webview/gantt/scale";
 import { loadSample, TODAY } from "../helpers";
@@ -107,6 +109,65 @@ describe("gantt zoom gesture", () => {
     expect(scrollAfter).toBeGreaterThan(scrollBefore);
     // Never scrolls before the start.
     expect(anchoredScroll(after, before.start, 700, 320)).toBe(0);
+  });
+
+  // The chart starts after the 320 px task list; `dayAt` is the day under a pointer x.
+  const at = (px: number) => makeScale(d("2026-10-01"), d("2027-03-31"), px);
+  const dayAt = (s: Scale, scrollLeft: number, x: number) =>
+    s.start + (scrollLeft + x - 320) / s.px;
+
+  it("adds up wheel events until the frame, around the day under the pointer", () => {
+    const g = new ZoomGesture(320);
+    const shown = at(14);
+    g.wheel(shown, 1000, 700, -50);
+    // The pointer moved before the frame: the gesture still keeps the first day in place.
+    g.wheel(shown, 1000, 900, -50);
+    const px = g.frame(shown)!;
+    expect(px).toBeCloseTo(zoomPx(zoomPx(14, -50), -50));
+    const drawn = at(px);
+    // More events waiting for the next frame: the gesture goes on around the same day.
+    const left = g.scrollLeft(drawn, true)!;
+    expect(dayAt(drawn, left, 700)).toBeCloseTo(dayAt(shown, 1000, 700));
+    g.wheel(drawn, left, 900, -50);
+    const next = at(g.frame(drawn)!);
+    const last = g.scrollLeft(next, false)!;
+    expect(dayAt(next, last, 700)).toBeCloseTo(dayAt(shown, 1000, 700));
+    // Laid out with nothing waiting: the gesture is over.
+    expect(g.scrollLeft(next, false)).toBeUndefined();
+  });
+
+  it("ends a gesture that changes nothing, so the next one starts at the pointer", () => {
+    for (const [px, deltaY] of [
+      [MAX_PX, -200], // pinching in at the limit
+      [MIN_PX, 200], // pinching out at the limit
+      [14, 0], // no movement
+    ]) {
+      const g = new ZoomGesture(320);
+      const shown = at(px);
+      g.wheel(shown, 3000, 700, deltaY);
+      expect(g.frame(shown)).toBeUndefined();
+      // A redraw for another reason (a new model, a zoom button) does not scroll back to that spot.
+      expect(g.scrollLeft(shown, false)).toBeUndefined();
+      expect(g.scrollLeft(at(32), false)).toBeUndefined();
+    }
+    // After scrolling elsewhere, the next pinch keeps the day now under the pointer in place.
+    const g = new ZoomGesture(320);
+    const max = at(MAX_PX);
+    g.wheel(max, 3000, 700, -100);
+    expect(g.frame(max)).toBeUndefined();
+    g.wheel(max, 6000, 500, 100);
+    const drawn = at(g.frame(max)!);
+    expect(drawn.px).toBeLessThan(MAX_PX);
+    expect(dayAt(drawn, g.scrollLeft(drawn, false)!, 500)).toBeCloseTo(dayAt(max, 6000, 500));
+  });
+
+  it("ends when the zoom changes by other means", () => {
+    const g = new ZoomGesture(320);
+    const shown = at(14);
+    g.wheel(shown, 1000, 700, -100);
+    g.end();
+    expect(g.frame(shown)).toBeUndefined();
+    expect(g.scrollLeft(at(4.5), false)).toBeUndefined();
   });
 });
 

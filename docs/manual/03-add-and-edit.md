@@ -172,10 +172,14 @@ are. Notes and free text are edited in the file: **More → Open in editor**.
   it stays as it was.
 - **Option+↑ / Option+↓ in a plan file** on a task line do the same as Move task up / down. VS
   Code's own Move Line Up/Down would move only that line and hand the subtasks to another task;
-  on other lines they work as usual. Turn this off with `planner.editor.moveTasksAsBlocks`.
+  on other lines they work as usual. With several cursors, or a selection over several tasks,
+  every selected task moves. Turn this off with `planner.editor.moveTasksAsBlocks`.
 - **Drag a task in the Milestones view** onto a section or milestone to move it there, or onto a
   task: a list asks whether it goes before it, after it, or as its subtask, so nothing becomes a
   subtask by accident.
+- A move that would put an open task under a cancelled or done task, or into a cancelled
+  milestone, asks first: its checkbox stays open, but it leaves the schedule, the Gantt chart and
+  the workload. **Move anyway** still moves it.
 - A move that would make the plan invalid asks first, for example a task that would depend on its
   own new parent, or a dependency loop through the milestones' `depends:`. **Move anyway** still
   moves it, and the problem is listed in the Problems panel.
@@ -309,7 +313,7 @@ plan at once.
 - **Format on save** (for example Prettier as the default formatter) rewrites a whole plan file
   whenever it is saved, also after an edit from the planner. A formatter can change task lines and
   how subtasks nest. The planner notices when a save changed more than its edit and offers to turn
-  format on save off for Markdown in the workspace, or to add the plan folder to `.prettierignore`.
+  format on save off for Markdown in the workspace, or to add the plan folder to `.prettierignore` (an edit you can undo in that file).
 - New files (a milestone, `team.md`, `inbox.md`, `punchlist.md`) are created when needed.
 - The clickable CodeLens actions can be hidden with `planner.codeLens.actions`; the schedule
   CodeLens stays.

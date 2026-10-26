@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { main, parseArgs, table } from "../../../src/cli/index";
 import { scheduleToJson } from "../../../src/core/scheduleJson";
@@ -33,6 +36,20 @@ describe("cli", () => {
       (await run("validate", "--plan", SAMPLE_PLAN, "--today", TODAY, "--json")).out
     );
     expect(json).toMatchObject({ errors: 0, warnings: 2 });
+  });
+
+  it("passes a plan whose dependency on a cancelled subtask is ignored", async () => {
+    const planDir = join(mkdtempSync(join(tmpdir(), "planner-cli-")), "plan");
+    mkdirSync(join(planDir, "milestones"), { recursive: true });
+    writeFileSync(join(planDir, "project.md"), "# P\n\nstart: 2026-10-01\n");
+    writeFileSync(
+      join(planDir, "milestones/M1.md"),
+      "# M1\n\n- [ ] Parent @dep:T2 ^T1\n  - [-] Dropped part ^T2\n  - [ ] Open part @est:1h ^T3\n"
+    );
+    const r = await run("validate", "--plan", planDir, "--today", TODAY);
+    expect(r.out).toMatch(/M1\.md:3:\d+: info cancelled-dep: T2 is cancelled/);
+    expect(r.out).toMatch(/ 0 error\(s\)/);
+    expect(r.code).toBe(0);
   });
 
   it("prints the schedule as a table or JSON identical to the core", async () => {
