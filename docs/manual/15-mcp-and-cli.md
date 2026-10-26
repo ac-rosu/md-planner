@@ -17,7 +17,8 @@ when a new command has none.
 
 - **New project** writes `.mcp.json` in the workspace folder automatically (setting
   `planner.mcp.configureOnNewProject`, on by default), so Claude Code started in that folder finds
-  the server. Approve the `md-planner` server when Claude Code asks.
+  the server. Approve the `md-planner` server when Claude Code asks. It also adds the
+  [md-planner skill](#teach-the-agent-the-rules-instructions-and-the-skill).
 - **Planner: Configure MCP for Claude Code** does the same at any time, also when there is no plan
   yet. The agent can then create the project itself.
 - **Copilot agent mode** (VS Code 1.101 and later) gets the server without any configuration, under
@@ -56,22 +57,46 @@ The entry in `.mcp.json` (other entries are kept):
 
 ### Teach the agent the rules: instructions and the skill
 
-Tools alone do not tell an agent how a plan works. Two things do:
+Tools alone do not tell an agent how a plan works. The planner gives agents its rules in two ways.
 
-- **Instructions.** Every client gets the most important rules from the server when it connects:
-  start with `get_plan_overview`, change the plan with the tools, never work out or write the dates
-  the scheduler computes, never invent task ids, call `validate_plan` after editing a file by hand.
-- **The md-planner skill.** **Planner: Add the md-planner Skill for AI Agents** writes
-  `.claude/skills/md-planner/SKILL.md` into the workspace folder (New project does it along with
-  `.mcp.json`; the command is also in the Milestones view's welcome page and the walkthrough).
-  Claude Code and Copilot agent mode load it when you ask them about the plan. It holds the rules
-  in more detail, playbooks for common jobs (build a plan from a description, someone is away, a
-  status for a meeting, a slip), and what to watch for when an agent edits the files itself,
-  which agents with file access often do instead of using the tools.
+**Instructions from the server.** Every agent that connects to the MCP server gets these rules
+(Claude Code, Copilot agent mode and other clients pass them to the model):
 
-The skill is plain Markdown: commit it with the plan, or add your own conventions to it. A copy
-that you did not change is updated when a new version of the extension brings a new text; a copy
-you changed is left alone (run the command again to replace it, after a question).
+- Start with `get_plan_overview`; read `get_plan_format` before building or changing a plan.
+- Change the plan with the tools, not by editing the files: they keep ids and dependencies right,
+  change only what they must, and refuse a change that would break the plan, saying why.
+- Never work out or write the dates the scheduler computes (when tasks start and finish, milestone
+  forecasts): ask `get_schedule`, `list_tasks` or `get_dashboard`. Write a date only where the user
+  gives one: a fixed start, a deadline, a milestone target, time off.
+- Never invent task ids: the tools assign them.
+- A parent's `@est` is a budget that its subtasks without an estimate share. Statuses change with
+  `update_task`, which also writes `@started`/`@done` and moves parents along.
+- Run `build_plan` with `dryRun` first for a large change.
+- After editing a plan file by hand, call `validate_plan` and fix every error.
+
+**The md-planner skill.** A skill is a Markdown file of instructions that an agent loads when a
+request matches it. **Planner: Add the md-planner Skill for AI Agents** writes it to
+`.claude/skills/md-planner/SKILL.md` in the workspace folder, where Claude Code and Copilot agent
+mode look for skills. **New project** adds it together with `.mcp.json` (setting
+`planner.mcp.configureOnNewProject`), **Configure MCP** offers it, and the command is also on the
+Milestones view's welcome page and in the walkthrough. Besides the rules above, the skill has:
+
+- **Playbooks** for common jobs: build a plan from a description, add work, someone is away, a
+  status for a meeting, a slip, ideas and defects, test runs.
+- **A safe way to edit the files** when the MCP server is not connected (agents with file access
+  often edit the Markdown directly): read the file first; change only what must change; give new
+  tasks no id (the planner adds one when the file is saved); finish a parent along with its last
+  subtask; then check every edit with the planner's command-line tool
+  (`node ~/.vscode/extensions/acro.md-planner-<version>/dist/cli.js validate --plan plan`). The
+  agent fixes the errors its edit caused, and reports warnings and hints instead of changing what
+  you asked for to silence them. Dates come from the same tool's `schedule` command, never from
+  its own arithmetic or from a baseline file.
+- **How to explain results:** quote the causes the planner reports, such as "Held back by …".
+
+[Read the whole skill](../../skills/md-planner/SKILL.md). It is plain Markdown: commit it with the
+plan, or add your own conventions to it. A copy that you did not change is updated when a new
+version of the extension brings a new text; a copy you changed is left alone (run the command again
+to replace it, after a question). To stop using it, delete the `.claude/skills/md-planner` folder.
 
 ### Let an agent build the plan from text
 

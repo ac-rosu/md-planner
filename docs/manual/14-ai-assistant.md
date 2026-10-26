@@ -11,6 +11,10 @@ reviewing the schedule. They follow three rules:
 3. **Nothing is sent until you run an AI command**, and then only what that command needs, after
    removing the terms in `planner.ai.redact`. Every request and reply is logged.
 
+Agents that work on the plan by themselves, such as Claude Code or Copilot agent mode, use the
+planner's MCP server instead, and the md-planner skill teaches them the same rules: see
+[MCP server and command line](15-mcp-and-cli.md#teach-the-agent-the-rules-instructions-and-the-skill).
+
 Without an AI provider every other feature works as usual.
 
 ## Choose a provider

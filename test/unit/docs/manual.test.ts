@@ -34,6 +34,7 @@ describe("user manual", () => {
   it("is packaged", () => {
     const ignore = readFileSync(join(ROOT, ".vscodeignore"), "utf8").split(/\r?\n/);
     expect(ignore).toContain("!docs/manual/**");
+    expect(ignore).toContain("!skills/**");
     const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
     const commands = manifest.contributes.commands.map((c: { command: string }) => c.command);
     expect(commands).toContain("planner.openManual");
@@ -47,7 +48,8 @@ describe("user manual", () => {
       if (!path) return false;
       const file = normalize(join(MANUAL, dirname(page), decodeURIComponent(path)));
       const rel = relative(ROOT, file).replace(/\\/g, "/");
-      const shipped = rel.startsWith("docs/manual/") || rel === "docs/settings.md";
+      const shipped =
+        rel.startsWith("docs/manual/") || rel === "docs/settings.md" || rel.startsWith("skills/");
       return !shipped || !existsSync(file);
     });
     expect(broken).toEqual([]);

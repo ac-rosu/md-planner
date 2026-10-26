@@ -13,7 +13,8 @@ After reading it you will be able to:
 - track progress against a baseline, log time, and run acceptance tests with a punch list
 - send managers a branded status report, and hand data to Excel or MS Project
 - let an AI agent (Claude Code, Copilot) build and maintain the whole plan through the MCP server,
-  use the optional AI assistant, and the command-line tool in CI
+  with a skill that teaches it the planner's rules, use the optional AI assistant, and the
+  command-line tool in CI
 
 ## How to read this manual
 
