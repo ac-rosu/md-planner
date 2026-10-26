@@ -1,6 +1,7 @@
 **
 !dist/**
 !templates/**
+!skills/**
 !media/icon.png
 !media/planner.svg
 !media/walkthrough/**

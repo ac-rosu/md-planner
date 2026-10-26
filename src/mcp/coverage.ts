@@ -62,6 +62,7 @@ export const COMMAND_COVERAGE: Record<string, Coverage> = {
     uiOnly: "MCP changes are the agent's own; the tools validate and refuse invalid ones",
   },
   "planner.configureMcp": { uiOnly: "configures the MCP client itself" },
+  "planner.addAgentSkill": { uiOnly: "adds the skill that tells agents how to use these tools" },
   "planner.openManual": { tools: ["get_plan_format"] },
   "planner.addTask": { tools: ["create_tasks"] },
   "planner.addSubtask": { tools: ["create_tasks"] },

@@ -816,6 +816,12 @@ describe("editor integration", () => {
     assert.equal(server.type, "stdio");
     assert.deepEqual(server.args.slice(1), ["--plan", root.fsPath, "--workspace", folder.fsPath]);
     assert.match(server.args[0], /mcp-server\.js$/);
+    // And the skill that tells them how to work with it.
+    const extension = vscode.extensions.getExtension("acro.md-planner")!;
+    assert.equal(
+      readFileSync(join(folder.fsPath, ".claude/skills/md-planner/SKILL.md"), "utf8"),
+      readFileSync(join(extension.extensionPath, "skills/md-planner/SKILL.md"), "utf8")
+    );
   });
 });
 

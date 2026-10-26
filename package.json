@@ -96,7 +96,7 @@
     "viewsWelcome": [
       {
         "view": "planner.milestones",
-        "contents": "No plan folder found in this workspace.\n[New project](command:planner.newProject)\nOr let an AI agent build the whole plan from a description: connect it to the planner's MCP server, then ask it to plan your project.\n[Configure MCP for Claude Code](command:planner.configureMcp)\nA plan is a folder of Markdown files (`plan/` by default, setting `planner.planFolder`).\n[Open the user manual](command:planner.openManual)",
+        "contents": "No plan folder found in this workspace.\n[New project](command:planner.newProject)\nOr let an AI agent build the whole plan from a description: connect it to the planner's MCP server, then ask it to plan your project.\n[Configure MCP for Claude Code](command:planner.configureMcp)\n[Add the md-planner skill for AI agents](command:planner.addAgentSkill)\nA plan is a folder of Markdown files (`plan/` by default, setting `planner.planFolder`).\n[Open the user manual](command:planner.openManual)",
         "when": "!planner.hasPlan"
       },
       {
@@ -228,13 +228,14 @@
           {
             "id": "ai",
             "title": "Optional: AI agents and MCP",
-            "description": "Let Claude Code or Copilot agent mode build and run the plan: describe the project in plain text and the agent creates the team, milestones, tasks and dependencies through the planner's MCP server (New project sets it up). The built-in AI commands propose changes as a diff that you accept or reject.\n[Configure MCP for Claude Code](command:planner.configureMcp)\n[Choose the AI provider](command:workbench.action.openSettings?%5B%22planner.ai%22%5D)",
+            "description": "Let Claude Code or Copilot agent mode build and run the plan: describe the project in plain text and the agent creates the team, milestones, tasks and dependencies through the planner's MCP server (New project sets it up). The skill tells agents how to work with the plan. The built-in AI commands propose changes as a diff that you accept or reject.\n[Configure MCP for Claude Code](command:planner.configureMcp)\n[Add the skill for AI agents](command:planner.addAgentSkill)\n[Choose the AI provider](command:workbench.action.openSettings?%5B%22planner.ai%22%5D)",
             "media": {
               "markdown": "media/walkthrough/ai.md"
             },
             "completionEvents": [
               "onSettingChanged:planner.ai.provider",
-              "onCommand:planner.configureMcp"
+              "onCommand:planner.configureMcp",
+              "onCommand:planner.addAgentSkill"
             ]
           }
         ]
@@ -540,6 +541,12 @@
         "title": "Configure MCP for Claude Code",
         "category": "Planner",
         "icon": "$(plug)"
+      },
+      {
+        "command": "planner.addAgentSkill",
+        "title": "Add the md-planner Skill for AI Agents",
+        "category": "Planner",
+        "icon": "$(book)"
       },
       {
         "command": "planner.openManual",
@@ -1320,6 +1327,10 @@
           "when": "workbenchState != empty"
         },
         {
+          "command": "planner.addAgentSkill",
+          "when": "workbenchState != empty"
+        },
+        {
           "command": "planner.addTask",
           "when": "planner.hasPlan"
         },
@@ -1828,7 +1839,7 @@
         "planner.mcp.configureOnNewProject": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "**New project** also writes `.mcp.json` with the md-planner MCP server, so Claude Code and other agents can build and update the plan right away (same as **Planner: Configure MCP for Claude Code**)."
+          "markdownDescription": "**New project** also writes `.mcp.json` with the md-planner MCP server and the agent skill (`.claude/skills/md-planner/SKILL.md`), so Claude Code and other agents can build and update the plan right away (same as **Planner: Configure MCP for Claude Code** and **Planner: Add the md-planner Skill for AI Agents**)."
         }
       }
     },

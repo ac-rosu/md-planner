@@ -2,6 +2,7 @@
 // undoable WorkspaceEdit.
 import { userInfo } from "node:os";
 import * as vscode from "vscode";
+import { addAgentSkillCommand } from "../agentSkill";
 import { configureMcpCommand } from "../mcp";
 import { isValidDate } from "../../core/dates";
 import { defaultEndDate, instantiateTemplate } from "../../core/templates";
@@ -182,9 +183,10 @@ export async function newProject(
   // Agents (Claude Code …) can work on the new plan right away through the MCP server.
   if (config().get<boolean>("mcp.configureOnNewProject", true)) {
     const mcp = await configureMcpCommand(context, service, { quiet: true, root, folder });
+    const skill = mcp && (await addAgentSkillCommand(context, service, { quiet: true, folder }));
     if (mcp)
       void vscode.window.showInformationMessage(
-        `Planner: created ${planFolder}/ and .mcp.json – Claude Code and other agents can now build and update this plan with the md-planner MCP server.`
+        `Planner: created ${planFolder}/ and .mcp.json${skill ? " with the agent skill" : ""} – Claude Code and other agents can now build and update this plan with the md-planner MCP server.`
       );
   }
   return root;

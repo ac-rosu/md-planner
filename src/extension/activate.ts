@@ -32,6 +32,7 @@ import { type ExportArgs, exportCommand } from "./commands/export";
 import { AiService } from "../ai/service";
 import { ProposalManager } from "../ai/proposals";
 import { draftSummary, registerAiCommands } from "./commands/ai";
+import { addAgentSkillCommand, refreshAgentSkill } from "./agentSkill";
 import { configureMcpCommand, refreshStableServer, registerMcpProvider } from "./mcp";
 import { DashboardPanel } from "./webviews/dashboardPanel";
 import { ResourcesPanel } from "./webviews/resourcesPanel";
@@ -46,7 +47,7 @@ import { type MilestoneNode, MilestonesTreeProvider } from "./views/milestonesTr
 import { TeamTreeProvider } from "./views/teamTree";
 import { GanttPanel } from "./webviews/ganttPanel";
 import { type PanelContext } from "./webviews/panel";
-import { resolveTask, stringArg, type TaskArg } from "./commands/args";
+import { resolveTask, stringArg, type TaskArg, valuesArg } from "./commands/args";
 import { taskKey } from "../core/scheduler";
 import { kanbanCardKey } from "../core/views/kanban";
 
@@ -81,6 +82,8 @@ export interface PlannerApi {
   proposals: ProposalManager;
   /** Pins "today" (ISO date) for deterministic tests; undefined restores the real date. */
   setToday(date: string | undefined): void;
+  /** Brings unchanged copies of the agent skill up to date (with another text in tests). */
+  refreshAgentSkill(text?: string): Promise<void>;
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<PlannerApi> {
@@ -252,6 +255,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<Planne
     vscode.commands.registerCommand("planner.configureMcp", () =>
       configureMcpCommand(context, service)
     ),
+    // The answer to "replace your changed copy?" may come as { replace: true | false }.
+    vscode.commands.registerCommand("planner.addAgentSkill", (arg?: unknown) =>
+      addAgentSkillCommand(context, service, {
+        replace: valuesArg<{ replace?: boolean }>(arg, ["replace"])?.replace,
+      })
+    ),
     // The user manual ships in the package (docs/manual) and opens in the Markdown preview, so it
     // works offline. The preview is locked: it keeps showing the manual when another Markdown file
     // becomes active, while links between the manual's pages still open in the same preview.
@@ -294,6 +303,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Planne
   const mcpProvider = registerMcpProvider(context, service);
   if (mcpProvider) context.subscriptions.push(mcpProvider);
   void refreshStableServer(context).catch(() => undefined);
+  void refreshAgentSkill(context).catch(() => undefined);
 
   await service.locate();
   void todoScanner.scanAll();
@@ -322,5 +332,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<Planne
     ai,
     proposals,
     setToday: (date) => service.setToday(date),
+    refreshAgentSkill: (text) => refreshAgentSkill(context, text),
   };
 }

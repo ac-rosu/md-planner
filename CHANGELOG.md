@@ -132,6 +132,12 @@ Safer editing, from the pilot users' feedback.
   for Markdown or to add the plan folder to `.prettierignore` (an edit that can be undone).
 - A task due on a weekend or holiday and finished on the next working day is "1 working day late"
   (it read "0"); milestone variances and the forecast against the project end count the same way.
+- AI agents learn the planner's rules: the MCP server sends them when an agent connects, and
+  **Planner: Add the md-planner Skill for AI Agents** (also done by New project, and offered by
+  Configure MCP) adds `.claude/skills/md-planner/SKILL.md`, which Claude Code and Copilot agent
+  mode load when you ask about the plan: use the tools, never write computed dates, keep task ids,
+  validate after editing a file by hand, and playbooks for common jobs. A copy you did not change
+  is kept up to date. The plan format the server describes now matches the current rules.
 - Faster: the schedule of a 2,000-task plan takes about 7 ms (about 35 ms in 1.0.0), and
   explaining tasks that cannot be scheduled no longer costs most of a second per change when
   someone's hours end.

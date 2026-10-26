@@ -85,10 +85,16 @@ export async function configureMcpCommand(
   if (!(await vscode.workspace.applyEdit(edit))) return undefined;
   const doc = openDocument(file);
   if (doc?.isDirty) await doc.save();
-  if (!options.quiet)
-    void vscode.window.showInformationMessage(
-      `Planner: ${existing === undefined ? "created" : "updated"} .mcp.json with the "${MCP_SERVER_NAME}" server. Claude Code picks it up in this folder (approve it on first use).${service.root ? "" : " There is no plan yet: ask the agent to create one."}`
-    );
+  if (!options.quiet) {
+    // The skill tells agents how to use the tools well (planner.addAgentSkill).
+    const skill = "Add the agent skill";
+    void vscode.window
+      .showInformationMessage(
+        `Planner: ${existing === undefined ? "created" : "updated"} .mcp.json with the "${MCP_SERVER_NAME}" server. Claude Code picks it up in this folder (approve it on first use).${service.root ? "" : " There is no plan yet: ask the agent to create one."}`,
+        skill
+      )
+      .then((pick) => pick === skill && vscode.commands.executeCommand("planner.addAgentSkill"));
+  }
   return file;
 }
 

@@ -229,6 +229,6 @@ Type: array · default: `[]`
 
 ### `planner.mcp.configureOnNewProject`
 
-**New project** also writes `.mcp.json` with the md-planner MCP server, so Claude Code and other agents can build and update the plan right away (same as **Planner: Configure MCP for Claude Code**).
+**New project** also writes `.mcp.json` with the md-planner MCP server and the agent skill (`.claude/skills/md-planner/SKILL.md`), so Claude Code and other agents can build and update the plan right away (same as **Planner: Configure MCP for Claude Code** and **Planner: Add the md-planner Skill for AI Agents**).
 
 Type: boolean · default: `true`

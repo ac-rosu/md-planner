@@ -54,6 +54,25 @@ The entry in `.mcp.json` (other entries are kept):
   path; the copy is refreshed when the extension starts. Run the command again if VS Code itself
   is moved or reinstalled, or the plan folder moves.
 
+### Teach the agent the rules: instructions and the skill
+
+Tools alone do not tell an agent how a plan works. Two things do:
+
+- **Instructions.** Every client gets the most important rules from the server when it connects:
+  start with `get_plan_overview`, change the plan with the tools, never work out or write the dates
+  the scheduler computes, never invent task ids, call `validate_plan` after editing a file by hand.
+- **The md-planner skill.** **Planner: Add the md-planner Skill for AI Agents** writes
+  `.claude/skills/md-planner/SKILL.md` into the workspace folder (New project does it along with
+  `.mcp.json`; the command is also in the Milestones view's welcome page and the walkthrough).
+  Claude Code and Copilot agent mode load it when you ask them about the plan. It holds the rules
+  in more detail, playbooks for common jobs (build a plan from a description, someone is away, a
+  status for a meeting, a slip), and what to watch for when an agent edits the files itself,
+  which agents with file access often do instead of using the tools.
+
+The skill is plain Markdown: commit it with the plan, or add your own conventions to it. A copy
+that you did not change is updated when a new version of the extension brings a new text; a copy
+you changed is left alone (run the command again to replace it, after a question).
+
 ### Let an agent build the plan from text
 
 Write what you know, in your own words, and ask the agent to plan it:

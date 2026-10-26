@@ -10,7 +10,7 @@ import { z } from "zod";
 import { STATUSES, TEST_TYPES } from "../core/model";
 import { listPlanFiles } from "../core/fsLoader";
 import { buildPlan } from "./buildPlan";
-import { PLAN_FORMAT, planFromTextPrompt } from "./format";
+import { PLAN_FORMAT, planFromTextPrompt, SERVER_INSTRUCTIONS } from "./format";
 import {
   addPunchItems,
   captureInbox,
@@ -208,10 +208,10 @@ const projectSettings = {
 };
 
 export function createServer(tools: PlannerTools): McpServer {
-  const server = new McpServer({
-    name: "md-planner",
-    version: typeof PLANNER_VERSION === "string" ? PLANNER_VERSION : "dev",
-  });
+  const server = new McpServer(
+    { name: "md-planner", version: typeof PLANNER_VERSION === "string" ? PLANNER_VERSION : "dev" },
+    { instructions: SERVER_INSTRUCTIONS }
+  );
   const run = async (fn: () => unknown) => {
     try {
       return { content: [{ type: "text" as const, text: JSON.stringify(await fn(), null, 2) }] };

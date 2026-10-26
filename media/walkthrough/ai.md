@@ -15,4 +15,6 @@ Terms in `planner.ai.redact` (customer names, order numbers) are removed before 
 for Claude Code**) adds the server to `.mcp.json`; Copilot agent mode finds it by itself. Describe
 the project in plain text and the agent builds the whole plan (team, milestones, tasks,
 dependencies) in one validated step, then keeps it up to date with the same rules as the
-extension. A change that would break the plan is refused.
+extension. A change that would break the plan is refused. **Planner: Add the md-planner Skill for
+AI Agents** (also done by New project) teaches agents the rules: never write computed dates, keep
+task ids, validate after editing a file by hand.

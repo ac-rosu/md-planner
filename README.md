@@ -186,7 +186,10 @@ then run it day to day: statuses, owners, overtime, test results, punch items, b
 **New project** writes `.mcp.json` for Claude Code automatically (or run **Planner: Configure MCP
 for Claude Code**, also before a plan exists); Copilot agent mode gets the server through VS Code's
 MCP API in a workspace with a plan (or after Configure MCP). Changes go through the same core and
-minimal-diff writer, and a change that would break the plan is refused.
+minimal-diff writer, and a change that would break the plan is refused. The server tells every agent
+the rules when it connects, and **Planner: Add the md-planner Skill for AI Agents** (also done by
+New project) adds a skill to `.claude/skills/` with playbooks, which Claude Code and Copilot agent
+mode load when you ask them about the plan.
 
 ### Command line
 
