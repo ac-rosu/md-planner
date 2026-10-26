@@ -186,7 +186,7 @@ export function buildDashboardModel(
     forecastFinish: schedule.finish === undefined ? undefined : formatDate(schedule.finish),
     endVariance:
       endDay !== undefined && schedule.finish !== undefined
-        ? schedule.calendar.workingDaysBetween(endDay, schedule.finish)
+        ? schedule.calendar.workingDaysLate(endDay, schedule.finish)
         : undefined,
     criticalPath: schedule.criticalPath.map((t) => {
       const ts = schedule.tasks.get(t)!;

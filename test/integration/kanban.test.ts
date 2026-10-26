@@ -1,8 +1,10 @@
 import * as assert from "node:assert/strict";
 import * as vscode from "vscode";
+import { type KanbanCard } from "../../src/core/views/kanban";
 import { type KanbanPanel } from "../../src/extension/webviews/kanbanPanel";
 import { type PunchNode } from "../../src/extension/views/punchTree";
-import { docText, getApi, restorePlan, TODAY, waitFor } from "./helpers";
+import { type HostToKanban } from "../../src/webview/shared/protocol";
+import { docText, getApi, planUri, positionOf, restorePlan, TODAY, waitFor } from "./helpers";
 
 const M2 = "milestones/M2-backend.md";
 
@@ -10,6 +12,12 @@ function line(rel: string, id: string): string {
   return docText(rel)
     .split("\n")
     .find((l) => l.endsWith(`^${id}`))!;
+}
+
+function lineWith(rel: string, title: string): string {
+  return docText(rel)
+    .split("\n")
+    .find((l) => l.includes(`] ${title} @`))!;
 }
 
 async function openKanban(): Promise<KanbanPanel> {
@@ -22,6 +30,44 @@ async function openKanban(): Promise<KanbanPanel> {
   });
   await panel.receive({ type: "filter", filter: {} });
   return panel;
+}
+
+/** The messages of one type the panel sends to the webview while `action` runs. */
+async function sent<T extends HostToKanban["type"]>(
+  panel: KanbanPanel,
+  type: T,
+  action: () => unknown
+): Promise<Array<Extract<HostToKanban, { type: T }>>> {
+  const out: Array<Extract<HostToKanban, { type: T }>> = [];
+  const post = panel.post.bind(panel);
+  panel.post = (m) => {
+    if (m.type === type) out.push(m as Extract<HostToKanban, { type: T }>);
+    post(m);
+  };
+  try {
+    await action();
+  } finally {
+    panel.post = post;
+  }
+  return out;
+}
+
+/** The cards of the board the panel shows now. */
+async function cardsOf(panel: KanbanPanel): Promise<KanbanCard[]> {
+  const [m] = await sent(panel, "model", () => panel.sendModel());
+  return m.model.lanes.flatMap((l) => Object.values(l.cards).flatMap((c) => c ?? []));
+}
+
+/** Pastes a line above `before` in M2, unsaved, and waits until the plan has it. */
+async function paste(before: string, text: string, title: string): Promise<void> {
+  const api = await getApi();
+  const edit = new vscode.WorkspaceEdit();
+  edit.insert(planUri(M2), await positionOf(M2, before), `${text}\n`);
+  assert.ok(await vscode.workspace.applyEdit(edit));
+  await waitFor(
+    () => api.state.plan.file(M2)?.items.some((t) => t.title === title),
+    "pasted line indexed"
+  );
 }
 
 describe("Kanban", () => {
@@ -97,6 +143,58 @@ describe("Kanban", () => {
     });
     assert.match(line(M2, "T107"), /^- \[\/\] /);
     assert.doesNotMatch(line(M2, "T107"), /@prio/);
+  });
+
+  it("moves the card of a copied line that kept its id, not the first task with that id", async () => {
+    const panel = await openKanban();
+    // A copied line given another title keeps the id until the file is saved.
+    await paste(
+      "- [ ] Notifications and e-mail service",
+      "- [ ] Shared API client @est:1d @owner:sam #backend ^T121",
+      "Shared API client"
+    );
+    const cards = await cardsOf(panel);
+    const original = cards.find((c) => c.title.startsWith("Shared API library"))!;
+    const copy = cards.find((c) => c.title === "Shared API client")!;
+    // Opening the board at a task shows its card (here the first task with the id).
+    const focus = await sent(panel, "focus", () =>
+      vscode.commands.executeCommand("planner.openKanban", { file: M2, line: 13 })
+    );
+    assert.deepEqual(
+      focus.map((f) => f.key),
+      [original.key]
+    );
+    await panel.receive({ type: "move", key: copy.key, status: "doing", lane: "all" });
+    // The copy started (saving gave it an id of its own); the original did not change.
+    assert.match(
+      lineWith(M2, "Shared API client"),
+      new RegExp(
+        `^- \\[/\\] Shared API client @est:1d @owner:sam @started:${TODAY} #backend \\^T\\d+$`
+      )
+    );
+    assert.equal(
+      lineWith(M2, "Shared API library (auth, validation, logging)"),
+      "- [ ] Shared API library (auth, validation, logging) @est:3d @owner:sam #backend ^T121"
+    );
+  });
+
+  it("reorders next to the card of a copied line by the copy's priority", async () => {
+    const panel = await openKanban();
+    await paste(
+      "- [ ] Notifications and e-mail service",
+      "- [ ] Shared API client @est:1d @owner:sam @prio:high #backend ^T121",
+      "Shared API client"
+    );
+    const copy = (await cardsOf(panel)).find((c) => c.title === "Shared API client")!;
+    // Dropped right below the copy (high), not below the original (medium): T122 becomes high.
+    await panel.receive({
+      type: "move",
+      key: "T122",
+      status: "todo",
+      lane: "all",
+      above: copy.key,
+    });
+    assert.match(line(M2, "T122"), /@dep:T121 @prio:high #backend #notifications \^T122$/);
   });
 
   it("reassigns the owner when a card moves to another owner lane, and refuses milestone moves", async () => {

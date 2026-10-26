@@ -4,7 +4,12 @@ import { UNASSIGNED } from "../../core/calendar";
 import { type TaskFilter } from "../../core/filter";
 import { type Priority, type Status, type Task } from "../../core/model";
 import { findTaskByKey } from "../../core/scheduler";
-import { buildKanbanModel, KANBAN_COLUMNS, priorityForDrop } from "../../core/views/kanban";
+import {
+  buildKanbanModel,
+  KANBAN_COLUMNS,
+  kanbanCardKey,
+  priorityForDrop,
+} from "../../core/views/kanban";
 import { applyStatus, editTaskLine, statusSideEdits } from "../../core/writer";
 import {
   DEFAULT_KANBAN_OPTIONS,
@@ -12,8 +17,10 @@ import {
   type KanbanToHost,
   type KanbanViewOptions,
 } from "../../webview/shared/protocol";
+import { currentTask } from "../commands/args";
 import { type AddTaskTarget } from "../commands/edit";
 import { statusEffects } from "../commands/status";
+import { serviceOf } from "../planService";
 import { config } from "../util";
 import { type PanelContext, WebviewPanelHost } from "./panel";
 import { revealTaskInEditor } from "./reveal";
@@ -43,7 +50,13 @@ export class KanbanPanel extends WebviewPanelHost<HostToKanban, KanbanToHost> {
         options: { ...panel.options, board, swimlane: board === "punch" ? "severity" : "none" },
       });
     }
-    if (focusKey) panel.post({ type: "focus", key: focusKey });
+    // Callers pass the task's key (its id); the card of a task whose id another task has too is
+    // keyed by its line, and the id names the first of them.
+    if (focusKey) {
+      const plan = ctx.state.plan;
+      const t = findTaskByKey(plan, focusKey);
+      panel.post({ type: "focus", key: t ? kanbanCardKey(plan, t) : focusKey });
+    }
     return panel;
   }
 
@@ -174,11 +187,14 @@ export class KanbanPanel extends WebviewPanelHost<HostToKanban, KanbanToHost> {
     const statusChange = m.status !== t.status;
     if (statusChange) parts.unshift(m.status);
     if (prio) parts.push(`priority ${prio}`);
-    // Finishing a card with open subtasks asks what happens to them; parents follow. The card is
-    // looked up again after the question, in case its file changed meanwhile.
+    // Finishing a card with open subtasks asks what happens to them; parents follow. The card's
+    // task is found again after the question, in case its file changed meanwhile: lines may have
+    // moved, and a copied line has its id.
     const effects = statusChange ? await statusEffects(plan, t, m.status) : {};
     if (!effects) return false;
-    const card = statusChange ? this.task(m.key) : t;
+    const now = this.ctx.state.plan;
+    const card = statusChange ? currentTask(now, t, serviceOf(now)) : t;
+    if (!card) throw new Error(`${t.id ?? t.title} changed in the meantime; try again.`);
     const cardLines = statusChange ? this.lines(card) : lines;
     const edits = [
       ...editTaskLine(cardLines, card, (e) => {

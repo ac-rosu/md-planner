@@ -116,6 +116,18 @@ export class Calendar {
     return n - (this.holidaysBefore(to) - this.holidaysBefore(from));
   }
 
+  /**
+   * Working days `finish` is after `deadline` (negative: before it). Later: the working days in
+   * (deadline, finish], the finish day always counting (work is done on it, an extra working day
+   * too), so at least 1, also after a deadline on a weekend or holiday. Earlier: minus the working
+   * days in (finish, deadline], so 0 on the last working day before a deadline on a weekend. When
+   * the deadline is a working day, a later finish gives `workingDaysBetween(deadline, finish)`.
+   */
+  workingDaysLate(deadline: DayNumber, finish: DayNumber): number {
+    if (finish > deadline) return this.workingDaysBetween(deadline + 1, finish) + 1;
+    return 0 - this.workingDaysBetween(finish + 1, deadline + 1); // 0, not -0, when on time
+  }
+
   /** Number of holidays on a day of the workweek before `day`. */
   private holidaysBefore(day: DayNumber): number {
     const h = this.workweekHolidays;

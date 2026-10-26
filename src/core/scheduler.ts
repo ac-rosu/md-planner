@@ -38,6 +38,13 @@ import {
 
 export type ScheduleMode = "capacity" | "demand";
 
+/** A task as if its remaining hours or its own `@start` were different. */
+export interface WhatIf {
+  task: Task;
+  remaining?: number;
+  start?: DayNumber;
+}
+
 export interface ScheduleOptions extends Partial<CalendarOptions> {
   /** ISO date; the schedule never places open work before it. */
   today: string;
@@ -46,10 +53,10 @@ export interface ScheduleOptions extends Partial<CalendarOptions> {
   /** Calendar days simulated after the start before giving up (default 10 years). */
   horizonDays?: number;
   /**
-   * Schedule one task as if its remaining hours or its own `@start` were different, without
-   * editing the plan: what a Gantt drag would do, before it is written.
+   * Schedule a task (or several) as if its remaining hours or its own `@start` were different,
+   * without editing the plan: what a Gantt drag would do, before it is written.
    */
-  whatIf?: { task: Task; remaining?: number; start?: DayNumber };
+  whatIf?: WhatIf | WhatIf[];
 }
 
 /**
@@ -130,7 +137,7 @@ export interface MilestoneSchedule extends RollUp {
   /** Latest finish of its tasks. */
   forecast?: DayNumber;
   late: boolean;
-  /** Working days forecast − target (positive = late). */
+  /** Working days the forecast is after the target (`workingDaysLate`; positive = late). */
   variance?: number;
 }
 
@@ -194,6 +201,7 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
   const fixedStart = new Map<Task, DayNumber>();
   const fixedStartFrom = new Map<Task, Task>();
   const deadlineIdx = new Map<Task, number>();
+  const whatIfs = new Map([options.whatIf ?? []].flat().map((w) => [w.task, w]));
   for (const leaf of graph.leaves) {
     const owner = ownerOf(leaf);
     const known =
@@ -223,7 +231,7 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
       ts.unscheduled = "cycle";
       continue;
     }
-    const whatIf = options.whatIf?.task === leaf ? options.whatIf : undefined;
+    const whatIf = whatIfs.get(leaf);
     remaining.set(leaf, whatIf?.remaining ?? remainingHours(leaf));
     let fs: DayNumber | undefined;
     for (let t: Task | undefined = leaf; t; t = t.parent) {
@@ -761,7 +769,7 @@ function rollUp(plan: Plan, s: Schedule): void {
         r.finish > target,
       variance:
         target !== undefined && r.finish !== undefined
-          ? s.calendar.workingDaysBetween(target, r.finish)
+          ? s.calendar.workingDaysLate(target, r.finish)
           : undefined,
     };
     if (m.status === "cancelled") ms.late = false;

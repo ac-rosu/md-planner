@@ -48,6 +48,7 @@ import { GanttPanel } from "./webviews/ganttPanel";
 import { type PanelContext } from "./webviews/panel";
 import { resolveTask, stringArg, type TaskArg } from "./commands/args";
 import { taskKey } from "../core/scheduler";
+import { kanbanCardKey } from "../core/views/kanban";
 
 /** Returned from activate() for integration tests and other extensions. */
 export interface PlannerApi {
@@ -210,7 +211,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Planne
     vscode.commands.registerCommand("planner.openKanban", (arg?: TaskArg) => {
       const r = arg ? resolveTask(service, arg) : undefined;
       const board = r?.task.kind === "punch" ? "punch" : r ? "tasks" : undefined;
-      return KanbanPanel.show(panels, board, r ? taskKey(r.task) : undefined);
+      // The card's own key: a copied line that kept its id has a card of its own.
+      return KanbanPanel.show(panels, board, r ? kanbanCardKey(service.plan, r.task) : undefined);
     }),
     vscode.commands.registerCommand("planner.openPunchBoard", () =>
       KanbanPanel.show(panels, "punch")

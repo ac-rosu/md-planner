@@ -184,6 +184,50 @@ describe("HTML status report", () => {
     ]);
   });
 
+  it("lists a blocked task as a risk when a colleague's work that waits for it leaves no more room", () => {
+    const blockedRisks = (main: number) => {
+      const p = planFrom({
+        "project.md": md("# P", "", "start: 2026-10-05"),
+        "team.md": md(
+          "# Team",
+          "",
+          "## Alex",
+          "",
+          "capacity: 40h/week",
+          "capacityFrom: 2027-03-01 0h/week",
+          "",
+          "## Sam",
+          "",
+          "capacity: 40h/week",
+          "",
+          "## Priya",
+          "",
+          "capacity: 40h/week"
+        ),
+        "milestones/M1.md": md(
+          "# M1",
+          "",
+          "id: M1",
+          "target: 2027-06-30",
+          "",
+          "- [!] Keys @est:16h @owner:sam @blocked:keys ^T1",
+          "- [ ] Install @est:16h @owner:alex @dep:T1 ^T2",
+          `- [ ] Main @est:${main}h @owner:priya ^T3`
+        ),
+      });
+      return computeRisks(p, schedulePlan(p, { today: "2026-10-05" })).filter((r) =>
+        r.startsWith("Blocked")
+      );
+    };
+    // Alex's Install has to be done on Fri 26 Feb, their last working day: Sam's Keys can wait
+    // until the 22nd. Priya's Main, on the critical path, has less room: not a risk yet.
+    expect(blockedRisks(1200)).toEqual([]);
+    // With more room on the critical path than Keys has, Keys is listed.
+    expect(blockedRisks(400)).toEqual([
+      "Blocked <b>T1</b> (keys): 1 task (16 h) waits for it · can stay blocked until 2027-02-22 (Alex has no working hours from 2027-03-01 on).",
+    ]);
+  });
+
   it("says when a blocked task has no reason, also when @blocked is empty", () => {
     const p = planFrom({
       "project.md": md("# P", "", "start: 2026-10-05"),

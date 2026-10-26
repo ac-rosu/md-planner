@@ -53,7 +53,7 @@ export function scheduleDiagnostics(
       continue;
     }
     if (ts.late && ts.finish !== undefined && ts.deadline !== undefined) {
-      const late = schedule.calendar.workingDaysBetween(ts.deadline, ts.finish);
+      const late = schedule.calendar.workingDaysLate(ts.deadline, ts.finish);
       const what = t.due ? `@due ${t.due}` : deadlineSource(plan, t);
       const cause = lateCause(schedule, t);
       issues.push({
@@ -136,7 +136,7 @@ export function workloadDiagnostics(plan: Plan, schedule: Schedule): Issue[] {
     const lateList = late
       .slice(0, 5)
       .map((ts) => {
-        const d = schedule.calendar.workingDaysBetween(ts.deadline!, ts.finish!);
+        const d = schedule.calendar.workingDaysLate(ts.deadline!, ts.finish!);
         return `${ts.task.id ?? ts.task.title} (${d} working day${d === 1 ? "" : "s"} late)`;
       })
       .join(", ");

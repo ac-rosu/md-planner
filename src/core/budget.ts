@@ -15,7 +15,7 @@ import {
   leavesOf,
   remainingHours,
 } from "./rollup";
-import { type Schedule, type TaskSchedule } from "./scheduler";
+import { type Schedule, schedulePlan, type TaskSchedule } from "./scheduler";
 
 /**
  * Hours of a set of tasks. Leaves carry the work; a parent adds the hours logged on it. Cancelled
@@ -209,7 +209,8 @@ export interface BlockedImpact {
   waitingHours: number;
   /**
    * It has no more room than the critical path: it is on it (once its slack is used up, every day
-   * blocked moves the end date), or its owner's hours end so soon that it can wait no longer.
+   * blocked moves the end date), or hours that end (its owner's, or those of a colleague whose
+   * work waits for it) leave it no more room.
    */
   critical: boolean;
   /** The last working day it can stay blocked without delaying anything; undefined if unknown. */
@@ -217,19 +218,31 @@ export interface BlockedImpact {
   /** Already later than that: it is holding the plan up now. */
   late: boolean;
   /**
-   * Set when its owner's working hours end (`capacityFrom: … 0h`) and that sets `until`;
-   * `tooLate` when its work no longer fits in the hours they have left, even if unblocked now.
+   * Set when the working hours end (`capacityFrom: … 0h`) of its owner, or of a colleague whose
+   * work waits for it, and that sets `until`; `tooLate` when that work no longer fits in the hours
+   * they have left, even if unblocked now.
    */
   ownerHoursEnd?: { name: string; from: string; tooLate: boolean };
 }
 
+const blockedImpacts = new WeakMap<Schedule, { plan: Plan; impacts: BlockedImpact[] }>();
+
 /**
  * What each blocked task holds up. The schedule plans blocked tasks as if they could go ahead;
  * this says how long they can stay blocked before something moves: their latest start (scheduled
- * start plus slack, and early enough for owners whose hours end to do the work before then), and
- * the work that waits for them.
+ * start plus slack, and early enough for people whose hours end to do their part before then:
+ * the blocked work's owners and colleagues whose work waits for it), and the work that waits for
+ * them. Worked out once per schedule.
  */
 export function blockedImpact(plan: Plan, schedule: Schedule): BlockedImpact[] {
+  const memo = blockedImpacts.get(schedule);
+  if (memo?.plan === plan) return memo.impacts;
+  const impacts = findBlockedImpact(plan, schedule);
+  blockedImpacts.set(schedule, { plan, impacts });
+  return impacts;
+}
+
+function findBlockedImpact(plan: Plan, schedule: Schedule): BlockedImpact[] {
   const graph = schedule.graph;
   const cal = schedule.calendar;
   const out: BlockedImpact[] = [];
@@ -240,20 +253,24 @@ export function blockedImpact(plan: Plan, schedule: Schedule): BlockedImpact[] {
   const groupsOf = new Map<Task, DepNode[]>();
   for (const g of graph.groups.values())
     for (const m of g.members) groupsOf.set(m, [...(groupsOf.get(m) ?? []), g]);
-  const lastForOwners = ownerHoursBound(plan, schedule);
+  const ends = hoursEnds(plan);
+  const lastForOwners = ownerHoursBound(plan, schedule, ends);
+  const lastForColleagues = colleagueHoursBound(plan, schedule, ends);
   // The slack of the critical path (as computeCriticalPath works it out).
   let least: number | undefined;
   for (const ts of schedule.tasks.values())
     if (ts.slack !== undefined && (least === undefined || ts.slack < least)) least = ts.slack;
   const criticalSlack = Math.max(0, least ?? 0);
+  const isOpenWork = (t: Task) => !isEffectivelyDone(t) && !isEffectivelyCancelled(t);
   for (const blocked of blockedTasks) {
     const leaves = isLeaf(blocked) ? [blocked] : leavesOf(blocked);
     const own = new Set(leaves);
-    // Everything that waits for one of its leaves, through tasks, parents and milestones; each
-    // node's dependents are looked at once.
+    // The open work that waits for one of its open leaves, through tasks, parents and milestones;
+    // not through done work: what waits for that waits no longer. Each node's dependents are
+    // looked at once.
     const waiting = new Set<Task>();
     const seen = new Set<DepNode>();
-    const queue = [...leaves];
+    const queue = leaves.filter(isOpenWork);
     for (let i = 0; i < queue.length; i++) {
       const t = queue[i];
       const leaf = graph.leafNode.get(t);
@@ -261,16 +278,16 @@ export function blockedImpact(plan: Plan, schedule: Schedule): BlockedImpact[] {
         if (seen.has(n)) continue;
         seen.add(n);
         for (const d of graph.dependents.get(n) ?? [])
-          if (!waiting.has(d) && !own.has(d)) {
+          if (!waiting.has(d) && !own.has(d) && isOpenWork(d)) {
             waiting.add(d);
             queue.push(d);
           }
       }
     }
-    const open = [...waiting].filter((t) => !isEffectivelyDone(t) && !isEffectivelyCancelled(t));
+    const open = [...waiting];
     // It can stay blocked until the working day before its latest start (start + slack), and
-    // only as long as its owners whose hours end still have the time for the work. Without slack
-    // left that is the last working day before today, whatever weekday today is.
+    // only as long as the people whose hours end still have the time for their part. Without
+    // slack left that is the last working day before today, whatever weekday today is.
     let latest: number | undefined;
     let critical = false;
     let first: DayNumber | undefined;
@@ -284,15 +301,20 @@ export function blockedImpact(plan: Plan, schedule: Schedule): BlockedImpact[] {
       const lastOk = cal.previousWorkingDay(ts.slack < 0 ? schedule.start - 1 : latestStart - 1);
       latest = latest === undefined ? lastOk : Math.min(latest, lastOk);
     }
-    // The owners' day counts when it is earlier, or too late. On the same day, as when both are
-    // late, the slack's "already delaying" says more: every day blocked moves a date.
+    // The owners' day counts when it is earlier, or too late; then the colleagues' the same way.
+    // On the same day, as when both are late, the slack's "already delaying" says more: every day
+    // blocked moves a date.
     let ownerHoursEnd: BlockedImpact["ownerHoursEnd"];
     const forOwners = lastForOwners(leaves, open);
-    if (forOwners && (forOwners.tooLate || latest === undefined || forOwners.day < latest)) {
-      latest = forOwners.day;
-      const { name, from, tooLate, start } = forOwners;
+    const forColleagues = forOwners?.tooLate
+      ? undefined
+      : lastForColleagues(leaves, open, tighter(forOwners, latest) ? forOwners.day : latest);
+    for (const bound of [forOwners, forColleagues]) {
+      if (!tighter(bound, latest)) continue;
+      latest = bound.day;
+      const { name, from, tooLate, start } = bound;
       ownerHoursEnd = { name, from: formatDate(from), tooLate };
-      // Critical too when the owner's hours leave it no more room than the critical path has.
+      // Critical too when their hours leave it no more room than the critical path has.
       critical ||=
         start !== undefined &&
         first !== undefined &&
@@ -312,34 +334,55 @@ export function blockedImpact(plan: Plan, schedule: Schedule): BlockedImpact[] {
   return out;
 }
 
-/** The last day blocked work can wait for its owner whose hours end (see ownerHoursBound). */
-interface OwnerBound {
+/** Someone whose working hours end for good: from `from` on they have none. */
+interface HoursEnd {
+  name: string;
+  from: DayNumber;
+}
+
+/**
+ * The last day blocked work can wait for someone whose hours end (see ownerHoursBound and
+ * colleagueHoursBound).
+ */
+interface HoursBound extends HoursEnd {
   /** The last day it can stay blocked: before the first day of the schedule when it cannot wait. */
   day: DayNumber;
   /** The day the work has to start at the latest; undefined when too late. */
   start?: DayNumber;
-  name: string;
-  from: DayNumber;
   tooLate: boolean;
 }
 
-/**
- * For blocked work whose owners' hours end for good (their last capacity change is to 0 h): the
- * last day it can stay blocked and still be done before then. Per such owner, their part of it
- * and their tasks that wait for it need the hours their other work leaves free when that goes as
- * early as it can (see readyOn). Too late when the schedule could not fit their part in, even
- * with the blocked work going ahead. Undefined when no owner's hours end.
- */
-function ownerHoursBound(plan: Plan, schedule: Schedule) {
-  const cal = schedule.calendar;
-  const graph = schedule.graph;
-  const hpd = plan.project.hoursPerDay;
-  const EPS = 1e-6;
-  const ends = new Map<string, { name: string; from: DayNumber }>();
+const EPS = 1e-6;
+
+/** The people whose hours end for good (their last capacity change is to 0 h), by resource. */
+function hoursEnds(plan: Plan): Map<string, HoursEnd> {
+  const ends = new Map<string, HoursEnd>();
   for (const p of plan.people) {
     const last = p.capacityChanges[p.capacityChanges.length - 1];
     if (last?.hours === 0) ends.set(p.id.toLowerCase(), { name: p.name, from: last.from });
   }
+  return ends;
+}
+
+/** A bound for hours that end takes the place of `latest` when it is earlier, or too late. */
+function tighter(
+  bound: HoursBound | undefined,
+  latest: DayNumber | undefined
+): bound is HoursBound {
+  return bound !== undefined && (bound.tooLate || latest === undefined || bound.day < latest);
+}
+
+/**
+ * For blocked work whose owners' hours end for good: the last day it can stay blocked and still
+ * be done before then. Per such owner, their part of it and their tasks that wait for it need the
+ * hours their other work leaves free when that goes as early as it can (see readyOn). Too late
+ * when the schedule could not fit their part in, even with the blocked work going ahead.
+ * Undefined when no owner's hours end.
+ */
+function ownerHoursBound(plan: Plan, schedule: Schedule, ends: Map<string, HoursEnd>) {
+  const cal = schedule.calendar;
+  const graph = schedule.graph;
+  const hpd = plan.project.hoursPerDay;
   const placed = (ts: TaskSchedule | undefined): ts is TaskSchedule =>
     ts !== undefined && !ts.done && !ts.unscheduled && ts.finish !== undefined;
   const workOf = new Map<string, TaskSchedule[]>();
@@ -422,8 +465,8 @@ function ownerHoursBound(plan: Plan, schedule: Schedule) {
     }
     return ready.get(root)!;
   };
-  return (leaves: Task[], waiting: Task[]): OwnerBound | undefined => {
-    let bound: OwnerBound | undefined;
+  return (leaves: Task[], waiting: Task[]): HoursBound | undefined => {
+    let bound: HoursBound | undefined;
     const own = leaves
       .map((l) => schedule.tasks.get(l))
       .filter((ts): ts is TaskSchedule => ts !== undefined && !ts.done && ends.has(ts.resource));
@@ -474,6 +517,123 @@ function ownerHoursBound(plan: Plan, schedule: Schedule) {
         bound = { day, start, ...end, tooLate };
     }
     return bound;
+  };
+}
+
+/** Schedules colleagueHoursBound tries at most per blocked task, after the one unblocked now. */
+const SEARCH_RUNS = 8;
+
+/**
+ * For blocked work that colleagues whose hours end for good wait for (their open tasks that need
+ * hours, when they own none of the blocked work: ownerHoursBound covers those): the last day it
+ * can stay blocked and still leave them the time. The schedule is the measure: scheduled again as
+ * if the blocked work could start only from a later day (as with that `@start`), the plan has to
+ * keep all of those tasks. Too late when one of them finds no hours even when the blocked work
+ * goes ahead now. The latest start is searched from a first guess (see below), then the day next
+ * to it, then by halving the days in between: at most SEARCH_RUNS schedules, and when they run
+ * out, the latest start found to work. Undefined when no such colleague waits for it, or when
+ * their hours leave it more time than `latest`.
+ */
+function colleagueHoursBound(plan: Plan, schedule: Schedule, ends: Map<string, HoursEnd>) {
+  const cal = schedule.calendar;
+  const options = { ...cal.options, today: formatDate(schedule.today), mode: schedule.mode };
+  // The days it may start on, by working day: 0 is the first day of the schedule, 1 the next
+  // working day, and so on.
+  const firstDay = cal.nextWorkingDay(schedule.start);
+  const dayAt = (k: number) => (k === 0 ? schedule.start : cal.addWorkingDays(firstDay, k));
+  const indexOf = (day: DayNumber) => cal.workingDaysBetween(firstDay, day);
+  return (
+    leaves: Task[],
+    waiting: Task[],
+    latest: DayNumber | undefined
+  ): HoursBound | undefined => {
+    const blocked = leaves
+      .map((l) => schedule.tasks.get(l))
+      .filter((ts): ts is TaskSchedule => ts !== undefined && !ts.done);
+    const owners = new Set(blocked.map((ts) => ts.resource));
+    const theirs = waiting
+      .map((t) => schedule.tasks.get(t))
+      .filter(
+        (ts): ts is TaskSchedule =>
+          ts !== undefined &&
+          !ts.done &&
+          ends.has(ts.resource) &&
+          !owners.has(ts.resource) &&
+          ts.unscheduled !== "cycle" &&
+          ts.unscheduled !== "blocked-by-cycle" &&
+          remainingHours(ts.task) > EPS
+      );
+    if (blocked.length === 0 || theirs.length === 0) return undefined;
+    const endOf = (ts: TaskSchedule) => ends.get(ts.resource)!;
+    // As for the owners: work of theirs that the schedule shown cannot fit, although it plans the
+    // blocked work as going ahead, makes it too late already (the Gantt and the warnings say so).
+    const unfit = theirs.find((ts) => ts.unscheduled === "horizon");
+    if (unfit)
+      return { day: cal.previousWorkingDay(schedule.start - 1), ...endOf(unfit), tooLate: true };
+    /** The plan scheduled as if the blocked work could start only from `day`. */
+    const startingOn = (day: DayNumber, horizonDays?: number) =>
+      schedulePlan(plan, {
+        ...options,
+        horizonDays,
+        whatIf: blocked.map(({ task }) => {
+          const own = task.start ? parseDate(task.start) : undefined;
+          return { task, start: own !== undefined && own > day ? own : day };
+        }),
+      });
+    // Unblocked now: their work that finds no hours even then makes it too late.
+    const now = startingOn(schedule.start);
+    const lost = theirs.find((ts) => now.tasks.get(ts.task)?.unscheduled === "horizon");
+    if (lost)
+      return { day: cal.previousWorkingDay(schedule.start - 1), ...endOf(lost), tooLate: true };
+    // What fits then has to keep fitting. No start works from the day the first of them has no
+    // hours on; the first start after `latest` is the last one worth trying: when that works,
+    // `latest` stands.
+    const fits = theirs.filter((ts) => !now.tasks.get(ts.task)?.unscheduled);
+    if (fits.length === 0) return undefined;
+    let missed = fits[0];
+    // Their hours are over by then: the schedules need not go on any further.
+    let over = schedule.start;
+    for (const ts of fits) {
+      if (endOf(ts).from < endOf(missed).from) missed = ts;
+      over = Math.max(over, endOf(ts).from);
+    }
+    const afterLatest = latest === undefined ? undefined : indexOf(latest + 1);
+    if (afterLatest !== undefined && afterLatest <= 0) return undefined;
+    let lo = 0;
+    let hi = Math.min(indexOf(endOf(missed).from), (afterLatest ?? Infinity) + 1);
+    // The first guess, from their work that finishes last (unblocked now): later by as many
+    // working days as it waited for their other work, and they have free days left after it
+    // before their hours end; the least of those.
+    const lastOf = new Map<string, TaskSchedule>();
+    for (const ts of fits) {
+      const at = now.tasks.get(ts.task)!;
+      const known = lastOf.get(ts.resource);
+      if (!known || at.finish! > known.finish!) lastOf.set(ts.resource, at);
+    }
+    let room = Infinity;
+    for (const [resource, at] of lastOf) {
+      let days = Math.max(0, cal.workingDaysBetween(at.earliest ?? at.start!, at.start!));
+      const load = now.load.get(resource);
+      for (let d = at.finish! + 1; d < ends.get(resource)!.from && days < room; d++)
+        if (cal.capacity(resource, d) - (load?.get(d) ?? 0) > EPS) days++;
+      room = Math.min(room, days);
+    }
+    let begin = Infinity;
+    for (const ts of blocked) begin = Math.min(begin, now.tasks.get(ts.task)?.start ?? Infinity);
+    let k = (begin === Infinity ? 0 : Math.max(0, indexOf(begin))) + room;
+    for (let runs = 0; hi - lo > 1 && runs < SEARCH_RUNS; runs++) {
+      k = Math.min(Math.max(k, lo + 1), hi - 1);
+      const s = startingOn(dayAt(k), over - schedule.start);
+      const out = fits.find((ts) => s.tasks.get(ts.task)?.unscheduled);
+      if (out) {
+        hi = k;
+        missed = out;
+      } else lo = k;
+      k = runs > 0 ? (lo + hi) >> 1 : out ? k - 1 : k + 1;
+    }
+    if (lo === afterLatest) return undefined;
+    const start = dayAt(lo);
+    return { day: cal.previousWorkingDay(start - 1), start, ...endOf(missed), tooLate: false };
   };
 }
 

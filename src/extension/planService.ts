@@ -1,10 +1,12 @@
 // Owns the PlanIndex inside VS Code: finds the plan folder, keeps the index in sync with open
 // editors (including unsaved changes) and the file system, and applies writer edits as undoable
-// WorkspaceEdits.
+// WorkspaceEdits. It also keeps the line changes of open plan documents, to find items of earlier
+// parses again (lineIn, addedAfter).
 import * as vscode from "vscode";
 import { localToday } from "../core/dates";
 import { PlanIndex } from "../core/index";
-import { type ParsedFile } from "../core/model";
+import { EditLog, followLine, lineBefore } from "../core/lineHistory";
+import { type ParsedFile, type Task } from "../core/model";
 import { type Plan } from "../core/resolve";
 import { invertEdits } from "../core/text";
 import { type FileEdit } from "../core/writer";
@@ -21,6 +23,22 @@ export interface ApplyOptions {
   deleteFiles?: string[];
 }
 
+/** Where a parse of an open document comes from: its log, and the version it was last the text of. */
+interface Origin {
+  log: EditLog;
+  version: number;
+  /** When it was last the document's text, on the clock of the logs. */
+  time: number;
+}
+
+/** The service each plan comes from (see serviceOf). */
+const services = new WeakMap<Plan, PlanService>();
+
+/** The PlanService a plan comes from: it knows how the lines of its files moved since. */
+export function serviceOf(plan: Plan): PlanService | undefined {
+  return services.get(plan);
+}
+
 export class PlanService implements vscode.Disposable {
   readonly index = new PlanIndex();
   private _root: vscode.Uri | undefined;
@@ -35,12 +53,21 @@ export class PlanService implements vscode.Disposable {
   private todayOverride: string | undefined;
   private locating: Promise<void> | undefined;
   private relocateAgain = false;
+  /** The line changes of each open plan document; a document opened again starts a new log. */
+  private readonly logs = new WeakMap<vscode.TextDocument, EditLog>();
+  /** Where each parse of an open document comes from: the file and each of its items. */
+  private readonly origins = new WeakMap<ParsedFile | Task, Origin>();
+  /** When a parse of a file that is not open was read from disk, on the same clock. */
+  private readonly readAt = new WeakMap<ParsedFile, number>();
+  /** Orders the changes and parses of all documents (see EditLog). */
+  private clock = 0;
 
   constructor(readonly log: vscode.LogOutputChannel) {
     this.disposables.push(
       this.changeEmitter,
       this.rootEmitter,
       vscode.workspace.onDidChangeTextDocument((e) => {
+        this.logs.get(e.document)?.record(e.document.version, ++this.clock, e.contentChanges);
         if (e.contentChanges.length > 0) this.syncDocument(e.document);
       }),
       vscode.workspace.onDidOpenTextDocument((d) => this.syncDocument(d)),
@@ -58,7 +85,9 @@ export class PlanService implements vscode.Disposable {
   }
 
   get plan(): Plan {
-    return this.index.plan;
+    const plan = this.index.plan;
+    services.set(plan, this);
+    return plan;
   }
 
   /** Today as an ISO date. Tests can pin it with setToday(). */
@@ -148,6 +177,36 @@ export class PlanService implements vscode.Disposable {
     return rel === undefined ? undefined : this.index.get(rel);
   }
 
+  /**
+   * Where an item of an earlier parse of an open document is in a later parse of its file: its
+   * line followed through the changes since (see followLine), or null when its line was deleted or
+   * replaced. Undefined when that is not known: the file changed on disk while it was closed, the
+   * document was opened again, too many changes since, or a copy of its line went in next to it.
+   */
+  lineIn(file: ParsedFile, t: Task): number | null | undefined {
+    const then = this.origins.get(t);
+    const now = this.origins.get(file);
+    if (!then || !now || then.log !== now.log || then.version > now.version) return undefined;
+    const changes = now.log.changes(then.time, now.version);
+    return changes && followLine(t.line, t.title, changes);
+  }
+
+  /**
+   * Whether a line of a parse of an open document was added after an item (of that file or another)
+   * was parsed: then it may hold that item, moved there. Undefined when that is not known.
+   */
+  addedAfter(file: ParsedFile, line: number, t: Task): boolean | undefined {
+    const then = this.origins.get(t);
+    const now = this.origins.get(file);
+    if (then && !now) {
+      // Read from disk: when not read again since the item was parsed, the line was there before.
+      const read = this.readAt.get(file);
+      return read !== undefined && read < then.time ? false : undefined;
+    }
+    const changes = then && now?.log.changes(then.time, now.version);
+    return changes && lineBefore(line, changes) === undefined;
+  }
+
   isPlanDocument(document: vscode.TextDocument): boolean {
     const rel = this.relPath(document.uri);
     return rel !== undefined && PlanIndex.isPlanPath(rel);
@@ -233,7 +292,10 @@ export class PlanService implements vscode.Disposable {
       this.log.warn(`Could not create ${files.map((f) => f.path).join(", ")}`);
       return false;
     }
-    for (const f of files) this.index.update(f.path, f.text);
+    for (const f of files) {
+      this.index.update(f.path, f.text);
+      this.readFromDisk(f.path);
+    }
     this.fireNow();
     return true;
   }
@@ -266,6 +328,24 @@ export class PlanService implements vscode.Disposable {
     const rel = this.relPath(document.uri);
     if (rel === undefined || !PlanIndex.isPlanPath(rel)) return;
     if (this.index.update(rel, document.getText())) this.scheduleRefresh();
+    this.parsedFrom(rel, document);
+  }
+
+  /** Notes that the file's parse is the document's text now (see lineIn). */
+  private parsedFrom(rel: string, document: vscode.TextDocument): void {
+    const file = this.index.get(rel);
+    if (!file) return;
+    let log = this.logs.get(document);
+    if (!log) this.logs.set(document, (log = new EditLog(document.version, ++this.clock)));
+    const origin = this.origins.get(file);
+    if (origin?.log === log) {
+      // The parse was kept (the same text): it is the text of this version too.
+      origin.version = document.version;
+      origin.time = ++this.clock;
+      return;
+    }
+    const parsed: Origin = { log, version: document.version, time: ++this.clock };
+    for (const x of [file, ...file.items]) this.origins.set(x, parsed);
   }
 
   private async reloadFromDisk(uri: vscode.Uri): Promise<void> {
@@ -279,6 +359,7 @@ export class PlanService implements vscode.Disposable {
     try {
       const text = decode(await vscode.workspace.fs.readFile(uri));
       if (this.index.update(rel, text)) this.scheduleRefresh();
+      this.readFromDisk(rel);
     } catch {
       if (this.index.remove(rel)) this.scheduleRefresh();
     }
@@ -293,8 +374,16 @@ export class PlanService implements vscode.Disposable {
         const open = openDocument(uri);
         const text = open ? open.getText() : decode(await vscode.workspace.fs.readFile(uri));
         this.index.update(rel, text);
+        if (open) this.parsedFrom(rel, open);
+        else this.readFromDisk(rel);
       })
     );
+  }
+
+  /** Notes when a parse of a file that is not open was read (see addedAfter). */
+  private readFromDisk(rel: string): void {
+    const file = this.index.get(rel);
+    if (file && !this.readAt.has(file)) this.readAt.set(file, ++this.clock);
   }
 
   private async listMarkdown(dir: vscode.Uri, prefix: string): Promise<string[]> {

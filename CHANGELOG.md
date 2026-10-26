@@ -24,7 +24,10 @@ Safer editing, from the pilot users' feedback.
   change could garble that task's line. Gantt bars whose id another task has are not changed until
   each has its own id (an arrow out of one can still be removed). The timer follows its line while
   you edit; when the line is copied next to it, the hours go to the task by its id and title, and
-  when the copies cannot be told apart, nothing is logged and the message gives the hours.
+  when the copies cannot be told apart, nothing is logged and the message gives the hours. A task
+  form or a list row left open while you edit follows its task through the edits; when that task
+  was deleted meanwhile, it says so instead of changing a copy. Kanban cards of copies that share
+  an id act on their own task.
 - New warnings with quick fixes: lines that look like tasks but are not (`- []`, `-[ ]`,
   `- [ ]Title`, `[ ] Title`), dates outside the project (often a wrong year: the fix offers the
   year that fits), a fixed start after work started or after the milestone target, a due date after
@@ -94,9 +97,11 @@ Safer editing, from the pilot users' feedback.
   blocked before something moves ("2 tasks (24 h) wait for it · can stay blocked until
   2026-10-26"), or that they already delay the plan; on the dashboard, in the status report's risks
   and the AI summary. When the owner's hours end (`capacityFrom: … 0h`), the date leaves them the
-  time for the work and for their own tasks that wait for it: "(Alex has no working hours from
-  2026-10-19 on)", "must be unblocked now" or "already too late". An empty `@blocked` reads
-  as no reason given.
+  time for the work and for their own tasks that wait for it, and a colleague whose hours end the
+  time for their work that waits for it (worked out with the scheduler, so time off, workweeks and
+  other work count): "(Alex has no working hours from 2026-10-19 on)", "must be unblocked now" or
+  "already too late". Work that waits only through a done task no longer counts. An empty
+  `@blocked` reads as no reason given.
 - Late tasks say what holds them back, following the dependencies to the cause: "Held back by the
   fixed start 2027-10-19 of T461 (via M1)" or "… by Sam having other work first", in the warning,
   the Gantt tooltip and the hovers. A fixed start is named only when it really holds the task back,
@@ -125,6 +130,8 @@ Safer editing, from the pilot users' feedback.
   so does **Remove fixed start**; a drag that changes nothing says so, without one. When format on
   save (Prettier and the like) rewrites a plan file, the planner says so and offers to turn it off
   for Markdown or to add the plan folder to `.prettierignore` (an edit that can be undone).
+- A task due on a weekend or holiday and finished on the next working day is "1 working day late"
+  (it read "0"); milestone variances and the forecast against the project end count the same way.
 - Faster: the schedule of a 2,000-task plan takes about 7 ms (about 35 ms in 1.0.0), and
   explaining tasks that cannot be scheduled no longer costs most of a second per change when
   someone's hours end.

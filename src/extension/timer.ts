@@ -1,6 +1,7 @@
 // Time tracking: one running timer per workspace, shown in the status bar; stopping it adds the
 // rounded time to the task's @act. `Planner: Log time` adds hours manually.
 import * as vscode from "vscode";
+import { lineAfter } from "../core/lineHistory";
 import { type ParsedFile, type Task } from "../core/model";
 import { matchCheckbox } from "../core/parser/taskLine";
 import { taskKey } from "../core/scheduler";
@@ -41,6 +42,9 @@ export interface RunningTimer {
    */
   started?: StartedLine[];
 }
+
+// The timed line is followed as the plan service follows items of earlier parses (see follow).
+export { lineAfter };
 
 const STATE_KEY = "planner.timer";
 
@@ -274,31 +278,6 @@ export class TimerService implements vscode.Disposable {
     this.following.dispose();
     this.item.dispose();
   }
-}
-
-/**
- * Where a line is after a change of its document: moved by the lines added and removed above it,
- * or undefined when the change took its start (the line was deleted or replaced, or joined to the
- * line above). Typing at its start (indenting it) or within it keeps it.
- */
-export function lineAfter(
-  line: number,
-  changes: readonly vscode.TextDocumentContentChangeEvent[]
-): number | undefined {
-  let at = line;
-  // Each change applies to the text the ones before it left.
-  for (const { range, text } of changes) {
-    const { start, end } = range;
-    // After the start of the line: it stays.
-    if (start.line > at || (start.line === at && start.character > 0)) continue;
-    const moved = text.split("\n").length - 1 - (end.line - start.line);
-    // Up to its start: it moves, as long as it still starts a line afterwards.
-    const startsLine = start.line === at || text.endsWith("\n") || (!text && !start.character);
-    if (end.line < at || (end.line === at && end.character === 0 && startsLine)) at += moved;
-    // From its start: only an edit within the line keeps it.
-    else if (start.line !== at || end.line !== at || moved !== 0) return undefined;
-  }
-  return at;
 }
 
 /**

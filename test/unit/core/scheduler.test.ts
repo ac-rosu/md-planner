@@ -6,6 +6,7 @@ import { weekLoadAt } from "../../../src/core/load";
 import { scheduleDiagnostics } from "../../../src/core/scheduleDiagnostics";
 import { scheduleJsonText } from "../../../src/core/scheduleJson";
 import { schedulePlan, type ScheduleOptions } from "../../../src/core/scheduler";
+import { buildDashboardModel } from "../../../src/core/views/dashboard";
 import { FIXTURES, loadSample, md, planFrom, timeLimit, TODAY } from "../helpers";
 
 // Mon 2026-10-05 start; Wed 2026-10-14 is a holiday.
@@ -539,6 +540,62 @@ describe("critical path, slack and milestones", () => {
         "late-task",
         "Scheduled to finish 2026-10-06, after the M1 target 2026-10-05 (1 working day late).",
       ],
+    ]);
+  });
+
+  it("counts a finish after a deadline on a weekend or holiday as late by working days", () => {
+    // M1 and the project end on Saturday 10 October.
+    const weekend = (hours: number) =>
+      run(
+        [],
+        {},
+        {
+          "project.md": PROJECT + "end: 2026-10-10\n",
+          "milestones/M1.md": md(
+            "# M1",
+            "",
+            "id: M1",
+            "target: 2026-10-10",
+            "",
+            `- [ ] a @est:${hours}h @owner:ann ^T1`
+          ),
+        }
+      );
+    // Done on Monday 12: one working day late, not none.
+    const late = weekend(48);
+    expect(late.get("T1")).toMatchObject({
+      late: true,
+      slack: -1,
+      finish: parseDate("2026-10-12"),
+    });
+    expect(late.s.milestones.get("M1")).toMatchObject({ late: true, variance: 1 });
+    expect(buildDashboardModel(late.plan, late.s)).toMatchObject({
+      forecastFinish: "2026-10-12",
+      endVariance: 1,
+      milestones: [{ id: "M1", late: true, variance: 1 }],
+    });
+    expect(scheduleDiagnostics(late.plan, late.s).map((d) => d.message)).toEqual([
+      "Scheduled to finish 2026-10-12, after the M1 target 2026-10-10 (1 working day late).",
+    ]);
+    // Done on Friday 9, the last working day before: on time, not a day ahead.
+    const onTime = weekend(40);
+    expect(onTime.s.milestones.get("M1")).toMatchObject({ late: false, variance: 0 });
+    expect(buildDashboardModel(onTime.plan, onTime.s).endVariance).toBe(0);
+    // Due on the Wednesday holiday and done on Thursday 15: one working day late.
+    const holiday = run(["- [ ] a @est:64h @owner:ann @due:2026-10-14 ^T1"]);
+    expect(holiday.dates("T1")).toEqual(["2026-10-05", "2026-10-15"]);
+    expect(scheduleDiagnostics(holiday.plan, holiday.s).map((d) => d.message)).toEqual([
+      "Scheduled to finish 2026-10-15, after @due 2026-10-14 (1 working day late).",
+    ]);
+    // Due on Friday 9 and done on Saturday 10, an extra working day: the finish day counts.
+    const extra = run(
+      ["- [ ] a @est:48h @owner:ann @due:2026-10-09 ^T1"],
+      {},
+      { "team.md": md("# Team", "", "## Ann", "", "capacity: 40h/week", "workday: 2026-10-10") }
+    );
+    expect(extra.dates("T1")).toEqual(["2026-10-05", "2026-10-10"]);
+    expect(scheduleDiagnostics(extra.plan, extra.s).map((d) => d.message)).toEqual([
+      "Scheduled to finish 2026-10-10, after @due 2026-10-09 (1 working day late).",
     ]);
   });
 

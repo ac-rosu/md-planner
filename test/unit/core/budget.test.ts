@@ -12,7 +12,8 @@ import { schedulePlan } from "../../../src/core/scheduler";
 import { burnUpGeometry } from "../../../src/core/views/charts";
 import { budgetBar, buildDashboardModel } from "../../../src/core/views/dashboard";
 import { validatePlan } from "../../../src/core/validate";
-import { loadSample, md, planFrom, TODAY } from "../helpers";
+import { LARGE_PLAN_TODAY, largePlanFiles } from "../../fixtures/largePlan";
+import { loadSample, md, planFrom, timeLimit, TODAY } from "../helpers";
 
 const project = (...props: string[]) =>
   md("# P", "", "start: 2026-10-05", "hoursPerDay: 8", ...props);
@@ -406,8 +407,8 @@ describe("blocked tasks", () => {
     expect(describeBlockedImpact(side)).toMatch(/^can stay blocked until 2026-10-2\d$/);
   });
 
-  /** The blocked tasks of M1 (target Fri 30 Oct) as on `today`; Alex works until Fri 16 Oct. */
-  const impact = (today: string, ...tasks: string[]) => {
+  /** The same as `impact`, with more people in team.md (`people`: their lines). */
+  const impactWith = (people: string[], today: string, ...tasks: string[]) => {
     const p = planFrom({
       "project.md": project(),
       "team.md": md(
@@ -420,7 +421,8 @@ describe("blocked tasks", () => {
         "",
         "## Sam",
         "",
-        "capacity: 40h/week"
+        "capacity: 40h/week",
+        ...people
       ),
       "milestones/M1.md": md("# M1", "", "id: M1", "target: 2026-10-30", "", ...tasks),
     });
@@ -430,6 +432,8 @@ describe("blocked tasks", () => {
       unscheduled: s.tasks.get(b.task)?.unscheduled,
     }));
   };
+  /** The blocked tasks of M1 (target Fri 30 Oct) as on `today`; Alex works until Fri 16 Oct. */
+  const impact = (today: string, ...tasks: string[]) => impactWith([], today, ...tasks);
 
   it("have to leave their owner time to do the work before the owner's hours end", () => {
     const tasks = [
@@ -562,6 +566,179 @@ describe("blocked tasks", () => {
     expect(describeBlockedImpact(b)).toBe(
       "can stay blocked until 2026-10-12 (Alex has no working hours from 2026-10-19 on)"
     );
+  });
+
+  const PRIYA = ["", "## Priya", "", "capacity: 40h/week"];
+  const KEYS = "- [!] Keys @est:16h @owner:sam @blocked:keys ^T1";
+
+  it("leave a colleague whose hours end the time for their work that waits for them", () => {
+    const [b] = impact("2026-10-05", KEYS, "- [ ] Install @est:16h @owner:alex @dep:T1 ^T2");
+    // Install takes Alex's last two days, Thu 15 and Fri 16, so Sam has to start Keys on Tue 13.
+    expect(b).toMatchObject({
+      until: "2026-10-12",
+      late: false,
+      critical: true,
+      ownerHoursEnd: { name: "Alex", from: "2026-10-19", tooLate: false },
+    });
+    expect(describeBlockedImpact(b)).toBe(
+      "1 task (16 h) waits for it · can stay blocked until 2026-10-12 (Alex has no working hours from 2026-10-19 on)"
+    );
+    // Priya's Prep in between takes a day more.
+    const [prep] = impactWith(
+      PRIYA,
+      "2026-10-05",
+      KEYS,
+      "- [ ] Prep @est:8h @owner:priya @dep:T1 ^T2",
+      "- [ ] Install @est:16h @owner:alex @dep:T2 ^T3"
+    );
+    expect(prep.until).toBe("2026-10-09");
+    // Alex's Workshop is fixed on Thu 15 and Fri 16, so Install has to be done by Wed 14.
+    const [workshop] = impact(
+      "2026-10-05",
+      KEYS,
+      "- [ ] Install @est:16h @owner:alex @dep:T1 ^T2",
+      "- [ ] Workshop @est:16h @owner:alex @start:2026-10-15 ^T3"
+    );
+    expect(workshop.until).toBe("2026-10-08");
+    // All the subtasks of a blocked parent wait: Install needs both of Sam's parts done.
+    const [parent] = impact(
+      "2026-10-05",
+      "- [!] Integration @owner:sam @blocked:keys ^T1",
+      "  - [ ] Part A @est:8h ^T2",
+      "  - [ ] Part B @est:8h ^T3",
+      "- [ ] Install @est:16h @owner:alex @dep:T1 ^T4"
+    );
+    expect(parent.until).toBe("2026-10-12");
+  });
+
+  it("are too late when the schedule shown cannot fit a colleague's work that waits", () => {
+    // Sam's Big goes first (high priority), so Keys runs on 13-14 Oct even if it is unblocked now,
+    // and Alex's Install finds only 16 of its 24 hours before Alex's hours end.
+    const [keys] = impact(
+      "2026-10-05",
+      "- [ ] Big @est:48h @owner:sam @prio:high ^T9",
+      "- [!] Keys @est:16h @owner:sam @blocked:keys ^T1",
+      "- [ ] Install @est:24h @owner:alex @dep:T1 ^T2"
+    );
+    expect(describeBlockedImpact(keys)).toBe(
+      "1 task (24 h) waits for it · already too late: Alex has no working hours from 2026-10-19 on"
+    );
+  });
+
+  it("are too late when a colleague's work that waits for them no longer fits", () => {
+    const install = (today: string) =>
+      impact(today, KEYS, "- [ ] Install @est:24h @owner:alex @dep:T1 ^T2")[0];
+    // On Mon 12, Keys and Install's 24 h still fit before Alex's hours end, if Keys goes ahead now.
+    expect(describeBlockedImpact(install("2026-10-12"))).toBe(
+      "1 task (24 h) waits for it · must be unblocked now: Alex has no working hours from 2026-10-19 on"
+    );
+    // On Wed 14 they no longer fit: the schedule leaves Install out.
+    const late = install("2026-10-14");
+    expect(late).toMatchObject({ late: true, ownerHoursEnd: { name: "Alex", tooLate: true } });
+    expect(describeBlockedImpact(late)).toBe(
+      "1 task (24 h) waits for it · already too late: Alex has no working hours from 2026-10-19 on"
+    );
+  });
+
+  it("leave a colleague's time off and workweek out of the time for their work", () => {
+    const jordan = (line: string) => [
+      "",
+      "## Jordan",
+      "",
+      "capacity: 40h/week",
+      line,
+      "capacityFrom: 2026-10-19 0h/week",
+    ];
+    // Jordan is away from Mon 12 on: their last working day is Fri 9.
+    const away = jordan("off: 2026-10-12..2026-10-16");
+    const install = (hours: number, keys = KEYS) =>
+      impactWith(
+        away,
+        "2026-10-05",
+        keys,
+        `- [ ] Install @est:${hours}h @owner:jordan @dep:T1 ^T2`
+      );
+    expect(install(16)[0]).toMatchObject({ until: "2026-10-05", late: false });
+    expect(describeBlockedImpact(install(24)[0])).toBe(
+      "1 task (24 h) waits for it · must be unblocked now: Jordan has no working hours from 2026-10-19 on"
+    );
+    // Keys cannot start before Wed 7: Install no longer fits.
+    expect(
+      describeBlockedImpact(
+        install(16, "- [!] Keys @est:16h @owner:sam @start:2026-10-07 @blocked:keys ^T1")[0]
+      )
+    ).toBe(
+      "1 task (16 h) waits for it · already too late: Jordan has no working hours from 2026-10-19 on"
+    );
+    // Jordan works 10 h a day from Monday to Thursday: Install takes Wed 14 and Thu 15.
+    const [short] = impactWith(
+      jordan("workweek: mon-thu"),
+      "2026-10-05",
+      KEYS,
+      "- [ ] Install @est:16h @owner:jordan @dep:T1 ^T2"
+    );
+    expect(short.until).toBe("2026-10-09");
+  });
+
+  it("count only open work that still waits for them and needs hours", () => {
+    // Install is done already, so Test does not wait for Keys; Sign-off needs no hours.
+    const [colleague] = impact(
+      "2026-10-05",
+      KEYS,
+      "- [x] Install @est:16h @owner:sam @dep:T1 @done:2026-10-02 ^T2",
+      "- [ ] Test @est:72h @owner:alex @dep:T2 ^T3",
+      "- [ ] Sign-off @owner:alex @dep:T1 ^T4"
+    );
+    expect(colleague.waiting.map((t) => t.id)).toEqual(["T4"]);
+    expect(colleague.ownerHoursEnd).toBeUndefined();
+    // Alex's Test can go first, before their own blocked Keys: that leaves Thu 15 and Fri 16.
+    const [owner] = impact(
+      "2026-10-05",
+      "- [!] Keys @est:16h @owner:alex @blocked:keys ^T1",
+      "- [x] Install @est:16h @owner:sam @dep:T1 @done:2026-10-02 ^T2",
+      "- [ ] Test @est:40h @owner:alex @dep:T2 ^T3"
+    );
+    expect(owner).toMatchObject({ waiting: [], until: "2026-10-14" });
+  });
+
+  it("are worked out quickly on a 2,000-task plan when hours end", () => {
+    // Jordan's hours end in January: their work behind the blocked tasks no longer fits. Alex's
+    // end in March, and Alex's Install waits for Sam's blocked Keys: that takes a search.
+    const files = largePlanFiles({ people: ["priya", "jordan", "maria"] });
+    files["team.md"] = md(
+      files["team.md"].replace("id: jordan\n", "id: jordan\ncapacityFrom: 2027-01-04 0h/week\n"),
+      "## Alex",
+      "",
+      "capacity: 40h/week",
+      "capacityFrom: 2027-03-01 0h/week",
+      "",
+      "## Sam",
+      "",
+      "capacity: 40h/week"
+    );
+    files["milestones/X1.md"] = md(
+      "# X1",
+      "",
+      "id: X1",
+      "",
+      "- [!] Keys @est:16h @owner:sam @blocked:keys ^X1",
+      "- [ ] Install @est:16h @owner:alex @dep:X1 ^X2"
+    );
+    const plan = planFrom(files);
+    let impacts: ReturnType<typeof blockedImpact> = [];
+    let time = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const schedule = schedulePlan(plan, { today: LARGE_PLAN_TODAY });
+      const t0 = performance.now();
+      impacts = blockedImpact(plan, schedule);
+      time = Math.min(time, performance.now() - t0);
+    }
+    expect(impacts.find((b) => b.task.id === "X1")).toMatchObject({
+      until: "2027-02-22",
+      ownerHoursEnd: { name: "Alex", tooLate: false },
+    });
+    expect(impacts.filter((b) => b.ownerHoursEnd?.name === "Jordan").length).toBeGreaterThan(0);
+    expect(time).toBeLessThan(timeLimit(150));
   });
 
   it("are delaying the plan when they have no slack left", () => {

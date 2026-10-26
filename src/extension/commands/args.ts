@@ -1,9 +1,15 @@
 // Resolves command arguments (tree nodes, ids, {file, line} or the editor cursor) to plan items.
 import * as vscode from "vscode";
-import { type Task } from "../../core/model";
+import { type ParsedFile, type Task } from "../../core/model";
 import { type Plan } from "../../core/resolve";
 import { findTaskByKey } from "../../core/scheduler";
-import { type PlanService } from "../planService";
+import { type PlanService, serviceOf } from "../planService";
+
+/** How the lines of plan files moved since items were parsed (PlanService.lineIn, addedAfter). */
+export interface LineHistory {
+  lineIn(file: ParsedFile, t: Task): number | null | undefined;
+  addedAfter(file: ParsedFile, line: number, t: Task): boolean | undefined;
+}
 
 export type TaskArg =
   | string
@@ -67,13 +73,19 @@ export function findById(plan: Plan, id: string): Task | undefined {
 
 /**
  * currentTask, or, for an item that moved to another file (its file has no item with its kind and
- * title any more), the item with its id when no other item has that id.
+ * title any more), the item with its id when no other item has that id, and it is not known to
+ * have been there before the item was parsed (the original of a deleted copy is another item).
  */
 export function currentOrMovedTask(plan: Plan, t: Task): Task | undefined {
-  const found = currentTask(plan, t);
+  const history = serviceOf(plan);
+  const found = currentTask(plan, t, history);
   if (found || !t.id) return found;
   const stayed = plan.file(t.file)?.items.some((x) => x.kind === t.kind && x.title === t.title);
-  return stayed ? undefined : onlyWithId(plan, t.id);
+  const moved = stayed ? undefined : onlyWithId(plan, t.id);
+  const file = moved && plan.file(moved.file);
+  if (!moved || !file) return undefined;
+  // Only a line known to be added since: otherwise it is another item with that id.
+  return history?.addedAfter(file, moved.line, t) === true ? moved : undefined;
 }
 
 function onlyWithId(plan: Plan, id: string): Task | undefined {
@@ -87,17 +99,26 @@ export function findAt(plan: Plan, file: string, line: number): Task | undefined
 
 /**
  * An item found earlier (before a question or a form, or by a tree node) as it is in the plan now,
- * which may have been parsed again since: the only item in its file that is still the same item
- * (kind, id and title). Lines may have moved since, so copies of it (a duplicated line keeps its id)
- * cannot be told apart, not even by its line. A save since may have given it an id: every item
- * without one gets one, and so does a copied line whose title differs from every other item with
- * its id (renumberCopiedIds). Then it is the item on its line with its kind and title, when no
- * other item in its file has them. Never just the first item with its id, as a copied line keeps
- * the id. Undefined when it is gone or cannot be told apart.
+ * which may have been parsed again since. Where the history knows how the lines of its file moved
+ * since (an open document), it is the item it followed there (see followed). Else: the only item
+ * in its file that is still the same item (kind, id and title). Lines may have moved since, so
+ * copies of it (a duplicated line keeps its id) cannot be told apart, not even by its line. A save
+ * since may have given it an id: every item without one gets one, and so does a copied line whose
+ * title differs from every other item with its id (renumberCopiedIds). Then it is the item on its
+ * line with its kind and title, when no other item in its file has them. Never just the first item
+ * with its id, as a copied line keeps the id. Undefined when it is gone or cannot be told apart.
  */
-export function currentTask(plan: Plan, t: Task): Task | undefined {
-  const items = plan.file(t.file)?.items ?? [];
+export function currentTask(
+  plan: Plan,
+  t: Task,
+  history: LineHistory | undefined
+): Task | undefined {
+  const file = plan.file(t.file);
+  if (!file) return undefined;
+  const items = file.items;
   if (items.includes(t)) return t;
+  const line = history?.lineIn(file, t);
+  if (history && line !== undefined) return followed(history, file, t, line);
   const like = (x: Task) => x.kind === t.kind && x.title === t.title;
   const same = (x: Task) => like(x) && x.id === t.id;
   const matches = items.filter(same);
@@ -120,9 +141,39 @@ function renumbered(plan: Plan, t: Task): boolean {
   return others.length > 0 && others.every((x) => x.title !== t.title);
 }
 
+/**
+ * The item `t` became, followed to `line` in its file (null: its line was deleted or replaced).
+ * The item on that line, when it has its kind and its title, or its id: edits within the line may
+ * rename it, and saving gives an id (a new one to a renamed copy). A line rewritten into another
+ * item has neither. Without its line it was deleted or moved (cut and pasted, moved up or down):
+ * the only item with its kind and title on a line added since. Not an item that was there before:
+ * a copy with its id and title is another item.
+ */
+function followed(
+  history: LineHistory,
+  file: ParsedFile,
+  t: Task,
+  line: number | null
+): Task | undefined {
+  if (line !== null) {
+    const at = file.items.find((x) => x.line === line);
+    const same = at?.kind === t.kind && (at.title === t.title || (!!t.id && at.id === t.id));
+    return same ? at : undefined;
+  }
+  // Moved: a cut and pasted line keeps its id.
+  const moved = file.items.filter(
+    (x) =>
+      x.kind === t.kind &&
+      x.title === t.title &&
+      (!t.id || x.id === t.id) &&
+      history.addedAfter(file, x.line, t)
+  );
+  return moved.length === 1 ? moved[0] : undefined;
+}
+
 /** currentTask() after an await, with a message when the item changed in the meantime. */
 export function findAgain(plan: Plan, t: Task): Task | undefined {
-  const now = currentTask(plan, t);
+  const now = currentTask(plan, t, serviceOf(plan));
   if (!now)
     void vscode.window.showWarningMessage(
       `Planner: ${t.id ?? t.title} changed in the meantime; try again.`

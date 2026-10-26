@@ -1,11 +1,14 @@
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { schedulePlan } from "../../../src/core/scheduler";
+import { type Plan } from "../../../src/core/resolve";
+import { findTaskByKey, schedulePlan } from "../../../src/core/scheduler";
 import {
   buildKanbanModel,
+  kanbanCardKey,
   priorityForDrop,
   type KanbanOptions,
 } from "../../../src/core/views/kanban";
-import { loadSample, TODAY } from "../helpers";
+import { loadSample, read, SAMPLE_PLAN, task, TODAY } from "../helpers";
 
 const plan = loadSample().plan;
 const schedule = schedulePlan(plan, { today: TODAY });
@@ -17,6 +20,24 @@ const base: KanbanOptions = {
 };
 const keys = (m: ReturnType<typeof buildKanbanModel>, status: string, lane = 0) =>
   (m.lanes[lane].cards[status as "todo"] ?? []).map((c) => c.key);
+const cardsOf = (m: ReturnType<typeof buildKanbanModel>) =>
+  m.lanes.flatMap((l) => Object.values(l.cards).flatMap((c) => c ?? []));
+
+/** The sample with lines pasted at the end of a file, or in front of the text `above`. */
+function pasted(rel: string, text: string, above?: string): Plan {
+  const index = loadSample();
+  const original = read(join(SAMPLE_PLAN, rel));
+  index.update(rel, above ? original.replace(above, `${text}\n${above}`) : `${original}${text}\n`);
+  return index.plan;
+}
+
+/** Every card names its own task: its key finds the task the card shows, a different one each. */
+function expectOwnTasks(plan: Plan, m: ReturnType<typeof buildKanbanModel>): void {
+  const cards = cardsOf(m);
+  const found = cards.map((c) => findTaskByKey(plan, c.key)!);
+  expect(found.map((t) => [t.id, t.title])).toEqual(cards.map((c) => [c.id, c.title]));
+  expect(new Set(found).size).toBe(cards.length);
+}
 
 describe("kanban model", () => {
   it("has a column per status, cancelled hidden unless asked", () => {
@@ -115,6 +136,51 @@ describe("kanban model", () => {
       swimlane: "severity",
     });
     expect(lanes.lanes.map((l) => l.key)).toEqual(["A", "B", "C"]);
+  });
+
+  it("keys the cards of tasks that share an id by their lines", () => {
+    // A copied line given another title keeps the id until the file is saved.
+    const M2 = "milestones/M2-backend.md";
+    const copied = pasted(
+      M2,
+      "- [ ] Shared API client @est:1d @owner:sam #backend ^T121",
+      "- [ ] Notifications"
+    );
+    const schedule = schedulePlan(copied, { today: TODAY });
+    const m = buildKanbanModel(copied, schedule, base);
+    const card = (title: string) => cardsOf(m).find((c) => c.title === title)!;
+    expect(card("Shared API library (auth, validation, logging)")).toMatchObject({
+      key: `${M2}#14`,
+      id: "T121",
+    });
+    expect(card("Shared API client")).toMatchObject({ key: `${M2}#15`, id: "T121" });
+    expect(card("Notifications and e-mail service").key).toBe("T122");
+    expectOwnTasks(copied, m);
+    expectOwnTasks(copied, buildKanbanModel(copied, schedule, { ...base, cardMode: "leaves" }));
+    // The key of a task's card, for the board to focus it.
+    const copy = copied.file(M2)!.items.find((t) => t.title === "Shared API client")!;
+    expect(kanbanCardKey(copied, copy)).toBe(`${M2}#15`);
+    expect(kanbanCardKey(copied, task(copied, "T122"))).toBe("T122");
+  });
+
+  it("keys punch cards that share an id by their lines, also with a task", () => {
+    const copied = pasted(
+      "punchlist.md",
+      "- [ ] Cart total is not updated @sev:A @owner:sam ^P002\n- [ ] Payment form text @sev:B ^T106"
+    );
+    const schedule = schedulePlan(copied, { today: TODAY });
+    const punch = buildKanbanModel(copied, schedule, { ...base, board: "punch" });
+    expect(keys(punch, "todo")).toEqual([
+      "punchlist.md#11",
+      "P007",
+      "punchlist.md#12",
+      "punchlist.md#7",
+    ]);
+    expectOwnTasks(copied, punch);
+    // The punch item has the id of the task T106, so the task's card is keyed by its line too.
+    const tasks = buildKanbanModel(copied, schedule, base);
+    expect(keys(tasks, "blocked")).toEqual(["milestones/M2-backend.md#26"]);
+    expectOwnTasks(copied, tasks);
   });
 
   it("derives the priority of a card from its drop position", () => {

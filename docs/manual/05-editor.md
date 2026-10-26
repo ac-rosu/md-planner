@@ -267,7 +267,10 @@ default). A task line you copied with its id and gave another title gets a new i
 so dependencies keep pointing at the original. Copied with its subtasks, they get new ids too, and
 dependencies among the copied lines follow them. A copy that kept its id is still a task of its
 own: status changes, the task form and the other commands change the line under the cursor, not
-the first task with that id. With VS Code's delayed auto-save, ids are added only if
+the first task with that id. A task form or a list row that stays open while you edit follows its
+task through your edits (lines added above it, the task moved, an id given on save). When its line
+was deleted or rewritten into another task, the command says the task changed in the meantime
+instead of changing a copy. With VS Code's delayed auto-save, ids are added only if
 `planner.autoAssignIdsOnAutoSave` is on, so they do not appear while you are still typing.
 **Planner: Assign IDs** adds missing ids to the active file (or to all plan files when no plan file
 is active).

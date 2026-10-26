@@ -99,7 +99,9 @@ wait for it are reported too, naming it, so you know which task to give to someo
 ## Analysis
 
 - **Milestone forecast** = the latest finish of its tasks. The milestone is **late** when the
-  forecast is after its `target`; the variance is counted in working days.
+  forecast is after its `target`; the variance is counted in working days after the target, up to and
+  including the forecast: due on a Saturday and finished on Monday is 1 day late; finished on the
+  Friday before, on target.
 - **Slack** is how many working days a task can slip before it delays the latest milestone target
   (or its own deadline). It comes from a backward pass over the scheduled durations (CPM).
 - **Critical path**: the tasks with the least slack. The longest chain is highlighted even when

@@ -18,6 +18,32 @@ describe("calendar", () => {
     expect(cal.workingDaysBetween(d("2026-12-21")!, d("2026-12-28")!)).toBe(4);
   });
 
+  it("counts the working days a finish is after a deadline, the finish day included", () => {
+    const late = (deadline: string, finish: string) =>
+      cal.workingDaysLate(d(deadline)!, d(finish)!);
+    expect(late("2026-10-17", "2026-10-19")).toBe(1); // due on Saturday, done on Monday
+    expect(late("2026-10-18", "2026-10-20")).toBe(2); // due on Sunday, done on Tuesday
+    expect(late("2026-12-25", "2026-12-28")).toBe(1); // due on a holiday
+    expect(late("2026-10-16", "2026-10-17")).toBe(1); // done on Saturday, an extra working day
+    expect(late("2026-10-16", "2026-10-16")).toBe(0);
+    // Earlier: minus the working days left after the finish, up to and including the deadline.
+    expect(late("2026-10-17", "2026-10-16")).toBe(0); // due on Saturday, done on Friday: on time
+    expect(late("2026-10-19", "2026-10-16")).toBe(-1);
+    expect(late("2026-10-19", "2026-10-17")).toBe(-1); // done on the Saturday before
+    expect(late("2026-12-25", "2026-12-23")).toBe(-1); // due on a holiday, done two days before
+    // With a deadline on a working day the numbers are the working days in [deadline, finish), as
+    // they were; earlier finishes on a working day too.
+    const from = d("2026-12-01")!;
+    for (let deadline = from; deadline < from + 60; deadline++) {
+      if (!cal.isWorkingDay(deadline)) continue;
+      for (let finish = deadline - 20; finish <= deadline + 20; finish++)
+        if (finish >= deadline || cal.isWorkingDay(finish))
+          expect(cal.workingDaysLate(deadline, finish)).toBe(
+            cal.workingDaysBetween(deadline, finish)
+          );
+    }
+  });
+
   it("spreads weekly capacity over the person's working days", () => {
     expect(cal.capacity("alex", d("2026-10-14")!)).toBeCloseTo(32 / 5);
     expect(cal.capacity("sam", d("2026-10-14")!)).toBe(8);

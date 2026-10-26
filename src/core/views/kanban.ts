@@ -34,6 +34,7 @@ export const COLUMN_TITLE: Record<Status, string> = {
 };
 
 export interface KanbanCard {
+  /** What the board passes back to act on the card (kanbanCardKey). */
   key: string;
   id?: string;
   title: string;
@@ -102,6 +103,26 @@ export interface KanbanModel {
 
 const SEV_RANK: Record<string, number> = { A: 0, B: 1, C: 2 };
 
+/**
+ * The key of a task's card, which the board passes back to act on it (findTaskByKey): its id, or
+ * its `file#line` key when another item has the id too. A copied line keeps its id until the file
+ * is saved, and the id names the first task that has it.
+ */
+export function kanbanCardKey(plan: Plan, t: Task): string {
+  return cardKeys(plan)(t);
+}
+
+function cardKeys(plan: Plan): (t: Task) => string {
+  const seen = new Set<string>();
+  const shared = new Set<string>();
+  for (const t of [...plan.tasks, ...plan.punch, ...plan.inbox]) {
+    if (t.id === undefined) continue;
+    if (seen.has(t.id)) shared.add(t.id);
+    else seen.add(t.id);
+  }
+  return (t) => (t.id !== undefined && shared.has(t.id) ? `${t.file}#${t.line + 1}` : taskKey(t));
+}
+
 export function buildKanbanModel(
   plan: Plan,
   schedule: Schedule | undefined,
@@ -125,6 +146,7 @@ export function buildKanbanModel(
     );
     return hours > 0.05 ? Math.round(hours * 10) / 10 : undefined;
   };
+  const keyOf = cardKeys(plan);
 
   const card = (t: Task): KanbanCard => {
     const owner = ownerOf(t);
@@ -153,7 +175,7 @@ export function buildKanbanModel(
           leavesOf(t).some((l) => schedule?.tasks.get(l)?.late)));
     const kids = t.children.filter((c) => c.status !== "cancelled");
     return {
-      key: taskKey(t),
+      key: keyOf(t),
       id: t.id,
       title: t.title || "(untitled)",
       status: t.status,
@@ -212,6 +234,7 @@ export function buildKanbanModel(
 
   let total = 0;
   let hidden = 0;
+  const taskOf = new Map<KanbanCard, Task>();
   for (const t of items) {
     if (!columnsShown.includes(t.status)) continue;
     total++;
@@ -222,17 +245,16 @@ export function buildKanbanModel(
     const lane = laneOf(t);
     let l = lanes.get(lane.key);
     if (!l) lanes.set(lane.key, (l = { key: lane.key, title: lane.title, cards: {} }));
-    (l.cards[t.status] ??= []).push(card(t));
+    const c = card(t);
+    taskOf.set(c, t);
+    (l.cards[t.status] ??= []).push(c);
   }
-  const sortCards = (a: KanbanCard, b: KanbanCard, ta: Task, tb: Task) =>
+  const sortCards = (a: KanbanCard, b: KanbanCard) =>
     (options.board === "punch" ? (SEV_RANK[a.sev ?? ""] ?? 3) - (SEV_RANK[b.sev ?? ""] ?? 3) : 0) ||
     PRIORITY_RANK[a.prio] - PRIORITY_RANK[b.prio] ||
-    ta.order - tb.order;
-  const byKey = new Map(items.map((t) => [taskKey(t), t]));
+    taskOf.get(a)!.order - taskOf.get(b)!.order;
   for (const l of lanes.values()) {
-    for (const s of Object.keys(l.cards) as Status[]) {
-      l.cards[s]!.sort((a, b) => sortCards(a, b, byKey.get(a.key)!, byKey.get(b.key)!));
-    }
+    for (const s of Object.keys(l.cards) as Status[]) l.cards[s]!.sort(sortCards);
   }
   const laneList = [...lanes.values()].filter(
     (l) => options.swimlane === "none" || Object.values(l.cards).some((c) => c && c.length > 0)

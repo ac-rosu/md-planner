@@ -758,4 +758,22 @@ describe("people whose workload makes tasks late", () => {
       "Sam has 88h of open work, but only about 64h fit before Sam's working hours end on 2026-10-26 (40h a week), planned until 2026-10-21 (1 more task cannot be scheduled yet). This task finishes after the deadline because Sam has other work first: T2 (1 working day late). Give some of this work to someone else, or move the deadlines."
     );
   });
+
+  it("counts a task due on a Saturday and done on Monday as one working day late", () => {
+    const p = plan(
+      md(
+        "# M1",
+        "",
+        "- [ ] Big job @est:3d @owner:sam @prio:high ^T1",
+        "- [ ] Small fix @est:1d @owner:sam @due:2026-10-17 ^T2"
+      )
+    );
+    const s = schedulePlan(p, { today: "2026-10-14" });
+    expect(scheduleDiagnostics(p, s).find((i) => i.code === "late-task")?.message).toBe(
+      "Scheduled to finish 2026-10-19, after @due 2026-10-17 (1 working day late). Held back by Sam having other work first."
+    );
+    expect(workloadDiagnostics(p, s)[0]?.message).toBe(
+      "Sam has 32h of open work, about 1 week at 40h a week, planned until 2026-10-19. This task finishes after the deadline because Sam has other work first: T2 (1 working day late). Give some of this work to someone else, or move the deadlines."
+    );
+  });
 });
