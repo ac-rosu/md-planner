@@ -3,7 +3,7 @@
 AI commands are off until you pick a provider (`planner.ai.provider`):
 
 - `vscode-lm`: a language model installed in VS Code (for example GitHub Copilot)
-- `anthropic`: the Claude API, with the key kept in VS Code's secret storage
+- `anthropic`: the Claude API, with the key kept in VS Code's encrypted storage
 - `none`: hides every AI command
 
 Break down a task, estimate, calibrate estimates against your actuals, suggest owners, turn notes

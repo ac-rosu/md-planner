@@ -67,7 +67,7 @@ depends: M1
   - [ ] Order events schema @est:6h ^T104
         Notes indented under a task are its description.
 - [ ] Payment provider integration @est:2d @owner:sam @start:2026-11-10 @prio:high @eq:checkout/payment ^T105
-- [!] Payment form @est:6h @owner:priya @blocked:"waiting for the payment provider API keys" ^T106
+- [!] Payment form @est:6h @owner:priya @blocked:"waiting for the payment provider contract" ^T106
 - [ ] Checkout flow (cart, pay, confirm) @est:1w @owner:alex @dep:T102,T105+1d ^T107
 ```
 
@@ -170,7 +170,7 @@ branding), PDF (via Edge or Chrome), Excel, MS Project XML (MSPDI), CSV and test
 ### AI (optional)
 
 With `planner.ai.provider` set to `vscode-lm` (a VS Code language model, such as GitHub Copilot)
-or `anthropic` (the Claude API, key in VS Code's secret storage), the **Planner AI** commands can
+or `anthropic` (the Claude API, key in VS Code's encrypted storage), the **Planner AI** commands can
 break a task down, estimate, calibrate estimates against your actuals, suggest owners, turn notes
 into tasks, draft a status summary and review the schedule. Every change is shown as a **diff with
 Accept / Reject**; nothing is written before you accept, and the AI never computes dates. Terms in
@@ -219,7 +219,7 @@ The most used ones:
 ## Privacy and security
 
 The extension makes no network calls except to the AI provider you choose, and only when you run
-an AI command. The Claude API key is stored in VS Code's secret storage. Webviews run with a
+an AI command. The Claude API key is kept in VS Code's encrypted storage. Webviews run with a
 strict content security policy and never touch files; all edits go through VS Code.
 
 ## Performance and accessibility
@@ -240,7 +240,7 @@ or run
 code --install-extension acro.md-planner
 ```
 
-To install a downloaded `.vsix` file instead: **Extensions → … → Install from VSIX…**.
+To install from a `.vsix` file instead (for example one built with `npm run package`): **Extensions → … → Install from VSIX…**.
 
 Requires VS Code 1.95 or later. PDF export needs Microsoft Edge or Google Chrome.
 

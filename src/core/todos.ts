@@ -1,10 +1,10 @@
-// TODO/FIXME/HACK comments in source code, and the edits that promote one to a plan task.
+// TODO/FIXME comments in source code, and the edits that promote one to a plan task.
 import { type ParsedFile } from "./model";
 import { type Plan } from "./resolve";
 import { range, type TextEdit } from "./text";
 import { type InsertLocation, insertTasks, nextId } from "./writer";
 
-export const DEFAULT_TODO_KEYWORDS = ["TODO", "FIXME", "HACK"];
+export const DEFAULT_TODO_KEYWORDS = ["TODO", "FIXME"];
 export const DEFAULT_TODO_INCLUDE =
   "**/*.{ts,tsx,js,jsx,mjs,cjs,vue,svelte,py,java,kt,cs,go,rs,rb,php,swift,c,h,cpp,hpp,sql,sh,md,scl,st}";
 export const DEFAULT_TODO_EXCLUDE =
@@ -26,7 +26,7 @@ export interface TodoItem {
 const TRAILERS = /\s*(\*\/|-->|\*\)|#>|"""|''')\s*$/;
 
 /**
- * Finds `TODO`, `FIXME`, `HACK` (or other keywords) followed by `:`, `(…)` or whitespace and some
+ * Finds `TODO`, `FIXME` (or other keywords) followed by `:`, `(…)` or whitespace and some
  * text. The keyword must be a whole word in upper case.
  */
 export function scanTodos(text: string, keywords: string[] = DEFAULT_TODO_KEYWORDS): TodoItem[] {

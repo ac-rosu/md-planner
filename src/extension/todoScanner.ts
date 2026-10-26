@@ -1,4 +1,4 @@
-// Scans the workspace for TODO / FIXME / HACK comments (patterns and globs configurable) and keeps
+// Scans the workspace for TODO / FIXME comments (patterns and globs configurable) and keeps
 // the result up to date as files change.
 import * as vscode from "vscode";
 import {

@@ -1,4 +1,4 @@
-// TODOs in code view: file → TODO / FIXME / HACK comments, with links to promoted tasks.
+// TODOs in code view: file → TODO / FIXME comments, with links to promoted tasks.
 import * as vscode from "vscode";
 import { STATUS_LABEL } from "../../core/model";
 import { type TodoItem } from "../../core/todos";

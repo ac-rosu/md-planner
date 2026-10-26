@@ -31,7 +31,7 @@ export const EXPORT_FORMATS: Array<{ id: ExportFormat; label: string; detail: st
   {
     id: "pdf",
     label: "PDF status report",
-    detail: "the HTML report printed with headless Edge or Chrome",
+    detail: "the HTML report printed to PDF by Edge or Chrome",
   },
   {
     id: "xlsx",

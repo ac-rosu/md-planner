@@ -55,7 +55,7 @@ same preview, and the preview stays on the manual when you open other Markdown f
 | 4   | Inbox view                   | Ideas and requests that are not planned yet.                                                |
 | 5   | Punch List view              | Defects and open points by severity and owner.                                              |
 | 6   | Tests view                   | Test plans, cases and steps with pass/fail counts.                                          |
-| 7   | TODOs in Code view           | `TODO`, `FIXME` and `HACK` comments in your source code.                                    |
+| 7   | TODOs in Code view           | `TODO` and `FIXME` comments in your source code.                                            |
 | 8   | Milestone CodeLens           | Progress and forecast, and the clickable Add task, Add section and Edit milestone.          |
 | 9   | Task CodeLens                | Scheduled dates and slack, the owner (click to change) and Edit, above every task.          |
 | 10  | Open Gantt (editor title)    | Opens the Gantt chart from any plan file.                                                   |

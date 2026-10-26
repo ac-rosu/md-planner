@@ -312,7 +312,7 @@ function taskFields(
           const reason = await askText({
             title: "Why is it blocked? (optional)",
             value: s.blocked,
-            placeHolder: "e.g. waiting for the customer's API keys",
+            placeHolder: "e.g. waiting for the customer's sign-off",
           });
           if (reason !== undefined) s.blocked = reason;
         }

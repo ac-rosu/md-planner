@@ -129,11 +129,11 @@ describe("punch items from failed steps", () => {
 });
 
 describe("TODO comments", () => {
-  it("finds TODO, FIXME and HACK in common comment styles", () => {
+  it("finds TODO and FIXME in common comment styles", () => {
     const src = [
       "// TODO: handle timeout",
       "(* FIXME: limit setpoint *)",
-      "# HACK hard-coded tag",
+      "# FIXME hard-coded tag",
       "<!-- TODO(T12): link the doc -->",
       "/* TODO check this */",
       "let TODO_LIST = 1; // not a todo",
@@ -144,7 +144,7 @@ describe("TODO comments", () => {
     expect(scanTodos(src).map((t) => [t.line, t.keyword, t.taskId, t.text])).toEqual([
       [0, "TODO", undefined, "handle timeout"],
       [1, "FIXME", undefined, "limit setpoint"],
-      [2, "HACK", undefined, "hard-coded tag"],
+      [2, "FIXME", undefined, "hard-coded tag"],
       [3, "TODO", "T12", "link the doc"],
       [4, "TODO", undefined, "check this"],
       [8, "FIXME", "T7", "done"],

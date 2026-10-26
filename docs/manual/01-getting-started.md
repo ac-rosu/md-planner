@@ -25,8 +25,9 @@ Or from a terminal:
 code --install-extension acro.md-planner
 ```
 
-To install a downloaded `md-planner-<version>.vsix` file instead, click **…** (Views and More
-Actions) at the top of the Extensions view and choose **Install from VSIX…**.
+To install from a `md-planner-<version>.vsix` file instead (for example one built with
+`npm run package`), click **…** (Views and More Actions) at the top of the Extensions view and
+choose **Install from VSIX…**.
 
 After installing you see a new **Planner** icon in the activity bar on the left.
 

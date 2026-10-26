@@ -41,7 +41,7 @@ The files are written to `plan/reports/` and the first one is opened (turn this 
 | Format             | File                             | Contents                                                                                                       |
 | ------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | HTML status report | `<date>-status-report.html`      | One self-contained file with inline styles and charts; no scripts, prints on A4.                               |
-| PDF status report  | `<date>-status-report.pdf`       | The HTML report printed by Edge or Chrome in headless mode.                                                    |
+| PDF status report  | `<date>-status-report.pdf`       | The HTML report printed to PDF by Edge or Chrome, without opening a browser window.                            |
 | Excel workbook     | `<date>-plan.xlsx`               | Sheets: Tasks, Schedule, Team load per week, Milestones, Tests, Punch list.                                    |
 | MS Project XML     | `<date>-plan.xml`                | MSPDI: tasks, durations, dependencies, resources, assignments and calendars.                                   |
 | CSV                | `<date>-tasks.csv`               | A flat task table (UTF-8 with BOM, so Excel opens it correctly).                                               |
@@ -111,10 +111,10 @@ Put your company name, accent colour and logo on every report (also the test rep
 
 ## PDF
 
-PDF export prints the HTML report with Microsoft Edge or Google Chrome in headless mode (Edge is
-preferred on macOS and Windows). The browser is found automatically in the usual install locations;
-set `planner.export.browserPath` if yours is elsewhere. Without a browser, or if printing fails,
-the HTML report is written instead and a warning tells you why.
+PDF export prints the HTML report to PDF with Microsoft Edge or Google Chrome, without opening a
+browser window (Edge is preferred on macOS and Windows). The browser is found automatically in the
+usual install locations; set `planner.export.browserPath` if yours is elsewhere. Without a browser,
+or if printing fails, the HTML report is written instead and a warning tells you why.
 
 ## Excel
 

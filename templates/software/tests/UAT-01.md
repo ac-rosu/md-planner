@@ -10,7 +10,7 @@ witness: Key users
 pre: A test account for every role
 
 - [ ] Sign in with a valid account → the dashboard is shown
-- [ ] Wrong password → a clear error message, no account details revealed
+- [ ] Wrong sign-in details → a clear error message that does not say which field was wrong
 
 ## TC-02 Main user flow
 

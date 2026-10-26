@@ -26,10 +26,10 @@ Set **`planner.ai.provider`** (Settings → search `planner.ai`):
 | Provider              | Setup                                                                                                                                                                                                                                                                                       |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `vscode-lm` (default) | Uses a language model installed in VS Code, such as GitHub Copilot. Install and sign in to the model provider; VS Code may ask once whether the planner may use it. `planner.ai.vscodeModel` picks a model family (for example `gpt-4o` or `claude-sonnet-4`); empty = the first available. |
-| `anthropic`           | Calls the Claude API directly. Run **Planner: Set API key (Claude)** and paste your key; it is kept in VS Code's secret storage and only sent to the Claude API. `planner.ai.model` sets the model (default `claude-sonnet-5-5`).                                                           |
+| `anthropic`           | Calls the Claude API directly. Run **Planner: Set API key (Claude)** and paste your key; it is kept in VS Code's encrypted storage and only sent to the Claude API. `planner.ai.model` sets the model (default `claude-sonnet-5-5`).                                                        |
 | `none`                | Hides every AI command and menu.                                                                                                                                                                                                                                                            |
 
-If no model or key is available, the command tells you what to set up instead of failing silently.
+If no model or key is available, the command tells you what to set up instead of doing nothing.
 
 ## Where the AI commands are
 
@@ -106,7 +106,7 @@ current statistics.
 
 - The **Planner AI** output channel (View → Output → _Planner AI_) logs every request exactly as
   sent (after redaction) and every reply.
-- With `anthropic`, the API key is stored in VS Code's secret storage, never in settings or files.
+- With `anthropic`, the API key is kept in VS Code's encrypted storage, never in settings or files.
 
 ## Tips
 

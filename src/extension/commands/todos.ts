@@ -37,9 +37,7 @@ export async function promoteTodoCommand(
     }
   }
   if (!uri || !item) {
-    void vscode.window.showWarningMessage(
-      "Planner: put the cursor on a TODO, FIXME or HACK comment."
-    );
+    void vscode.window.showWarningMessage("Planner: put the cursor on a TODO or FIXME comment.");
     return undefined;
   }
   if (item.taskId) {

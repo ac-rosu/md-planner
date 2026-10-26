@@ -43,7 +43,7 @@ export class AiService implements vscode.Disposable {
   async setApiKey(): Promise<boolean> {
     const key = await vscode.window.showInputBox({
       title: "Claude API key",
-      prompt: "Stored in VS Code's secret storage; only sent to the Claude API.",
+      prompt: "Kept in VS Code's encrypted storage; only sent to the Claude API.",
       password: true,
       ignoreFocusOut: true,
       validateInput: (v) => (v.trim().length < 10 ? "Paste an API key" : undefined),

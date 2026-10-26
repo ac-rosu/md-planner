@@ -196,7 +196,7 @@ Test plans → test cases → steps, with result counts.
 
 ## TODOs in Code
 
-`TODO`, `FIXME` and `HACK` comments found in your source code, per file. Click one to open the
+`TODO` and `FIXME` comments found in your source code, per file. Click one to open the
 code line.
 
 ![The TODOs in Code view](images/sidebar-todos.png)
@@ -220,7 +220,7 @@ What is scanned is configurable:
 
 | Setting                  | Default                                                                                                 | Meaning                                                              |
 | ------------------------ | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `planner.todos.keywords` | `["TODO", "FIXME", "HACK"]`                                                                             | Upper-case keywords, whole words, followed by `:`, `(…)` or a space. |
+| `planner.todos.keywords` | `["TODO", "FIXME"]`                                                                                     | Upper-case keywords, whole words, followed by `:`, `(…)` or a space. |
 | `planner.todos.include`  | `**/*.{ts,tsx,js,jsx,mjs,cjs,vue,svelte,py,java,kt,cs,go,rs,rb,php,swift,c,h,cpp,hpp,sql,sh,md,scl,st}` | Files to scan. The plan folder is never scanned.                     |
 | `planner.todos.exclude`  | `**/{node_modules,.git,dist,out,build,target,coverage,vendor,.venv,.vscode-test}/**`                    | Files never scanned.                                                 |
 | `planner.todos.maxFiles` | `2000`                                                                                                  | Upper limit of scanned files.                                        |

@@ -138,6 +138,8 @@ Safer editing, from the pilot users' feedback.
   mode load when you ask about the plan: use the tools, never write computed dates, keep task ids,
   validate after editing a file by hand, and playbooks for common jobs. A copy you did not change
   is kept up to date. The plan format the server describes now matches the current rules.
+- **TODOs in Code** collects `TODO` and `FIXME` comments by default. Add other keywords to
+  `planner.todos.keywords` to collect them too.
 - Faster: the schedule of a 2,000-task plan takes about 7 ms (about 35 ms in 1.0.0), and
   explaining tasks that cannot be scheduled no longer costs most of a second per change when
   someone's hours end.

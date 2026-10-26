@@ -707,7 +707,7 @@ export function createServer(tools: PlannerTools): McpServer {
   // --- TODO comments in code -----------------------------------------------------------------
   tool(
     "list_todos",
-    "TODO / FIXME / HACK comments in the workspace's source code, with the task they are linked to.",
+    "TODO / FIXME comments in the workspace's source code, with the task they are linked to.",
     {
       include: z.string().optional(),
       exclude: z.string().optional(),

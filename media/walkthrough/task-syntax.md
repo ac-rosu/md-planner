@@ -7,7 +7,7 @@
 - [/] Order state machine @est:12h @owner:sam @dep:T101 ^T102
   - [ ] Order events schema @est:6h ^T104
 - [ ] Payment provider integration @est:2d @owner:sam @start:2026-11-10 @prio:high #checkout ^T105
-- [!] Payment form @est:6h @owner:priya @blocked:"waiting for API keys" ^T106
+- [!] Payment form @est:6h @owner:priya @blocked:"waiting for the provider contract" ^T106
 ```
 
 | Box   | Status        | Attribute           | Meaning                                 |

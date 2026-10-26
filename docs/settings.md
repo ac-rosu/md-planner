@@ -127,23 +127,23 @@ Type: number · default: `15` · minimum: 1
 
 Comment keywords collected in **TODOs in Code** (upper case, whole words, followed by `:`, `(…)` or a space).
 
-Type: array · default: `["TODO","FIXME","HACK"]`
+Type: array · default: `["TODO","FIXME"]`
 
 ### `planner.todos.include`
 
-Glob of files scanned for TODO comments (the plan folder is always skipped).
+Glob of files searched for TODO comments (the plan folder is always skipped).
 
 Type: string · default: `"**/*.{ts,tsx,js,jsx,mjs,cjs,vue,svelte,py,java,kt,cs,go,rs,rb,php,swift,c,h,cpp,hpp,sql,sh,md,scl,st}"`
 
 ### `planner.todos.exclude`
 
-Glob of files never scanned for TODO comments.
+Glob of files never searched for TODO comments.
 
 Type: string · default: `"**/{node_modules,.git,dist,out,build,target,coverage,vendor,.venv,.vscode-test}/**"`
 
 ### `planner.todos.maxFiles`
 
-Maximum number of files scanned for TODO comments.
+Maximum number of files searched for TODO comments.
 
 Type: number · default: `2000` · minimum: 1
 

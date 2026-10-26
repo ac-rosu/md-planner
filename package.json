@@ -1727,26 +1727,25 @@
           },
           "default": [
             "TODO",
-            "FIXME",
-            "HACK"
+            "FIXME"
           ],
           "markdownDescription": "Comment keywords collected in **TODOs in Code** (upper case, whole words, followed by `:`, `(…)` or a space)."
         },
         "planner.todos.include": {
           "type": "string",
           "default": "**/*.{ts,tsx,js,jsx,mjs,cjs,vue,svelte,py,java,kt,cs,go,rs,rb,php,swift,c,h,cpp,hpp,sql,sh,md,scl,st}",
-          "markdownDescription": "Glob of files scanned for TODO comments (the plan folder is always skipped)."
+          "markdownDescription": "Glob of files searched for TODO comments (the plan folder is always skipped)."
         },
         "planner.todos.exclude": {
           "type": "string",
           "default": "**/{node_modules,.git,dist,out,build,target,coverage,vendor,.venv,.vscode-test}/**",
-          "markdownDescription": "Glob of files never scanned for TODO comments."
+          "markdownDescription": "Glob of files never searched for TODO comments."
         },
         "planner.todos.maxFiles": {
           "type": "number",
           "default": 2000,
           "minimum": 1,
-          "markdownDescription": "Maximum number of files scanned for TODO comments."
+          "markdownDescription": "Maximum number of files searched for TODO comments."
         },
         "planner.export.branding": {
           "type": "object",

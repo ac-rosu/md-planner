@@ -227,7 +227,7 @@ uses the tools above.
 ### Things to ask
 
 - _"Plan this project:"_ followed by milestones, tasks, people and dates in your own words.
-- _"Add a milestone Documentation after the launch, with an admin guide (3 days, Jordan) and a user
+- _"Add a milestone Documentation after the launch, with a setup guide (3 days, Jordan) and a user
   manual (4 days, Maria)."_
 - _"M5 is late. Plan overtime for the people on its critical path until it is on time, and tell me
   how many hours that is."_

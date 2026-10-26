@@ -142,7 +142,7 @@ color: yellow
 | `off`          | `2027-02-09`, `2026-11-17..2026-11-21` | Time off: no work is scheduled. Repeat the line for more periods.                                                                                                                                   |
 | `overtime`     | `2026-11-02..2026-11-13 +8h/week`      | Extra hours on the person's working days during a period (or one day): `+8h/week` is spread over the working days, `+2h/day` is added to each. The `+` is optional. Repeat for more periods.        |
 | `workday`      | `2026-11-27`, `2026-11-28 6h`          | A day the person works although it is a weekend, a holiday or outside their work week: a normal day's hours, or the hours given (`6h`, `0.5d`). A range `from..to` works too. Repeat for more days. |
-| `skills`       | `plc, hmi`                             | Used by **AI: Suggest owners**.                                                                                                                                                                     |
+| `skills`       | `backend, frontend`                    | Used by **AI: Suggest owners**.                                                                                                                                                                     |
 | `color`        | `blue`                                 | The person's colour on the Gantt, Kanban and heatmap: `blue`, `green`, `purple`, `orange`, `yellow`, `red`.                                                                                         |
 
 The id `unassigned` is reserved for the virtual pool that runs tasks without an owner.
@@ -224,29 +224,29 @@ points out a done task without `@done` or a to-do task with a leftover `@started
 
 ### Attributes
 
-| Attribute   | Example                           | Meaning                                                                                                          |
-| ----------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `@est`      | `@est:12h`, `2d`, `1.5d`, `1w`    | Estimate. `d` = `hoursPerDay` hours, `w` = 5 days. A unit is required.                                           |
-| `@act`      | `@act:5.5h`                       | Actual hours spent (typed, or added by the timer and **Log time**).                                              |
-| `@owner`    | `@owner:sam`                      | Person id from `team.md`. Subtasks inherit it.                                                                   |
-| `@dep`      | `@dep:T101`, `@dep:T101,T102+2d`  | Finish-to-start dependencies; `+2d` adds a lag in working days. A dependency on a parent means all its subtasks. |
-| `@start`    | `@start:2026-11-10`               | Fixed start: not before this date (dependencies still win). Subtasks inherit it.                                 |
-| `@due`      | `@due:2026-11-20`                 | Deadline. A warning appears when the schedule misses it. Subtasks inherit it.                                    |
-| `@prio`     | `high`, `med`, `low`              | Scheduling priority, default `med`. `h`, `m`, `l` and `medium` also work.                                        |
-| `@progress` | `@progress:40%`                   | Manual progress. Remaining work becomes estimate × (1 − progress) instead of estimate − actual.                  |
-| `@started`  | `@started:2026-10-12`             | Date work started. Written automatically; you may correct it.                                                    |
-| `@done`     | `@done:2026-10-13`                | Date completed. Written automatically; you may correct it.                                                       |
-| `@blocked`  | `@blocked:"waiting for API keys"` | Reason for `[!]`.                                                                                                |
-| `@test`     | `@test:UAT-01`                    | Links the task to a test plan.                                                                                   |
-| `@eq`       | `@eq:checkout/payment`            | The component or equipment the task belongs to.                                                                  |
-| `@src`      | `@src:src/server/invoices.ts#L8`  | Origin of a promoted code TODO. Cmd+click opens the code line.                                                   |
-| `#tag`      | `#frontend #checkout`             | Free tags, for filters, grouping and estimate statistics.                                                        |
-| `^id`       | `^T105`                           | Stable task id; must be the last token on the line.                                                              |
-| anything    | `@security:high`                  | Unknown attributes are kept and shown as custom fields in tooltips.                                              |
+| Attribute   | Example                                        | Meaning                                                                                                          |
+| ----------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `@est`      | `@est:12h`, `2d`, `1.5d`, `1w`                 | Estimate. `d` = `hoursPerDay` hours, `w` = 5 days. A unit is required.                                           |
+| `@act`      | `@act:5.5h`                                    | Actual hours spent (typed, or added by the timer and **Log time**).                                              |
+| `@owner`    | `@owner:sam`                                   | Person id from `team.md`. Subtasks inherit it.                                                                   |
+| `@dep`      | `@dep:T101`, `@dep:T101,T102+2d`               | Finish-to-start dependencies; `+2d` adds a lag in working days. A dependency on a parent means all its subtasks. |
+| `@start`    | `@start:2026-11-10`                            | Fixed start: not before this date (dependencies still win). Subtasks inherit it.                                 |
+| `@due`      | `@due:2026-11-20`                              | Deadline. A warning appears when the schedule misses it. Subtasks inherit it.                                    |
+| `@prio`     | `high`, `med`, `low`                           | Scheduling priority, default `med`. `h`, `m`, `l` and `medium` also work.                                        |
+| `@progress` | `@progress:40%`                                | Manual progress. Remaining work becomes estimate × (1 − progress) instead of estimate − actual.                  |
+| `@started`  | `@started:2026-10-12`                          | Date work started. Written automatically; you may correct it.                                                    |
+| `@done`     | `@done:2026-10-13`                             | Date completed. Written automatically; you may correct it.                                                       |
+| `@blocked`  | `@blocked:"waiting for the provider contract"` | Reason for `[!]`.                                                                                                |
+| `@test`     | `@test:UAT-01`                                 | Links the task to a test plan.                                                                                   |
+| `@eq`       | `@eq:checkout/payment`                         | The component or equipment the task belongs to.                                                                  |
+| `@src`      | `@src:src/server/invoices.ts#L8`               | Origin of a promoted code TODO. Cmd+click opens the code line.                                                   |
+| `#tag`      | `#frontend #checkout`                          | Free tags, for filters, grouping and estimate statistics.                                                        |
+| `^id`       | `^T105`                                        | Stable task id; must be the last token on the line.                                                              |
+| anything    | `@security:high`                               | Unknown attributes are kept and shown as custom fields in tooltips.                                              |
 
 Rules for writing a task line:
 
-- Values with spaces need double quotes: `@blocked:"waiting for the payment provider API keys"`.
+- Values with spaces need double quotes: `@blocked:"waiting for the payment provider contract"`.
 - `@word` without a colon is plain text, so e-mail addresses in titles are safe.
 - The **title** is all the other words of the line; attributes and tags may appear anywhere.
 - When the planner adds an attribute, it places it in a fixed order after the title (`@est @act
@@ -372,7 +372,7 @@ reports.
 ```markdown
 # Inbox
 
-- [ ] Ask the payment provider for the production API keys #customer
+- [ ] Ask the payment provider for production access #customer
 - [ ] Capacity plan for the database cluster @owner:jordan #infrastructure
 ```
 
