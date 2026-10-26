@@ -115,7 +115,8 @@ export function burnUp(plan: Plan, schedule: Schedule, milestoneId?: string): Bu
     if (isLeaf(t) || !isSchedulableTask(plan, t) || (milestoneId && t.milestoneId !== milestoneId))
       return [];
     const hours = loggedWithinEstimate(t);
-    const day = (t.started ? parseDate(t.started) : undefined) ?? schedule.today;
+    const on = t.started ?? t.done;
+    const day = (on ? parseDate(on) : undefined) ?? schedule.today;
     return hours > 0 ? [{ hours, day }] : [];
   });
   const scope =

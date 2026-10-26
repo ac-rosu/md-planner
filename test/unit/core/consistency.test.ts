@@ -314,18 +314,20 @@ describe("dependencies", () => {
   });
 
   it("says nothing about the dates and dependencies of work in a cancelled milestone", () => {
-    // That work is not scheduled, so a dependency on cancelled work or a date after the end
-    // changes nothing there.
+    // That work is not scheduled, so a dependency on cancelled work, a date after the end or work
+    // started before the milestone it waits for changes nothing there.
     expect(
-      codes(md("# M1", "", "- [ ] a @est:1h ^T1"), {
+      codes(md("# M1", "", "id: M1", "", "- [ ] a @est:1h ^T1"), {
         "milestones/M2.md": md(
           "# M2",
           "",
           "status: cancelled",
+          "depends: M1",
           "",
           "- [-] b @est:1h ^T2",
           "- [ ] c @est:1h @dep:T2,T3 @due:2027-12-01 ^T4",
-          "- [ ] d @est:1h ^T3"
+          "- [ ] d @est:1h ^T3",
+          "- [/] e @est:1h @started:2026-10-01 ^T5"
         ),
       })
     ).toEqual([]);

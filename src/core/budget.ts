@@ -272,10 +272,6 @@ export function blockedImpact(plan: Plan, schedule: Schedule): BlockedImpact[] {
     // only as long as its owners whose hours end still have the time for the work. Without slack
     // left that is the last working day before today, whatever weekday today is.
     let latest: number | undefined;
-    // Whose working hours end that slack, when it is someone's (the owner or a colleague who does
-    // work that waits for it).
-    let slackEnd: TaskSchedule["hoursEnd"];
-    let slackLeft = 0;
     let critical = false;
     let first: DayNumber | undefined;
     for (const l of leaves) {
@@ -286,21 +282,13 @@ export function blockedImpact(plan: Plan, schedule: Schedule): BlockedImpact[] {
       first = first === undefined ? from : Math.min(first, from);
       const latestStart = cal.addWorkingDays(from, ts.slack);
       const lastOk = cal.previousWorkingDay(ts.slack < 0 ? schedule.start - 1 : latestStart - 1);
-      if (latest === undefined || lastOk < latest) {
-        latest = lastOk;
-        slackEnd = ts.hoursEnd;
-        slackLeft = ts.slack;
-      }
+      latest = latest === undefined ? lastOk : Math.min(latest, lastOk);
     }
     // The owners' day counts when it is earlier, or too late. On the same day, as when both are
     // late, the slack's "already delaying" says more: every day blocked moves a date.
     let ownerHoursEnd: BlockedImpact["ownerHoursEnd"];
     const forOwners = lastForOwners(leaves, open);
-    const sameCause = forOwners && slackEnd && forOwners.day === latest;
-    if (
-      forOwners &&
-      (forOwners.tooLate || latest === undefined || forOwners.day < latest || sameCause)
-    ) {
+    if (forOwners && (forOwners.tooLate || latest === undefined || forOwners.day < latest)) {
       latest = forOwners.day;
       const { name, from, tooLate, start } = forOwners;
       ownerHoursEnd = { name, from: formatDate(from), tooLate };
@@ -309,26 +297,7 @@ export function blockedImpact(plan: Plan, schedule: Schedule): BlockedImpact[] {
         start !== undefined &&
         first !== undefined &&
         start <= cal.addWorkingDays(first, criticalSlack);
-    } else if (slackEnd && latest !== undefined) {
-      // The slack ends where someone's hours end: they would have no time left for the work.
-      const p = plan.personById(slackEnd.resource);
-      ownerHoursEnd = {
-        name: p?.name ?? slackEnd.resource,
-        from: formatDate(slackEnd.from),
-        tooLate: slackLeft < 0,
-      };
     }
-    // Work that waits for it and no longer finds hours before its owner's end: already too late.
-    if (!ownerHoursEnd?.tooLate)
-      for (const t of open) {
-        const ts = schedule.tasks.get(t);
-        const p = ts?.unscheduled === "horizon" ? plan.personById(ts.resource) : undefined;
-        const last = p?.capacityChanges[p.capacityChanges.length - 1];
-        if (!p || last?.hours !== 0) continue;
-        ownerHoursEnd = { name: p.name, from: formatDate(last.from), tooLate: true };
-        latest = schedule.start - 1;
-        break;
-      }
     out.push({
       task: blocked,
       hours: round(leaves.reduce((s, l) => s + remainingHours(l), 0)),

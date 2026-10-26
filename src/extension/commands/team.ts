@@ -4,7 +4,7 @@
 import * as vscode from "vscode";
 import { isOpen, type Person } from "../../core/model";
 import {
-  ambiguousBudget,
+  ambiguousBudgetMessage,
   parseBudget,
   parseOvertime,
   parseWorkday,
@@ -851,10 +851,9 @@ export async function editProjectCommand(
             placeHolder: "e.g. 1200h, 150d or 30w",
             validate: (x) => {
               if (x.trim() === "" || parseBudget(x, hpd) !== undefined) return undefined;
-              const both = ambiguousBudget(x);
-              return both
-                ? `${x.trim()} can mean ${both[0]} or ${both[1]}: write the one you mean`
-                : "Hours such as 1200h, or days or weeks (150d, 30w)";
+              return (
+                ambiguousBudgetMessage(x) ?? "Hours such as 1200h, or days or weeks (150d, 30w)"
+              );
             },
           });
           if (v !== undefined) s.budget = v.trim();

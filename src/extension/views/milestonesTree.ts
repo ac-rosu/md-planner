@@ -6,7 +6,14 @@ import { milestoneStats } from "../../core/queries";
 import { type Plan } from "../../core/resolve";
 import { isEmptySection } from "../../core/writer/entities";
 import { type PlannerState } from "../state";
-import { statusIcon, TASK_HINT, taskDescription, taskNodeId, taskTooltip } from "./common";
+import {
+  statusIcon,
+  TASK_HINT,
+  taskArgOf,
+  taskDescription,
+  taskNodeId,
+  taskTooltip,
+} from "./common";
 import { type ViewFilter } from "./filter";
 
 export type MilestoneNode =
@@ -172,7 +179,7 @@ export class MilestonesTreeProvider
             ? vscode.TreeItemCollapsibleState.Collapsed
             : vscode.TreeItemCollapsibleState.None
         );
-        item.id = taskNodeId(t);
+        item.id = taskNodeId(t, plan);
         item.description = taskDescription(plan, t, today, this.state.decorations(t));
         item.tooltip = taskTooltip(plan, t, this.state.tooltipLines(t), TASK_HINT);
         item.iconPath = statusIcon(t.status);
@@ -180,7 +187,7 @@ export class MilestonesTreeProvider
         item.command = {
           command: "planner.revealTask",
           title: "Reveal",
-          arguments: [t.id ?? { file: t.file, line: t.line }],
+          arguments: [taskArgOf(t, plan)],
         };
         item.accessibilityInformation = {
           label: `${t.title}, ${t.status}${t.id ? `, ${t.id}` : ""}`,

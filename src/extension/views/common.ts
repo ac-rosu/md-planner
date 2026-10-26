@@ -111,6 +111,30 @@ export function taskTooltip(
 }
 
 /** Stable tree id for a task, so expansion state survives refreshes. */
-export function taskNodeId(t: Task): string {
-  return t.id ? `task:${t.id}:${t.file}` : `task:${t.file}:${t.line}`;
+export function taskNodeId(t: Task, plan: Plan): string {
+  return t.id && !sharesId(plan, t) ? `task:${t.id}:${t.file}` : `task:${t.file}:${t.line}`;
+}
+
+/** What a tree row passes to commands: its id, or its line when a copied line shares the id. */
+export function taskArgOf(t: Task, plan: Plan): string | { file: string; line: number } {
+  return t.id && !sharesId(plan, t) ? t.id : { file: t.file, line: t.line };
+}
+
+const sharedIds = new WeakMap<Plan, Set<string>>();
+
+/** True when another task in its file has its id: rows keyed by the id would be one row. */
+function sharesId(plan: Plan, t: Task): boolean {
+  let shared = sharedIds.get(plan);
+  if (!shared) {
+    shared = new Set();
+    const seen = new Set<string>();
+    for (const x of plan.tasks) {
+      if (!x.id) continue;
+      const key = `${x.file} ${x.id}`;
+      if (seen.has(key)) shared.add(key);
+      else seen.add(key);
+    }
+    sharedIds.set(plan, shared);
+  }
+  return shared.has(`${t.file} ${t.id}`);
 }

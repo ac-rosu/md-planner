@@ -16,7 +16,7 @@ import { type Plan } from "../../core/resolve";
 import { addPunchItem } from "../../core/testRun";
 import {
   type InsertLocation,
-  moveTask,
+  moveTaskTo,
   nextId,
   statusDateAttrs,
   statusSideEdits,
@@ -800,17 +800,22 @@ export async function moveTaskCommand(
   const location: InsertLocation = chosen.section
     ? { kind: "section", title: chosen.section }
     : { kind: "root" };
-  const edits = moveTask(source, current, dest, location);
+  const { edits, moved } = moveTaskTo(source, current, dest, location);
   if (!(await confirmNoNewErrors(service, edits, `Moving ${t.id ?? t.title}`))) return undefined;
   const ok = await service.apply(edits, { source: "view" });
   if (!ok) return undefined;
   service.fireNow();
   message(`Moved ${t.id ?? t.title} to ${locationLabel(m, chosen.section)}`);
-  if (t.id)
+  // Revealed where it landed, by its title: it may have no id, or saving gave a copy a new one.
+  const landed = service.plan
+    .file(moved.file)
+    ?.items.filter((x) => x.kind === current.kind && x.title === current.title)
+    .sort((a, b) => Math.abs(a.line - moved.line) - Math.abs(b.line - moved.line))[0];
+  if (landed)
     await vscode.commands
-      .executeCommand("planner.revealInTree", { task: t.id })
+      .executeCommand("planner.revealInTree", { task: { file: landed.file, line: landed.line } })
       .then(undefined, () => undefined);
-  return t.id;
+  return landed?.id ?? t.id;
 }
 
 export async function deleteTaskCommand(

@@ -93,9 +93,9 @@ Safer editing, from the pilot users' feedback.
 - Blocked tasks say what they hold up: the work that waits for them and how long they can stay
   blocked before something moves ("2 tasks (24 h) wait for it · can stay blocked until
   2026-10-26"), or that they already delay the plan; on the dashboard, in the status report's risks
-  and the AI summary. When the hours of the owner, or of a colleague whose work waits for it, end
-  (`capacityFrom: … 0h`), the date leaves them the time for that work: "(Alex has no working hours
-  from 2026-10-19 on)", "must be unblocked now" or "already too late". An empty `@blocked` reads
+  and the AI summary. When the owner's hours end (`capacityFrom: … 0h`), the date leaves them the
+  time for the work and for their own tasks that wait for it: "(Alex has no working hours from
+  2026-10-19 on)", "must be unblocked now" or "already too late". An empty `@blocked` reads
   as no reason given.
 - Late tasks say what holds them back, following the dependencies to the cause: "Held back by the
   fixed start 2027-10-19 of T461 (via M1)" or "… by Sam having other work first", in the warning,

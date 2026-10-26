@@ -35,8 +35,7 @@ export function resolveTask(service: PlanService, arg: TaskArg): ResolvedTask | 
     // Tree nodes hold the item itself. Its id only helps when no other item has it: a copied
     // line keeps the id. Not whatever is on its line now: that is another item.
     if (arg.task) {
-      const t =
-        currentTask(plan, arg.task) ?? (arg.task.id ? onlyWithId(plan, arg.task.id) : undefined);
+      const t = currentOrMovedTask(plan, arg.task);
       return t ? { task: t, fromEditor: false } : undefined;
     }
     const fromEditor = arg.fromEditor === true;
@@ -66,6 +65,17 @@ export function findById(plan: Plan, id: string): Task | undefined {
   return plan.taskById(id) ?? plan.punchById(id) ?? plan.inbox.find((t) => t.id === id);
 }
 
+/**
+ * currentTask, or, for an item that moved to another file (its file has no item with its kind and
+ * title any more), the item with its id when no other item has that id.
+ */
+export function currentOrMovedTask(plan: Plan, t: Task): Task | undefined {
+  const found = currentTask(plan, t);
+  if (found || !t.id) return found;
+  const stayed = plan.file(t.file)?.items.some((x) => x.kind === t.kind && x.title === t.title);
+  return stayed ? undefined : onlyWithId(plan, t.id);
+}
+
 function onlyWithId(plan: Plan, id: string): Task | undefined {
   const all = [...plan.tasks, ...plan.punch, ...plan.inbox].filter((t) => t.id === id);
   return all.length === 1 ? all[0] : undefined;
@@ -78,13 +88,12 @@ export function findAt(plan: Plan, file: string, line: number): Task | undefined
 /**
  * An item found earlier (before a question or a form, or by a tree node) as it is in the plan now,
  * which may have been parsed again since: the only item in its file that is still the same item
- * (kind, id and title). Lines may have moved since, so copies of it (a duplicated line keeps its
- * id) are told apart only by an item on its line, at its place among the items, that reads the same
- * (status and attributes): then nothing above it changed. A save since may have given it an id:
- * every item without one gets one, and so does a copied line whose title differs from every other
- * item with its id (renumberCopiedIds). Then it is the item on its line with its kind and title,
- * when no other item in its file has them. Never just the first item with its id, as a copied line
- * keeps the id. Undefined when it is gone or cannot be told apart.
+ * (kind, id and title). Lines may have moved since, so copies of it (a duplicated line keeps its id)
+ * cannot be told apart, not even by its line. A save since may have given it an id: every item
+ * without one gets one, and so does a copied line whose title differs from every other item with
+ * its id (renumberCopiedIds). Then it is the item on its line with its kind and title, when no
+ * other item in its file has them. Never just the first item with its id, as a copied line keeps
+ * the id. Undefined when it is gone or cannot be told apart.
  */
 export function currentTask(plan: Plan, t: Task): Task | undefined {
   const items = plan.file(t.file)?.items ?? [];
@@ -92,24 +101,20 @@ export function currentTask(plan: Plan, t: Task): Task | undefined {
   const like = (x: Task) => x.kind === t.kind && x.title === t.title;
   const same = (x: Task) => like(x) && x.id === t.id;
   const matches = items.filter(same);
-  if (matches.length === 1) return matches[0];
-  // Several items look the same (copies, or tasks without an id with one title): only the one on
-  // its line, where nothing above it changed the lines or the items and it reads the same.
-  if (matches.length > 1)
-    return matches.find(
-      (x) => x.line === t.line && x.order === t.order && x.status === t.status && sameAttrs(x, t)
-    );
   const at = items.find((x) => x.line === t.line);
+  if (matches.length > 1) return undefined;
+  if (matches.length === 1) {
+    // Elsewhere, while its line holds an item with its title or its id: that may be the item
+    // itself, given a new id (the duplicate-id fix) or title, while a copy keeps the old ones. A
+    // save gives ids to every item without one, so an item without an id still has none.
+    const other = at && at !== matches[0] && at.kind === t.kind && t.id !== undefined;
+    return other && (at.title === t.title || at.id === t.id) ? undefined : matches[0];
+  }
   if (!at || !like(at) || items.filter(like).length > 1) return undefined;
   return t.id === undefined || (at.id !== undefined && renumbered(plan, t)) ? at : undefined;
 }
 
 /** True when saving gives `t` a new id as a copy: other items have its id, none its title. */
-function sameAttrs(a: Task, b: Task): boolean {
-  const text = (t: Task) => t.attrs.map((x) => `${x.key}:${x.value}`).join(" ");
-  return text(a) === text(b);
-}
-
 function renumbered(plan: Plan, t: Task): boolean {
   const others = [...plan.tasks, ...plan.punch, ...plan.inbox].filter((x) => x.id === t.id);
   return others.length > 0 && others.every((x) => x.title !== t.title);

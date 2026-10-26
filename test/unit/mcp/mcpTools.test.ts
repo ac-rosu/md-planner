@@ -68,6 +68,9 @@ describe("MCP tools on the sample plan", () => {
     expect((await call("update_project", { budget: "1,200h" })).text).toContain(
       'Budget "1,200h" can mean 1200h or 1.2h: write the one you mean.'
     );
+    expect((await call("update_project", { budget: "1,234h" })).text).toContain(
+      'Budget "1,234h" can mean 1234h or 1.234h: write 1234h, or the hours with one or two decimals.'
+    );
     const b = (await call("update_project", { budget: "900h" })).json;
     expect(b.changed[0].after).toEqual(["budget: 900h # hours agreed with the customer"]);
     const hours = (await call("get_plan_overview")).json.project.hours;

@@ -238,16 +238,14 @@ export function resolveProject(file: ProjectFile | undefined, issues: Issue[]): 
   const b = getProp(props, "budget");
   if (b && b.value !== "") {
     budget = parseBudget(b.value, hoursPerDay);
-    const readings = ambiguousBudget(b.value);
     if (budget === undefined)
       issue(
         issues,
         path,
         b,
         "invalid-value",
-        readings
-          ? `Budget "${b.value}" can mean ${readings[0]} or ${readings[1]}: write the one you mean.`
-          : `Invalid budget "${b.value}": hours such as 1200h, or days or weeks (150d, 30w).`
+        ambiguousBudgetMessage(b.value) ??
+          `Invalid budget "${b.value}": hours such as 1200h, or days or weeks (150d, 30w).`
       );
   }
   const start = dateProp(path, props, "start", issues);
@@ -297,6 +295,20 @@ export function parseBudget(text: string, hoursPerDay: number): number | undefin
 }
 
 /** `1,200h` or `1.200h`: the two readings of a budget that parseBudget leaves undecided. */
+/**
+ * "Budget "1,200h" can mean 1200h or 1.2h: write the one you mean." for a budget that parseBudget
+ * refuses as ambiguous. A reading with three decimals is as ambiguous as the budget itself, so
+ * then it says how to write the other one.
+ */
+export function ambiguousBudgetMessage(text: string): string | undefined {
+  const r = ambiguousBudget(text);
+  if (!r) return undefined;
+  const advice = /\.\d{3}/.test(r[1])
+    ? `write ${r[0]}, or the hours with one or two decimals`
+    : "write the one you mean";
+  return `Budget "${text.trim()}" can mean ${r[0]} or ${r[1]}: ${advice}.`;
+}
+
 export function ambiguousBudget(text: string): [string, string] | undefined {
   const m = /^([1-9]\d{0,2})[.,](\d{3})([hdw]?)$/i.exec(text.trim());
   return m ? [`${m[1]}${m[2]}${m[3]}`, `${Number(`${m[1]}.${m[2]}`)}${m[3]}`] : undefined;

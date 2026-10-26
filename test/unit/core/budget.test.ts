@@ -517,27 +517,6 @@ describe("blocked tasks", () => {
     ).toBe("2026-10-14");
   });
 
-  it("leave a colleague whose hours end the time for the work that waits for them", () => {
-    // Sam's Keys holds up Alex's Install, and Alex has no hours from Mon 19: Install has to run
-    // on Thu 15 and Fri 16, so Keys has to be done by Wed 14 and start by Tue 13.
-    const [keys] = impact(
-      "2026-10-05",
-      "- [!] Keys @est:16h @owner:sam @blocked:keys ^T1",
-      "- [ ] Install @est:16h @owner:alex @dep:T1 ^T2"
-    );
-    expect(describeBlockedImpact(keys)).toBe(
-      "1 task (16 h) waits for it · can stay blocked until 2026-10-12 (Alex has no working hours from 2026-10-19 on)"
-    );
-    const [late] = impact(
-      "2026-10-14",
-      "- [!] Keys @est:16h @owner:sam @blocked:keys ^T1",
-      "- [ ] Install @est:24h @owner:alex @dep:T1 ^T2"
-    );
-    expect(describeBlockedImpact(late)).toBe(
-      "1 task (24 h) waits for it · already too late: Alex has no working hours from 2026-10-19 on"
-    );
-  });
-
   it("leave room for their owner's work that also waits for others or a fixed start", () => {
     const until = (...tasks: string[]) =>
       impact(

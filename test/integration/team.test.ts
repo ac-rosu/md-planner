@@ -645,5 +645,10 @@ describe("team load, dashboard, baselines and time tracking", () => {
     assert.ok(!copies(LINE, "\n", "- [ ] Other @est:1h\n"));
     // A copy pasted elsewhere: the timed line (on line 3 here) stays where it is.
     assert.ok(!copiesLine(LINE, 3, [change(`${LINE}\n`)]));
+    // Lines 10 to 12 copied with the timed line among them: Down inserts them at the start of
+    // line 10, Up at the end of line 12.
+    assert.ok(copiesLine(LINE, 12, [change(`a\nb\n${LINE}\n`)]));
+    const up = { ...change(`\n${LINE}\nb\nc`), range: new vscode.Range(12, 9, 12, 9) };
+    assert.ok(copiesLine(LINE, 10, [up]));
   });
 });

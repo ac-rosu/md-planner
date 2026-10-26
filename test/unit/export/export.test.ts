@@ -143,13 +143,12 @@ describe("HTML status report", () => {
         "id: M1",
         "target: 2026-10-30",
         "",
-        "- [ ] Docs @est:8h @owner:sam ^T2",
-        "- [!] Keys @est:40h @owner:sam @blocked:keys ^T1"
+        "- [!] Keys @est:16h @owner:sam @blocked:keys ^T1",
+        "- [ ] Docs @est:8h @owner:sam ^T2"
       ),
     });
-    // Keys has the least room: Sam's hours end before the target.
     expect(computeRisks(p, schedulePlan(p, { today: "2026-10-05" }))).toContain(
-      "Blocked <b>T1</b> (keys): can stay blocked until 2026-10-09 (Sam has no working hours from 2026-10-19 on)."
+      "Blocked <b>T1</b> (keys): can stay blocked until 2026-10-14 (Sam has no working hours from 2026-10-19 on)."
     );
   });
 

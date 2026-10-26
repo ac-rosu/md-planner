@@ -21,7 +21,7 @@ import { confirmNoNewErrors, confirmStillScheduled } from "../guard";
 import { type PlanService } from "../planService";
 import { type PlannerState } from "../state";
 import { type MilestoneNode } from "../views/milestonesTree";
-import { currentTask, findById, resolveTask, type TaskArg } from "./args";
+import { currentOrMovedTask, resolveTask, type TaskArg } from "./args";
 import { moveTaskCommand, pickSection } from "./edit";
 
 const MOVES: Array<[string, OutlineMove]> = [
@@ -183,16 +183,12 @@ function isTaskNode(x: unknown): x is MilestoneNode & { kind: "task" } {
 
 /**
  * The task as it is in the current plan: the same object; for a task with an id, the one found
- * again on its line (see currentTask), or by its id when no other item has that id (a copied line
- * keeps the id). A task without an id the plan no longer has is not guessed from its old line.
+ * again (see currentOrMovedTask). A task without an id the plan no longer has is not guessed from
+ * its old line.
  */
 function current(plan: Plan, t: Task): Task | undefined {
   if (plan.file(t.file)?.items.includes(t)) return t;
-  if (!t.id) return undefined;
-  const found = currentTask(plan, t);
-  if (found) return found;
-  const byId = findById(plan, t.id);
-  return byId && argOf(plan, byId) === t.id ? byId : undefined;
+  return t.id ? currentOrMovedTask(plan, t) : undefined;
 }
 
 /** The id when it names only this item, else its line: a copied line keeps the id. */
@@ -202,11 +198,12 @@ function argOf(plan: Plan, t: Task): string | { file: string; line: number } {
 }
 
 /**
- * A moved task once the move is applied and saved: the task with its id (without one, its title)
- * nearest to the line it landed on, as saving can still add or remove lines (a formatter).
+ * A moved task once the move is applied and saved: the task with its title nearest to the line it
+ * landed on, as saving can still add or remove lines (a formatter).
  */
 function landed(plan: Plan, m: MovedTask): Task | undefined {
-  const same = (t: Task) => (m.task.id ? t.id === m.task.id : t.title === m.task.title);
+  // By its title, not its id: saving gives a copy that kept its id a new one.
+  const same = (t: Task) => t.kind === m.task.kind && t.title === m.task.title;
   const found = plan.file(m.file)?.items.filter(same) ?? [];
   return found.sort((a, b) => Math.abs(a.line - m.line) - Math.abs(b.line - m.line))[0];
 }
@@ -304,7 +301,15 @@ export class MilestonesDragAndDrop implements vscode.TreeDragAndDropController<M
     // In a cancelled milestone open work leaves the schedule: ask, as for a drop next to its tasks.
     if (!(await confirmStillScheduled(leavesSchedule(service.plan, [task], undefined, m.id))))
       return;
-    await moveTaskCommand(service, argOf(service.plan, task), {
+    // The plan may have changed while the questions were open.
+    const now = current(service.plan, task);
+    if (!now) {
+      void vscode.window.showWarningMessage(
+        "Planner: The plan changed in the meantime; try again."
+      );
+      return;
+    }
+    await moveTaskCommand(service, argOf(service.plan, now), {
       milestone: m.id,
       section: section || undefined,
     });

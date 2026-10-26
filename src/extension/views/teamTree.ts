@@ -122,7 +122,7 @@ export class TeamTreeProvider implements vscode.TreeDataProvider<TeamNode>, vsco
     }
     const t = node.task;
     const item = new vscode.TreeItem(t.title || "(untitled)", vscode.TreeItemCollapsibleState.None);
-    item.id = `team:${node.personId}:${taskNodeId(t)}`;
+    item.id = `team:${node.personId}:${taskNodeId(t, plan)}`;
     item.description = taskDescription(plan, t, this.state.today, this.state.decorations(t));
     item.tooltip = taskTooltip(plan, t, this.state.tooltipLines(t), TASK_HINT);
     item.iconPath = statusIcon(t.status);

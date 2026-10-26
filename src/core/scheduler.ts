@@ -87,11 +87,6 @@ export interface TaskSchedule {
   late: boolean;
   /** Total slack in working days (CPM); negative when late. */
   slack?: number;
-  /**
-   * When the slack ends where someone's working hours end (`capacityFrom: … 0h`): the owner of
-   * this task or of work that waits for it, and the first day without hours.
-   */
-  hoursEnd?: { resource: string; from: DayNumber };
   critical: boolean;
   unassigned: boolean;
   unknownOwner: boolean;
@@ -797,53 +792,32 @@ function computeCriticalPath(plan: Plan, s: Schedule, groupsOf: Map<Task, GroupN
   );
   const openSet = new Set(open.map((o) => o.task));
   const lateStart = new Map<Task, DayNumber>();
-  // What ends each task's late finish, when it is someone's working hours (see TaskSchedule).
-  const hoursEnd = new Map<Task, TaskSchedule["hoursEnd"]>();
   // A task that waits for a whole group starts at least one working day (plus the lag) after its
   // last task: the same late finish for every member, worked out once per group.
-  const groupLateFinish = new Map<GroupNode, { lf: number; end: TaskSchedule["hoursEnd"] }>();
-  const groupBound = (g: GroupNode) => {
-    let found = groupLateFinish.get(g);
-    if (!found) {
-      found = { lf: Number.POSITIVE_INFINITY, end: undefined };
+  const groupLateFinish = new Map<GroupNode, number>();
+  const groupBound = (g: GroupNode): number => {
+    let lf = groupLateFinish.get(g);
+    if (lf === undefined) {
+      lf = Number.POSITIVE_INFINITY;
       for (const dep of s.graph.dependents.get(g) ?? []) {
         const ls = lateStart.get(dep);
         if (ls === undefined) continue;
-        for (const r of s.graph.requirements.get(dep)!) {
-          const lf = ls - (1 + Math.ceil(r.lagHours / hpd - EPS));
-          if (r.node === g && lf < found.lf) found = { lf, end: hoursEnd.get(dep) };
-        }
+        for (const r of s.graph.requirements.get(dep)!)
+          if (r.node === g) lf = Math.min(lf, ls - (1 + Math.ceil(r.lagHours / hpd - EPS)));
       }
-      groupLateFinish.set(g, found);
+      groupLateFinish.set(g, lf);
     }
-    return found;
+    return lf;
   };
   const refIdx = (d: DayNumber) => workIndex(cal, s.start, d);
   const referenceLf = refIdx(cal.previousWorkingDay(reference));
-  // An owner whose hours end (`capacityFrom: … 0h`) finishes their work by their last working day,
-  // as in the latest-finish order of the simulation.
-  const capacityEnd = new Map<string, { lf: number; from: DayNumber }>();
-  for (const p of plan.people) {
-    const last = p.capacityChanges[p.capacityChanges.length - 1];
-    if (last?.hours === 0)
-      capacityEnd.set(p.id.toLowerCase(), {
-        lf: refIdx(cal.previousWorkingDay(last.from - 1)),
-        from: last.from,
-      });
-  }
   // Walked backwards, every task comes after the tasks that wait for it.
   const order = dependencyOrder(s.graph, groupsOf, openSet);
   for (let i = order.length - 1; i >= 0; i--) {
     const t = order[i];
     const ts = s.tasks.get(t)!;
     let lf = referenceLf;
-    let end: TaskSchedule["hoursEnd"];
     if (ts.deadline !== undefined) lf = Math.min(lf, refIdx(cal.previousWorkingDay(ts.deadline)));
-    const own = capacityEnd.get(ts.resource);
-    if (own && own.lf < lf) {
-      lf = own.lf;
-      end = { resource: ts.resource, from: own.from };
-    }
     const node = s.graph.leafNode.get(t)!;
     for (const dep of s.graph.dependents.get(node) ?? []) {
       const ls = lateStart.get(dep);
@@ -855,22 +829,10 @@ function computeCriticalPath(plan: Plan, s: Schedule, groupsOf: Map<Task, GroupN
         // A same-person successor that the scheduler placed on the predecessor's finish day may
         // stay there; otherwise the successor starts at least one working day later.
         const sameDay = lagDays === 0 && next.resource === ts.resource && next.start === ts.finish;
-        const bound = ls - (sameDay ? 0 : 1 + lagDays);
-        if (bound < lf) {
-          lf = bound;
-          end = hoursEnd.get(dep);
-        }
+        lf = Math.min(lf, ls - (sameDay ? 0 : 1 + lagDays));
       }
     }
-    for (const g of groupsOf.get(t) ?? []) {
-      const bound = groupBound(g);
-      if (bound.lf < lf) {
-        lf = bound.lf;
-        end = bound.end;
-      }
-    }
-    hoursEnd.set(t, end);
-    ts.hoursEnd = end;
+    for (const g of groupsOf.get(t) ?? []) lf = Math.min(lf, groupBound(g));
     // Only the scheduled part counts: in-progress tasks started before today.
     const es = refIdx(cal.nextWorkingDay(Math.max(ts.start!, s.start)));
     const duration = Math.max(0, refIdx(ts.finish!) - es);

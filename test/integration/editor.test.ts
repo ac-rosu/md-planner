@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as vscode from "vscode";
 import { currentTask } from "../../src/extension/commands/args";
+import { type MilestoneNode } from "../../src/extension/views/milestonesTree";
 import {
   docText,
   getApi,
@@ -393,6 +394,40 @@ describe("editor integration", () => {
       assert.ok(docText(M2).split("\n").includes(ORIGINAL), "the original is unchanged");
     });
 
+    it("does not take the other copy when the one a node shows got a new id", async () => {
+      const api = await getApi();
+      const { editor, line } = await pasteCopy();
+      const copy = api.state.plan.file(M2)!.items.find((t) => t.line === line)!;
+      // As the duplicate-id quick fix does, while a form or tree node still shows the copy.
+      const at = editor.document.lineAt(line).text.indexOf("^T104");
+      await editor.edit((b) => b.replace(new vscode.Range(line, at, line, at + 5), "^T999"));
+      await waitFor(() => !api.state.plan.file(M2)!.items.includes(copy), "parsed again");
+      const before = docText(M2);
+      assert.equal(
+        await vscode.commands.executeCommand(
+          "planner.setStatus",
+          { kind: "task", task: copy },
+          "done"
+        ),
+        false
+      );
+      assert.equal(docText(M2), before);
+    });
+
+    it("gives copies that share an id rows of their own in the Milestones view", async () => {
+      const api = await getApi();
+      await pasteCopy();
+      const copies = api.state.plan.file(M2)!.items.filter((t) => t.id === "T104");
+      const items = copies.map((task) =>
+        api.milestones.getTreeItem({ kind: "task", task } as MilestoneNode)
+      );
+      assert.equal(new Set(items.map((i) => i.id)).size, 2);
+      assert.deepEqual(
+        items.map((i) => i.command?.arguments?.[0]),
+        copies.map((t) => ({ file: M2, line: t.line }))
+      );
+    });
+
     it("does not guess which copy an out-of-date tree node means", async () => {
       const api = await getApi();
       const { editor, line } = await pasteCopy();
@@ -412,26 +447,6 @@ describe("editor integration", () => {
         false
       );
       assert.equal(docText(M2), before);
-    });
-
-    it("finds an out-of-date tree node's copy on its line when nothing above it changed", async () => {
-      const api = await getApi();
-      const { editor, line } = await pasteCopy();
-      const copy = api.state.plan.file(M2)!.items.find((t) => t.line === line)!;
-      // A line typed below it: the plan is parsed again, but nothing above the copy moved.
-      const end = editor.document.lineAt(editor.document.lineCount - 1).range.end;
-      await editor.edit((b) => b.insert(end, "\nTyped below."));
-      await waitFor(() => !api.state.plan.file(M2)!.items.includes(copy), "parsed again");
-      assert.equal(
-        await vscode.commands.executeCommand(
-          "planner.setStatus",
-          { kind: "task", task: copy },
-          "done"
-        ),
-        true
-      );
-      assert.match(lineAt(line), /^- \[x\] Order events schema @est:6h .*@done:.*\^T104$/);
-      assert.match(docText(M2), /\n {2}- \[ \] Order events schema @est:6h \^T104\n/);
     });
 
     it("sets the status of the hovered copy as an editor edit, without saving", async () => {

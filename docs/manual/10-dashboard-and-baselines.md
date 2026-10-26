@@ -114,11 +114,12 @@ yet. The **Blocked** list says what it costs:
   chain (also through its parent and through milestone `depends:`).
 - **can stay blocked until 2026-12-14**: the last day it can stay blocked without moving anything
   (its latest start minus one working day, from its slack). On the critical path it adds that after
-  that day the end date moves. When the working hours of its owner, or of a colleague whose work
-  waits for it, end (`capacityFrom: … 0h`), the date also leaves them the time for that work next
-  to their other work, and says so: "(Alex has no working hours from 2026-10-19 on)". **must be
-  unblocked now** means it only just fits; **already too late** that it, or the work that waits for
-  it, no longer fits before their hours end. The status report lists a blocked task as a risk when
+  that day the end date moves. When its owner's working hours end (`capacityFrom: … 0h`), the date
+  also leaves them the time for the work and for their own tasks that wait for it, next to their
+  other work, and says so: "(Alex has no working hours from 2026-10-19 on)". **must be unblocked
+  now** means it only just fits; **already too late** that it, or the owner's work that waits for
+  it, no longer fits before their hours end. (When a colleague whose hours end does the work that
+  waits for it, the date comes from the slack only.) The status report lists a blocked task as a risk when
   it has no more room than the critical path, or already holds the plan up.
 - **already delaying the plan** (or **the end date**): it has no slack left, so every day it stays
   blocked moves its milestone (or the end of the project).

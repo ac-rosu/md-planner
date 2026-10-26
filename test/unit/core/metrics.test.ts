@@ -85,6 +85,21 @@ describe("burn-up", () => {
     expect(b.scope).toBe(40);
     expect(b.points.find((x) => x.week === weekStart(parseDate("2026-10-05")!))!.done).toBe(10);
     expect(b.points.at(-1)!.forecast).toBe(40);
+    // A done parent without @started: in the week it was done, not this week.
+    const done = planFrom({
+      "project.md": md("# P", "", "start: 2026-09-01", "end: 2027-03-31"),
+      "team.md": md("# Team", "", "## Sam", "", "capacity: 40h/week"),
+      "milestones/M1.md": md(
+        "# M1",
+        "",
+        "- [x] Feature @est:40h @act:10h @owner:sam @done:2026-09-11 ^T1",
+        "  - [x] Backend @est:15h @act:15h @started:2026-09-01 @done:2026-09-04 ^T2",
+        "  - [x] Frontend @est:15h @act:15h @started:2026-09-07 @done:2026-09-11 ^T3",
+        "- [ ] Next @est:40h @owner:sam ^T4"
+      ),
+    });
+    const d = burnUp(done, schedulePlan(done, { today: "2026-10-26" }));
+    expect(d.points.find((x) => x.week === weekStart(parseDate("2026-09-07")!))!.done).toBe(40);
   });
 
   it("produces chart geometry with ticks and a today line", () => {

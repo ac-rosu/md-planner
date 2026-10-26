@@ -302,10 +302,11 @@ export function lineAfter(
 }
 
 /**
- * True when a change on the timed line (at `line`) inserts lines, one of which reads `text`: a copy
- * of it next to it (Copy Line Down or Up, a paste right there). Then the line and its copy cannot
- * be told apart: VS Code leaves the cursor on the line it takes for the original, which is the one
- * people then edit as the copy. A copy pasted elsewhere leaves the timed line where it was.
+ * True when a change copies the timed line (at `line`, reading `text`) next to itself: Copy Line
+ * Down inserts the selected lines with the timed one before the first of them, Copy Line Up after
+ * the last, and so does a paste right there. Then the line and its copy cannot be told apart: VS
+ * Code leaves the cursor on the lines it takes for the original, which people then edit as the
+ * copy. A copy pasted elsewhere leaves the timed line where it was.
  */
 export function copiesLine(
   text: string,
@@ -313,9 +314,11 @@ export function copiesLine(
   changes: readonly vscode.TextDocumentContentChangeEvent[]
 ): boolean {
   return changes.some((c) => {
-    if (c.range.start.line !== line && c.range.end.line !== line) return false;
     const lines = c.text.split(/\r?\n/);
-    return lines.length > 1 && lines.includes(text);
+    // The k lines copied end at the insertion (Up) or start there (Down).
+    const k = lines.length - 1;
+    const at = c.range.start.line;
+    return k > 0 && line > at - k && line < at + k && lines.includes(text);
   });
 }
 

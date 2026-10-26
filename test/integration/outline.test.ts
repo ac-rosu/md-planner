@@ -406,6 +406,10 @@ describe("subtasks and reorganizing", () => {
     const original = text.indexOf("- [ ] Payment provider integration @est:2d");
     assert.ok(text.indexOf("## Checkout") < original && original < text.indexOf("## Accounts"));
     assert.match(line("T105"), /Payment provider integration/);
+    // The tree shows the moved copy, not the original that had its id: the next press moves it.
+    await vscode.commands.executeCommand("planner.moveTaskUp", "tree");
+    assert.match(docText(M2), /- \[ \] Payment fallback @est:4h \^T\d+\n- \[[^\]]\] .*\^T112\n/);
+    assert.equal(docText(M2).indexOf("- [ ] Payment provider integration @est:2d"), original);
   });
 
   it("moves a parent along with its subtasks and asks before leaving subtasks open", async () => {

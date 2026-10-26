@@ -85,6 +85,7 @@ function teamDates(plan: Plan, issues: Issue[]): void {
 /** Work under way in a milestone while a milestone it depends on is not finished. */
 function startedEarly(plan: Plan, t: Task, issues: Issue[]): void {
   if (t.kind !== "task" || !isLeaf(t) || (t.status !== "doing" && t.status !== "review")) return;
+  if (!isSchedulableTask(plan, t)) return;
   const waiting = unfinishedMilestoneDeps(plan, t.milestoneId);
   if (waiting.length === 0) return;
   issues.push({
