@@ -9,6 +9,7 @@ import { milestoneStats } from "../core/queries";
 import { nextId } from "../core/writer";
 import { nextMilestoneId } from "../core/writer/entities";
 import { type Staging } from "./staging";
+import { workspacePath } from "./paths";
 import { availableTemplates } from "./templates";
 import { type PlannerTools, ToolError } from "./tools";
 
@@ -28,8 +29,13 @@ export interface ProjectSettings {
   removeHolidays?: string[];
 }
 
-export function listTemplates(_tools: PlannerTools, args: { templatesFolder?: string }) {
-  return availableTemplates(args.templatesFolder).map((t) => ({
+/** A custom templates folder from a tool call: inside the workspace only. */
+function templatesFolder(tools: PlannerTools, folder: string | undefined): string | undefined {
+  return folder ? workspacePath(tools.workspaceDir, folder, "templatesFolder") : undefined;
+}
+
+export function listTemplates(tools: PlannerTools, args: { templatesFolder?: string }) {
+  return availableTemplates(templatesFolder(tools, args.templatesFolder)).map((t) => ({
     name: t.name,
     description: t.description,
     files: Object.keys(t.files).sort(),
@@ -56,7 +62,7 @@ export function stageProject(tools: PlannerTools, st: Staging, args: CreateProje
   if (!isValidDate(end)) throw new ToolError(`Invalid end date "${end}" (YYYY-MM-DD).`);
   if (end < start) throw new ToolError("The end date is before the start date.");
   const name = args.template ?? "empty";
-  const templates = availableTemplates(args.templatesFolder);
+  const templates = availableTemplates(templatesFolder(tools, args.templatesFolder));
   const template = templates.find((t) => t.name === name);
   if (!template)
     throw new ToolError(`Unknown template "${name}" (${templates.map((t) => t.name).join(", ")}).`);

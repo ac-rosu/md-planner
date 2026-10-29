@@ -28,10 +28,17 @@ same preview, and the preview stays on the manual when you open other Markdown f
    action lives, and how the forms work.
 3. Use chapters 4 to 16 as a reference when you need the details of one area.
 4. Read the **[Power-user guide](17-power-user-guide.md)** last: recipes, routines, every command,
-   every setting, keyboard shortcuts and troubleshooting.
+   every setting and keyboard shortcuts.
+
+Something does not work as expected? Look it up in
+**[Troubleshooting](17-power-user-guide.md#troubleshooting)**. A word you do not know? The
+**[Glossary](18-glossary.md)** explains each one in a sentence.
 
 ## Conventions
 
+- This manual ships with the extension and describes the version you have installed. What changed
+  between versions is in the extension's Change Log (Extensions view → Markdown Project Planner →
+  **Changelog**).
 - **Screenshots** come from the sample project `examples/customer-portal`, the release of a
   customer portal, as of **Wednesday 14 October 2026**, in VS Code's Dark Modern theme. Pink boxes,
   arrows and numbered badges are annotations; the numbers refer to the table under each picture.
@@ -40,7 +47,8 @@ same preview, and the preview stays on the manual when you open other Markdown f
 - **"Planner: Export…"** means a command in the Command Palette (Cmd+Shift+P). Type a few letters
   of the name, for example `planner exp`, and press Enter.
 - **File paths** such as `milestones/M2-backend.md` are relative to the plan folder
-  (`plan/` by default).
+  (`plan/` by default); a path that starts with `plan/`, such as `plan/reports/`, is relative to
+  the workspace folder.
 - `code like this` is text you type into a plan file or a setting.
 
 ## The screen at a glance
@@ -83,6 +91,7 @@ same preview, and the preview stays on the manual when you open other Markdown f
 | [15. MCP server and command line](15-mcp-and-cli.md)         | Let an agent build and run the whole plan from plain text; validate and export in CI.   |
 | [16. How scheduling works](16-how-scheduling-works.md)       | The rules behind every date, so you can steer the schedule on purpose.                  |
 | [17. Power-user guide](17-power-user-guide.md)               | Recipes, routines, all commands, all settings, shortcuts, troubleshooting.              |
+| [18. Glossary](18-glossary.md)                               | The planner's words in one sentence each.                                               |
 
 ---
 

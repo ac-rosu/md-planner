@@ -204,7 +204,7 @@ describe("time tracking", () => {
     ]);
     expect(addActual(5, 1.25)).toBe("6.25h");
     expect(addActual(undefined, 2)).toBe("2h");
-    expect(formatElapsed(65 * 60_000)).toBe("1:05");
+    expect(formatElapsed(65 * 60_000)).toBe("1h 05m");
   });
 });
 

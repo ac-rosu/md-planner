@@ -91,7 +91,8 @@ export interface GanttModel {
 
 export interface BaselineLookup {
   name: string;
-  task(key: string): { start?: DayNumber; finish?: DayNumber } | undefined;
+  /** With the task's title, an entry of a task without id (`file#line`) under another title is not its. */
+  task(key: string, title?: string): { start?: DayNumber; finish?: DayNumber } | undefined;
 }
 
 export interface GanttOptions {
@@ -142,7 +143,7 @@ export function buildGanttModel(plan: Plan, schedule: Schedule, options: GanttOp
     const start = leaf ? ts?.start : roll?.start;
     const finish = leaf ? ts?.finish : roll?.finish;
     const est = estimateHours(t);
-    const b = baseline?.task(key);
+    const b = baseline?.task(key, t.title);
     const tooltip = [
       `${t.id ? `${t.id} · ` : ""}${t.title}`,
       `${STATUS_LABEL[t.status]}${person ? ` · ${person.name}` : owner ? ` · ${owner}` : ""}`,

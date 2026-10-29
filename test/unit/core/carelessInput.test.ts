@@ -1,6 +1,11 @@
 // What a plan does with input typed in a hurry: it is either read as meant or reported, never
 // dropped without a word.
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { baselineText, createBaseline } from "../../../src/core/baseline";
+import { loadPlanIndex } from "../../../src/core/fsLoader";
 import { parseWorkweek } from "../../../src/core/dates";
 import { buildDepGraph, newTaskWouldCycle } from "../../../src/core/graph";
 import { joinDepIds, moveIdToEnd, moveLineUp, renameAttrKey } from "../../../src/core/lineFixes";
@@ -9,7 +14,19 @@ import { cleanTag, nearMissCheckbox, titleMarkup } from "../../../src/core/parse
 import { scheduleDiagnostics } from "../../../src/core/scheduleDiagnostics";
 import { schedulePlan } from "../../../src/core/scheduler";
 import { validatePlan } from "../../../src/core/validate";
-import { addTag, formatTaskBlock, formatTaskLine, guardNotes } from "../../../src/core/writer";
+import {
+  addTag,
+  formatTaskBlock,
+  formatTaskLine,
+  guardNotes,
+  nextId,
+  setAttr,
+  setProperty,
+} from "../../../src/core/writer";
+import { formatPersonSection, setMilestoneDescription } from "../../../src/core/writer/entities";
+import { oneLine } from "../../../src/core/text";
+import { appendRunLog } from "../../../src/core/testRun";
+import { browserPathProblem } from "../../../src/export/pdf";
 import { newTaskLeavesSchedule } from "../../../src/core/writer/structure";
 import { apply, md, milestone, planFrom, task } from "../helpers";
 
@@ -426,5 +443,107 @@ describe("notes of new tasks", () => {
     });
     expect(task(p, "T2").children).toEqual([]);
     expect(p.tasks.map((t) => t.id)).toEqual(["T2", "T3"]);
+  });
+});
+
+describe("values written on one line", () => {
+  it("turn line breaks into spaces, so they cannot start a task, a property or a heading", () => {
+    expect(oneLine("x\n- [ ] ghost @est:80h\r\n## Ghost\u2028end")).toBe(
+      "x - [ ] ghost @est:80h ## Ghost end"
+    );
+    const p = plan("- [ ] a @est:8h ^T1");
+    const f = p.file("milestones/M1.md")!;
+    const out = apply(f, setAttr(f.lines, task(p, "T1"), "eq", "x\n- [ ] ghost @est:80h"));
+    expect(out).toContain('- [ ] a @est:8h @eq:"x - [ ] ghost @est:80h" ^T1\n');
+    expect(planFrom({ "milestones/M1.md": out }).tasks.length).toBe(1);
+    const proj = planFrom({ "project.md": md("# P", "", "code: A", "hoursPerDay: 8") });
+    const pf = proj.file("project.md")!;
+    expect(apply(pf, setProperty(pf.lines, pf.props, "code", "X\nhoursPerDay: 2"))).toBe(
+      md("# P", "", "code: X hoursPerDay: 2", "hoursPerDay: 8")
+    );
+    expect(
+      formatPersonSection({ id: "sam", name: "Sam\n## Eve", role: "dev\noff: 2026-01-01" })
+    ).toEqual(["## Sam ## Eve", "", "id: sam", "role: dev off: 2026-01-01"]);
+  });
+
+  it("keep a milestone's description text, not structure", () => {
+    const p = planFrom({ "milestones/M1.md": md("# M1", "", "id: M1", "", "- [ ] a ^T1") });
+    const f = p.file("milestones/M1.md")!;
+    const out = apply(
+      f,
+      setMilestoneDescription(
+        f.lines,
+        p.milestones[0],
+        "Scope.\n- [ ] ghost @est:80h\n## Ghost\n```"
+      )
+    );
+    expect(out).toContain("Scope.\n\\- [ ] ghost @est:80h\n\\## Ghost\n```\n```\n");
+    const again = planFrom({ "milestones/M1.md": out });
+    expect(again.tasks.map((t) => t.id)).toEqual(["T1"]);
+    expect(again.milestones[0].sections).toEqual([]);
+  });
+});
+
+describe("the browser that prints PDFs", () => {
+  it("is a browser program, never a script", () => {
+    for (const ok of [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+      "/usr/bin/chromium-browser",
+    ])
+      expect(browserPathProblem(ok), ok).toBeUndefined();
+    for (const bad of ["/tmp/fakebrowser.sh", "/tmp/chrome.sh", "C:\\x\\chrome.cmd", "/bin/sh"])
+      expect(browserPathProblem(bad), bad).toMatch(
+        /is not Microsoft Edge, Google Chrome or Chromium/
+      );
+  });
+});
+
+describe("run logs", () => {
+  it("name the cases and punch items of failed substeps", () => {
+    const p = planFrom({
+      "tests/T1.md": md(
+        "# T",
+        "",
+        "id: T1",
+        "",
+        "## TC-01 Login",
+        "",
+        "- [x] Open the page @result:pass",
+        "  - [x] Password field @result:fail @punch:P003"
+      ),
+    });
+    const f = p.file("tests/T1.md")!;
+    const out = apply(f, [
+      appendRunLog(f, p.testById("T1")!, { date: "2026-11-02", tester: "Ann\nWitness: X" }),
+    ]);
+    expect(out).toContain("tester: Ann Witness: X\n");
+    expect(out).toContain("failed: TC-01\npunch: P003\n");
+  });
+});
+
+describe("ids of deleted tasks", () => {
+  it("are not handed out again while a saved baseline names them", () => {
+    const dir = mkdtempSync(join(tmpdir(), "planner-ids-"));
+    mkdirSync(join(dir, "milestones"));
+    mkdirSync(join(dir, "baselines"));
+    const m1 = (...tasks: string[]) => md("# M1", "", "id: M1", "", ...tasks);
+    writeFileSync(
+      join(dir, "milestones", "M1.md"),
+      m1("- [ ] a @est:8h ^T1", "- [ ] b @est:8h ^T2")
+    );
+    const before = loadPlanIndex(dir).plan;
+    const baseline = createBaseline(
+      before,
+      schedulePlan(before, { today: "2026-11-02" }),
+      "kickoff"
+    );
+    writeFileSync(join(dir, "baselines", "2026-11-02-kickoff.json"), baselineText(baseline));
+    writeFileSync(join(dir, "baselines", "notes.json"), "{ not a baseline");
+    // T2 is deleted: without the baseline, the next task would be T2 again.
+    writeFileSync(join(dir, "milestones", "M1.md"), m1("- [ ] a @est:8h ^T1"));
+    expect(nextId(loadPlanIndex(dir).plan, "T")).toBe("T3");
+    rmSync(join(dir, "baselines"), { recursive: true });
+    expect(nextId(loadPlanIndex(dir).plan, "T")).toBe("T2");
   });
 });

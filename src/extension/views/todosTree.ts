@@ -65,7 +65,8 @@ export class TodosTreeProvider implements vscode.TreeDataProvider<TodoNode>, vsc
       `**${t.keyword}** ${t.text}\n\n${node.file.path}:${t.line + 1}` +
         (task ? `\n\nLinked to **${task.id}** · ${task.title} (${STATUS_LABEL[task.status]})` : "")
     );
-    item.contextValue = t.taskId ? "todo-linked" : "todo";
+    // A link to a task that no longer exists can be promoted again.
+    item.contextValue = task ? "todo-linked" : "todo";
     item.command = {
       command: "vscode.open",
       title: "Open",

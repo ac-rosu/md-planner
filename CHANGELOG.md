@@ -4,6 +4,39 @@
 
 Safer editing, from the pilot users' feedback.
 
+- Safer for AI agents (MCP): a value with line breaks can no longer add lines to a plan file (fake
+  tasks, changed settings); paths in tool calls stay inside the workspace; PDF printing only
+  starts Edge, Chrome or Chromium, never a program from the workspace; a `ref` used twice is
+  refused; titles with `#42` or `@est:4h` are noted in `warnings`; absurd values (`log_time` of
+  5,000 h, `ganttWeeks` of 300,000) are refused. `export_report`'s `outDir` must be inside the
+  workspace.
+- Exports: CSV text that starts like a formula can no longer run in Excel; MS Project files stay
+  valid XML with any title; a test plan id cannot put a report outside the reports folder.
+- Command line: mistakes give one line and exit code 2 instead of a stack trace or a false pass
+  (a `--plan` without `project.md`, unknown options, invalid numbers); broken baseline files are
+  skipped with a warning.
+- Plan files: git merge conflict markers, files that are not UTF-8 and files that cannot be read
+  are reported; the planner does not change the first two (accented letters stayed broken before)
+  and one unreadable file no longer stops the extension. `Project.md`, `Team.md` and
+  `Milestones/` are read; hidden files (`._M1.md`) are not; deleted or renamed folders update the
+  plan without Refresh; a save that fails is reported.
+- Timer: it asks before logging a run longer than a working day or past midnight, shows `1h 05m`,
+  and says when the timed task was finished elsewhere. Log time no longer overwrites `@act:90m`.
+- Kanban, team, inbox, TODOs: subtasks in owner lanes keep their inherited owner; overdue counts
+  move on at midnight; "Full time" capacity changes work; planning an inbox item or adding time
+  off while the file changes no longer hits the wrong line; `TODO(alice)` is not a task link and
+  a TODO linked to a deleted task can be promoted again; Add person keeps what you typed when the
+  id is taken.
+- A new task never gets the id of a deleted task that a saved baseline still names. Run logs list
+  failed substeps.
+- F2 rename, quick fixes, ids added on save and TODO promotion respect the same rules: no changes to
+  a file that is not UTF-8, and a question before changing one with merge conflict markers. The
+  status bar says "Saved" only when the change is saved, else "Changed … (not saved yet)".
+- MS Project export: a finished task's work is the hours it took, 100 % complete (7 h logged of an
+  8 h estimate showed 88 %), and milestone dependencies are exported as links.
+- The manual has a glossary, a version note and more troubleshooting; its tutorial no longer
+  unticks the milestone dependency the form fills in.
+
 - Giving a milestone a target no longer reshuffles the plan. Without any target, the schedule
   already does first the work that others wait for (it went by file order, and a colleague could
   sit idle until a target came along), while keeping the milestone order. A plan where every

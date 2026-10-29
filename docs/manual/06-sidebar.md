@@ -211,7 +211,12 @@ Choose a milestone and section (as for inbox items). The planner then, in one un
 - adds a task to the milestone with the comment text as title and `@src:path#L<line>` pointing
   back to the code, and
 - writes the new id into the comment: `// TODO: handle timeout` becomes
-  `// TODO(T142): handle timeout`.
+  `// TODO(T142): handle timeout`, and `// TODO(alice): …` becomes `// TODO(T142, alice): …`.
+
+Only a task id (`T142`) in the parentheses links the comment; `TODO(v2)` or `TODO(alice)` does not.
+A comment linked to a task that was deleted since can be promoted again. Text in the comment that a
+task line would read as a tag or attribute is kept in the title in brackets: `#1234` becomes
+`(#1234)`.
 
 A promoted comment shows a link icon and the task's status (`→ T113 to do`). Cmd+click on `@src` in
 the plan opens the code line.

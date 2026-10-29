@@ -2,6 +2,7 @@
 // Values are kept as text here; resolve.ts interprets them with the project settings.
 import {
   type InboxFile,
+  type Issue,
   type ItemKind,
   type MilestoneFile,
   type ParsedFile,
@@ -19,11 +20,17 @@ import { range, TextLines } from "../text";
 import { getProp, matchProperty } from "./properties";
 import { type Heading, scanLines, type ScanResult } from "./scan";
 
-/** Classifies a plan-folder-relative POSIX path. Generated folders are never plan files. */
+/**
+ * Classifies a plan-folder-relative POSIX path. Generated folders are never plan files, and
+ * neither are hidden files and folders (`.planner/`, `.trash/`, macOS `._M1.md` copies, editor
+ * lock files `.#M1.md`). Names are compared ignoring case (`Milestones/M1.md`, `Team.md`): the
+ * path itself stays as it is on disk.
+ */
 export function classifyPlanPath(relPath: string): PlanFileKind | undefined {
-  const p = relPath.replace(/\\/g, "/").replace(/^\.\//, "");
-  if (!p.toLowerCase().endsWith(".md")) return undefined;
-  if (/^(\.planner|reports|baselines)\//.test(p)) return undefined;
+  const p = relPath.replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
+  if (!p.endsWith(".md")) return undefined;
+  if (p.split("/").some((segment) => segment.startsWith("."))) return undefined;
+  if (/^(reports|baselines)\//.test(p)) return undefined;
   switch (p) {
     case "project.md":
       return "project";
@@ -37,6 +44,62 @@ export function classifyPlanPath(relPath: string): PlanFileKind | undefined {
   if (p.startsWith("milestones/")) return "milestone";
   if (p.startsWith("tests/")) return "test";
   return undefined;
+}
+
+// --- Problems with a whole file -------------------------------------------------------------
+
+/** A problem with a whole file (or folder), shown at its start. */
+function fileIssue(
+  path: string,
+  severity: Issue["severity"],
+  code: string,
+  message: string
+): Issue {
+  return { file: path, range: range(0, 0, 0), severity, code, message };
+}
+
+/** What a read error says, short: "permission denied (EACCES)". */
+export function describeReadError(error: unknown): string {
+  const e = error as { code?: unknown; message?: unknown } | null | undefined;
+  const message = typeof e?.message === "string" ? e.message : String(error);
+  // Node: "EACCES: permission denied, open '/plan/x.md'"; VS Code wraps that in its own message.
+  const node = /\b(E[A-Z]{2,}): ([^,'()]+)/.exec(message);
+  if (node) return `${node[2].trim()} (${node[1]})`;
+  // VS Code's FileSystemError codes.
+  const known: Record<string, string> = {
+    NoPermissions: "permission denied",
+    Unavailable: "the file is not available",
+    FileIsADirectory: "it is a folder",
+    FileNotADirectory: "not a folder",
+  };
+  if (typeof e?.code === "string" && known[e.code]) return known[e.code];
+  return message.replace(/\s+/g, " ").trim() || "unknown error";
+}
+
+/** A plan file (or a folder of plan files) that could not be read: left out of the plan. */
+export function unreadableFileIssue(path: string, error: unknown, folder = false): Issue {
+  return fileIssue(
+    path,
+    "warning",
+    "unreadable-file",
+    folder
+      ? `Could not read this folder (${describeReadError(error)}); its plan files are left out of the plan.`
+      : `Could not read this file (${describeReadError(error)}); it is left out of the plan.`
+  );
+}
+
+/** How to turn a file in another encoding into UTF-8, in VS Code. */
+export const SAVE_AS_UTF8 =
+  "Save it as UTF-8: Reopen with Encoding → Latin-1 (or the file's encoding), then Save with Encoding → UTF-8.";
+
+/** A file that is not valid UTF-8 (Latin-1, Windows-1252 …): the planner does not edit it. */
+export function notUtf8Issue(path: string): Issue {
+  return fileIssue(
+    path,
+    "error",
+    "not-utf8",
+    `This file is not UTF-8, so the planner does not change it (accented letters would be lost). ${SAVE_AS_UTF8}`
+  );
 }
 
 const ITEM_KIND: Record<PlanFileKind, ItemKind> = {

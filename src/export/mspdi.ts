@@ -20,12 +20,18 @@ import { type Schedule } from "../core/scheduler";
 
 const PRIORITY = { high: 700, med: 500, low: 300 } as const;
 
+/** Characters XML 1.0 does not allow, not even escaped: they are left out. */
+// eslint-disable-next-line no-control-regex
+const NOT_XML = /[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]/g;
+
 function x(text: string | number | undefined): string {
   if (text === undefined) return "";
-  return String(text).replace(
-    /[&<>"']/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]!
-  );
+  return String(text)
+    .replace(NOT_XML, "")
+    .replace(
+      /[&<>"']/g,
+      (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]!
+    );
 }
 
 function tag(name: string, value: string | number | undefined): string {
@@ -135,7 +141,8 @@ export function exportMspdi(plan: Plan, schedule: Schedule, options: MspdiOption
   });
 
   // --- Tasks ----------------------------------------------------------------------------------
-  const taskXml: string[] = [];
+  // Rows as XML; a task row keeps its UID so that its predecessor links are added at the end.
+  const taskXml: Array<string | { uid: number; body: string }> = [];
   const uidOf = new Map<Task | Milestone | Section, number>();
   let uid = 0;
   const projectStart = plan.project.start ? parseDate(plan.project.start)! : schedule.start;
@@ -151,13 +158,19 @@ export function exportMspdi(plan: Plan, schedule: Schedule, options: MspdiOption
   const durationHours = (start: DayNumber, finish: DayNumber) =>
     Math.max(0, cal.workingDaysBetween(start, finish + 1)) * hpd;
 
+  /** The day a done task was finished (`@done`). */
+  const actualFinish = (t: Task): DayNumber | undefined =>
+    t.status === "done" && t.done ? parseDate(t.done) : undefined;
   /**
    * The day work began: `@started`, also on a to-do task with logged work (see stale-started),
-   * which the schedule leaves out.
+   * which the schedule leaves out. Never after the actual finish (a `@started` later than
+   * `@done`), which MS Project would not accept.
    */
   const actualStart = (t: Task): DayNumber | undefined => {
     const iso = hasLoggedWork(t) ? t.started : startedOn(t);
-    return iso ? parseDate(iso) : undefined;
+    const day = iso ? parseDate(iso) : undefined;
+    const finished = actualFinish(t);
+    return day !== undefined && finished !== undefined && day > finished ? finished : day;
   };
   // A row starts on its scheduled (or rolled-up) start, or on its actual start when that is
   // earlier, like a task under way: MS Project expects no actual start before the start. A
@@ -191,9 +204,11 @@ export function exportMspdi(plan: Plan, schedule: Schedule, options: MspdiOption
     extra = ""
   ) => {
     const id = ++uid;
-    taskXml.push(
-      `<Task><UID>${id}</UID><ID>${id}</ID><Name>${x(name)}</Name><Type>1</Type><IsNull>0</IsNull><WBS>${outline}</WBS><OutlineNumber>${outline}</OutlineNumber><OutlineLevel>${level}</OutlineLevel>${start !== undefined ? `<Start>${dt(start)}</Start>` : ""}${finish !== undefined ? `<Finish>${dt(finish, true)}</Finish>` : ""}${start !== undefined && finish !== undefined ? `<Duration>${msDuration(durationHours(start, finish))}</Duration><DurationFormat>7</DurationFormat>` : ""}<Summary>1</Summary><Milestone>0</Milestone><PercentComplete>${Math.round(progress * 100)}</PercentComplete>${extra}</Task>`
-    );
+    // Like a task row, so links can be added to it: a milestone's `depends:` is one.
+    taskXml.push({
+      uid: id,
+      body: `<UID>${id}</UID><ID>${id}</ID><Name>${x(name)}</Name><Type>1</Type><IsNull>0</IsNull><WBS>${outline}</WBS><OutlineNumber>${outline}</OutlineNumber><OutlineLevel>${level}</OutlineLevel>${start !== undefined ? `<Start>${dt(start)}</Start>` : ""}${finish !== undefined ? `<Finish>${dt(finish, true)}</Finish>` : ""}${start !== undefined && finish !== undefined ? `<Duration>${msDuration(durationHours(start, finish))}</Duration><DurationFormat>7</DurationFormat>` : ""}<Summary>1</Summary><Milestone>0</Milestone><PercentComplete>${Math.round(progress * 100)}</PercentComplete>${extra}`,
+    });
     return id;
   };
 
@@ -208,9 +223,12 @@ export function exportMspdi(plan: Plan, schedule: Schedule, options: MspdiOption
     const id = ++uid;
     uidOf.set(t, id);
     const est = estimateHours(t) ?? 0;
-    const act = actualHours(t);
-    const remaining = remainingHours(t);
-    const work = t.status === "done" ? Math.max(act, est) : act + remaining;
+    const done = t.status === "done";
+    // MS Project's work is actual + remaining: a done task's work is what it took, its logged
+    // hours (the estimate when none were logged), and it is 100 % work complete.
+    const act = done ? actualHours(t) || est : actualHours(t);
+    const remaining = done ? 0 : remainingHours(t);
+    const work = act + remaining;
     const pctDone = Math.round(progressOf(t) * 100);
     const parts = [
       `<UID>${id}</UID><ID>${id}</ID>`,
@@ -232,8 +250,8 @@ export function exportMspdi(plan: Plan, schedule: Schedule, options: MspdiOption
       leaf ? `<RemainingWork>${msDuration(remaining)}</RemainingWork>` : "",
     ];
     if (started !== undefined) parts.push(`<ActualStart>${dt(started)}</ActualStart>`);
-    if (t.status === "done" && t.done)
-      parts.push(`<ActualFinish>${dt(parseDate(t.done)!, true)}</ActualFinish>`);
+    const finished = actualFinish(t);
+    if (finished !== undefined) parts.push(`<ActualFinish>${dt(finished, true)}</ActualFinish>`);
     if (leaf && ts && !ts.done && start !== undefined) {
       const constraintDay = Math.max(start, schedule.start);
       parts.push(
@@ -249,7 +267,7 @@ export function exportMspdi(plan: Plan, schedule: Schedule, options: MspdiOption
       t.src ? `Source: ${t.src}` : "",
     ].filter(Boolean);
     if (notes.length) parts.push(tag("Notes", notes.join("\n")));
-    taskXml.push(`<Task>${parts.join("")}__LINKS_${id}__</Task>`);
+    taskXml.push({ uid: id, body: parts.join("") });
     for (const d of t.deps) {
       const pred = plan.taskById(d.id);
       if (pred) pendingLinks.push({ succ: id, pred, lagHours: d.lagHours });
@@ -316,7 +334,7 @@ export function exportMspdi(plan: Plan, schedule: Schedule, options: MspdiOption
     links.set(l.succ, list);
   }
   const tasks = taskXml.map((t) =>
-    t.replace(/__LINKS_(\d+)__/, (_m, id) => (links.get(Number(id)) ?? []).join(""))
+    typeof t === "string" ? t : `<Task>${t.body}${(links.get(t.uid) ?? []).join("")}</Task>`
   );
 
   // --- Resources ------------------------------------------------------------------------------

@@ -668,7 +668,7 @@ export function createServer(tools: PlannerTools): McpServer {
   );
   tool(
     "export_report",
-    "Export the status report (html, pdf), Excel (xlsx), MS Project XML (mspdi), CSV (csv) or the test report of a test plan (test-report, test-report-pdf) into <plan>/reports (or outDir). Branding and defaults come from the workspace's planner.export.* settings.",
+    "Export the status report (html, pdf), Excel (xlsx), MS Project XML (mspdi), CSV (csv) or the test report of a test plan (test-report, test-report-pdf) into <plan>/reports (or outDir, a folder inside the workspace). Branding and defaults come from the workspace's planner.export.* settings.",
     {
       formats: z.array(
         z.enum([
@@ -694,9 +694,9 @@ export function createServer(tools: PlannerTools): McpServer {
       witness: z.string().optional(),
       author: z.string().optional(),
       baseline: z.string().optional(),
-      periodDays: z.number().int().positive().optional(),
-      ganttWeeks: z.number().int().positive().optional(),
-      csvDelimiter: z.string().optional(),
+      periodDays: z.number().int().positive().max(366).optional(),
+      ganttWeeks: z.number().int().positive().max(260).optional(),
+      csvDelimiter: z.enum([",", ";", "\t"]).optional(),
       browserPath: z.string().optional(),
       outDir: z.string().optional(),
       name: z.string().optional(),

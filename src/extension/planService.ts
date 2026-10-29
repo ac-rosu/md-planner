@@ -2,17 +2,62 @@
 // editors (including unsaved changes) and the file system, and applies writer edits as undoable
 // WorkspaceEdits. It also keeps the line changes of open plan documents, to find items of earlier
 // parses again (lineIn, addedAfter).
+// A plan file that cannot be read (no permission, an offline cloud file) is left out with a
+// warning; a file that is not UTF-8 or has git merge conflict markers is not edited without asking.
+import { realpath } from "node:fs/promises";
 import * as vscode from "vscode";
 import { localToday } from "../core/dates";
 import { PlanIndex } from "../core/index";
 import { EditLog, followLine, lineBefore } from "../core/lineHistory";
 import { type ParsedFile, type Task } from "../core/model";
+import { SAVE_AS_UTF8 } from "../core/parser/files";
 import { type Plan } from "../core/resolve";
 import { invertEdits } from "../core/text";
 import { type FileEdit } from "../core/writer";
-import { config, decode, encode, exists, ignoresPathCase, openDocument, toRange } from "./util";
+import {
+  config,
+  decodeChecked,
+  encode,
+  exists,
+  ignoresPathCase,
+  openDocument,
+  toRange,
+} from "./util";
 
 const REFRESH_DELAY_MS = 300;
+
+/** The plan files of a folder, and the plan files and folders that could not be read. */
+interface FolderScan {
+  files: string[];
+  unreadable: Array<{ path: string; error: unknown; folder: boolean }>;
+}
+
+/** True for the errors of a file that is not there (also a broken symbolic link) or is a folder. */
+function isNotFound(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return (
+    code === "FileNotFound" ||
+    code === "FileIsADirectory" ||
+    code === "ENOENT" ||
+    code === "ENOTDIR" ||
+    code === "EISDIR"
+  );
+}
+
+/** Whether a plan-relative folder can hold plan files ("" is the plan folder). */
+function holdsPlanFiles(rel: string): boolean {
+  return rel === "" || PlanIndex.isPlanPath(`${rel}/x.md`);
+}
+
+/** A key that is the same for every path of a folder: its real path, where there is one. */
+async function folderKey(uri: vscode.Uri): Promise<string> {
+  if (uri.scheme !== "file") return uri.toString();
+  try {
+    return await realpath(uri.fsPath);
+  } catch {
+    return uri.toString();
+  }
+}
 
 export interface ApplyOptions {
   /** Save the touched documents afterwards (defaults to `planner.autoSave` for view edits). */
@@ -212,11 +257,38 @@ export class PlanService implements vscode.Disposable {
     return rel !== undefined && PlanIndex.isPlanPath(rel);
   }
 
+  /**
+   * "Saved X" when the changed files are saved, else "Changed X (not saved yet)": with
+   * `planner.autoSave` off, or when VS Code did not save one (it changed on disk meanwhile), the
+   * change is only in the editor, and "Saved" would say otherwise.
+   */
+  savedMessage(what: string, paths: string[]): string {
+    const unsaved = paths.some((p) => openDocument(this.uri(p))?.isDirty);
+    return unsaved ? `Changed ${what} (not saved yet)` : `Saved ${what}`;
+  }
+
+  /**
+   * Why a quick fix or an id added on save should leave a file alone, without asking (they edit as
+   * you type): it is not UTF-8, or it has git merge conflict markers. Undefined when it may change.
+   */
+  untouchable(path: string): string | undefined {
+    if (this.index.notUtf8(path)) return "not UTF-8";
+    if (this.index.conflictLines(path).length > 0) return "git merge conflict markers";
+    return undefined;
+  }
+
   /** Applies writer edits as one WorkspaceEdit (undoable). Returns false if VS Code refused it. */
   async apply(edits: FileEdit[], options: ApplyOptions = {}): Promise<boolean> {
     const deleted = options.deleteFiles ?? [];
     const nonEmpty = edits.filter((e) => e.edits.length > 0 && !deleted.includes(e.path));
     if (nonEmpty.length === 0 && deleted.length === 0) return true;
+    if (
+      !(await this.mayChange(
+        nonEmpty.map((e) => e.path),
+        deleted
+      ))
+    )
+      return false;
     const we = new vscode.WorkspaceEdit();
     for (const fe of nonEmpty) {
       const uri = this.uri(fe.path);
@@ -239,6 +311,42 @@ export class PlanService implements vscode.Disposable {
       ((options.source ?? "view") === "view" && config().get<boolean>("autoSave", true));
     if (save) await this.save(nonEmpty.map((e) => e.path));
     return true;
+  }
+
+  /**
+   * Whether files may be changed: never a file that is not UTF-8 (writing it would replace its
+   * accented letters; so would bringing a deleted one back with Undo), and a file with git merge
+   * conflict markers only when the user says so (the change could land inside the conflict).
+   * Also asked by the edits that do not come through `apply` (F2 rename, TODO promotion).
+   */
+  async mayChange(edited: string[], deleted: string[] = []): Promise<boolean> {
+    // Known from the last read of the file (the watcher reads it again when it is saved).
+    for (const path of [...edited, ...deleted]) {
+      if (!this.index.notUtf8(path)) continue;
+      void vscode.window.showErrorMessage(
+        `Planner: ${path} is not UTF-8, so the planner does not change it (accented letters would be lost). ${SAVE_AS_UTF8}`
+      );
+      return false;
+    }
+    const conflicted = [...edited, ...deleted].filter(
+      (p) => this.index.conflictLines(p).length > 0
+    );
+    if (conflicted.length === 0) return true;
+    let what: string;
+    if (conflicted.length === 1) {
+      const lines = this.index.conflictLines(conflicted[0]).map((l) => l + 1);
+      const where = `line${lines.length > 1 ? "s" : ""} ${lines.slice(0, 6).join(", ")}${lines.length > 6 ? " …" : ""}`;
+      what = `${conflicted[0]} has git merge conflict markers (${where})`;
+    } else {
+      what = `${conflicted.join(", ")} have git merge conflict markers`;
+    }
+    const anyway = "Change Anyway";
+    const answer = await vscode.window.showWarningMessage(
+      `${what}. Resolve the conflict first: the change could land inside it.`,
+      { modal: true },
+      anyway
+    );
+    return answer === anyway;
   }
 
   /**
@@ -284,8 +392,10 @@ export class PlanService implements vscode.Disposable {
    * Creates plan files in one undoable WorkspaceEdit (refusing to overwrite) and adds them to the
    * index at once, so views and commands see them without waiting for the file watcher.
    */
-  async createFiles(files: Array<{ path: string; text: string }>): Promise<boolean> {
-    if (files.length === 0) return true;
+  async createFiles(requested: Array<{ path: string; text: string }>): Promise<boolean> {
+    if (requested.length === 0) return true;
+    // Into the folders as they are spelled on disk: `Milestones/` when that is the folder.
+    const files = requested.map((f) => ({ ...f, path: this.index.canonicalPath(f.path) }));
     const we = new vscode.WorkspaceEdit();
     for (const f of files) we.createFile(this.uri(f.path), { contents: encode(f.text) });
     if (!(await vscode.workspace.applyEdit(we))) {
@@ -300,11 +410,23 @@ export class PlanService implements vscode.Disposable {
     return true;
   }
 
-  async save(paths: string[]): Promise<void> {
+  /**
+   * Saves the open documents of plan files. Returns false (after telling the user) when VS Code
+   * did not save one: it changed on disk since it was read ("File Modified Since"), or could not
+   * be written. The change then stays in the editor, unsaved.
+   */
+  async save(paths: string[]): Promise<boolean> {
+    const failed: string[] = [];
     for (const path of paths) {
       const doc = openDocument(this.uri(path));
-      if (doc?.isDirty) await doc.save();
+      if (doc?.isDirty && !(await doc.save())) failed.push(path);
     }
+    if (failed.length === 0) return true;
+    this.log.warn(`Not saved: ${failed.join(", ")}`);
+    void vscode.window.showWarningMessage(
+      `Planner: ${failed.join(", ")} not saved: the file changed on disk or could not be written. The change is in the editor, unsaved: compare it with the file on disk and save it, or revert it.`
+    );
+    return false;
   }
 
   /** Re-fires the change event after the debounce delay. */
@@ -324,10 +446,11 @@ export class PlanService implements vscode.Disposable {
     for (const d of [...this.disposables, ...this.rootWatchers]) d.dispose();
   }
 
-  private syncDocument(document: vscode.TextDocument): void {
+  /** Parses an open document's text; `utf8` says whether its file on disk is UTF-8, when known. */
+  private syncDocument(document: vscode.TextDocument, utf8?: boolean): void {
     const rel = this.relPath(document.uri);
     if (rel === undefined || !PlanIndex.isPlanPath(rel)) return;
-    if (this.index.update(rel, document.getText())) this.scheduleRefresh();
+    if (this.index.update(rel, document.getText(), { utf8 })) this.scheduleRefresh();
     this.parsedFrom(rel, document);
   }
 
@@ -348,36 +471,49 @@ export class PlanService implements vscode.Disposable {
     for (const x of [file, ...file.items]) this.origins.set(x, parsed);
   }
 
+  /**
+   * Reads a plan file again after it changed on disk (or its editor was closed). An open document
+   * keeps its text; the file on disk then only tells whether it is UTF-8.
+   */
   private async reloadFromDisk(uri: vscode.Uri): Promise<void> {
     const rel = this.relPath(uri);
     if (rel === undefined || !PlanIndex.isPlanPath(rel)) return;
     const open = openDocument(uri);
-    if (open && !open.isClosed) {
-      this.syncDocument(open);
-      return;
-    }
+    if (open && !open.isClosed) this.syncDocument(open);
+    if (await this.loadFile(rel, uri)) this.scheduleRefresh();
+  }
+
+  /**
+   * Reads one plan file into the index: the open document's text if there is one, else the file on
+   * disk. A file that is gone is removed; one that cannot be read is left out with a warning.
+   * Returns true when the index changed.
+   */
+  private async loadFile(rel: string, uri = this.uri(rel)): Promise<boolean> {
+    let disk: { text: string; utf8: boolean } | undefined;
+    let error: unknown;
     try {
-      const text = decode(await vscode.workspace.fs.readFile(uri));
-      if (this.index.update(rel, text)) this.scheduleRefresh();
-      this.readFromDisk(rel);
-    } catch {
-      if (this.index.remove(rel)) this.scheduleRefresh();
+      disk = decodeChecked(await vscode.workspace.fs.readFile(uri));
+    } catch (err) {
+      error = err;
     }
+    const open = openDocument(uri);
+    if (open && !open.isClosed) {
+      const changed = this.index.update(rel, open.getText(), { utf8: disk?.utf8 });
+      this.parsedFrom(rel, open);
+      return changed;
+    }
+    if (!disk)
+      return isNotFound(error) ? this.index.remove(rel) : this.index.markUnreadable(rel, error);
+    const changed = this.index.update(rel, disk.text, { utf8: disk.utf8 });
+    this.readFromDisk(rel);
+    return changed;
   }
 
   private async loadAll(): Promise<void> {
     if (!this._root) return;
-    const files = await this.listMarkdown(this._root, "");
-    await Promise.all(
-      files.map(async (rel) => {
-        const uri = this.uri(rel);
-        const open = openDocument(uri);
-        const text = open ? open.getText() : decode(await vscode.workspace.fs.readFile(uri));
-        this.index.update(rel, text);
-        if (open) this.parsedFrom(rel, open);
-        else this.readFromDisk(rel);
-      })
-    );
+    const { files, unreadable } = await this.listMarkdown(this._root, "");
+    for (const u of unreadable) this.index.markUnreadable(u.path, u.error, u.folder);
+    await Promise.all(files.map((rel) => this.loadFile(rel)));
   }
 
   /** Notes when a parse of a file that is not open was read (see addedAfter). */
@@ -386,34 +522,89 @@ export class PlanService implements vscode.Disposable {
     if (file && !this.readAt.has(file)) this.readAt.set(file, ++this.clock);
   }
 
-  private async listMarkdown(dir: vscode.Uri, prefix: string): Promise<string[]> {
-    const out: string[] = [];
-    for (const [name, type] of await vscode.workspace.fs.readDirectory(dir)) {
+  /**
+   * The plan files below a folder (`rel` is its plan-relative path, "" the plan folder). A folder
+   * that cannot be read is reported, not thrown; a folder seen before (a symbolic link back into
+   * the plan) is not read again.
+   */
+  private async listMarkdown(
+    dir: vscode.Uri,
+    rel: string,
+    out: FolderScan = { files: [], unreadable: [] },
+    seen = new Set<string>()
+  ): Promise<FolderScan> {
+    let entries: Array<[string, vscode.FileType]>;
+    try {
+      const key = await folderKey(dir);
+      if (seen.has(key)) return out;
+      seen.add(key);
+      entries = await vscode.workspace.fs.readDirectory(dir);
+    } catch (error) {
+      if (holdsPlanFiles(rel)) out.unreadable.push({ path: rel, error, folder: true });
+      return out;
+    }
+    for (const [name, type] of entries) {
       if (name.startsWith(".")) continue;
-      const rel = prefix + name;
+      const path = rel ? `${rel}/${name}` : name;
       if (type & vscode.FileType.Directory) {
-        if (rel === "reports" || rel === "baselines") continue;
-        out.push(...(await this.listMarkdown(vscode.Uri.joinPath(dir, name), rel + "/")));
-      } else if (PlanIndex.isPlanPath(rel)) {
-        out.push(rel);
+        if (path === "reports" || path === "baselines") continue;
+        await this.listMarkdown(vscode.Uri.joinPath(dir, name), path, out, seen);
+      } else if (PlanIndex.isPlanPath(path)) {
+        out.files.push(path);
       }
     }
     return out;
   }
 
+  /**
+   * A file or folder created in the plan folder. A folder (moved or copied in, or renamed) may come
+   * as this one event, without events for its files: they are read now.
+   */
+  private async created(uri: vscode.Uri): Promise<void> {
+    const rel = this.relPath(uri);
+    if (rel === undefined) return;
+    if (PlanIndex.isPlanPath(rel)) return this.reloadFromDisk(uri);
+    if (!holdsPlanFiles(rel)) return;
+    try {
+      if (!((await vscode.workspace.fs.stat(uri)).type & vscode.FileType.Directory)) return;
+    } catch {
+      return;
+    }
+    const { files, unreadable } = await this.listMarkdown(uri, rel);
+    let changed = false;
+    for (const u of unreadable)
+      changed = this.index.markUnreadable(u.path, u.error, u.folder) || changed;
+    for (const path of files) changed = (await this.loadFile(path)) || changed;
+    if (changed) this.scheduleRefresh();
+  }
+
+  /**
+   * A file or folder deleted (or moved away) from the plan folder: a folder comes as one event, so
+   * every file below it is dropped. A file that is open with unsaved changes stays as the editor
+   * shows it (git may delete a file you are editing) until it is saved again or closed.
+   */
+  private deleted(uri: vscode.Uri): void {
+    const rel = this.relPath(uri);
+    if (rel === undefined) return;
+    let changed = false;
+    for (const path of this.index.pathsUnder(rel, ignoresPathCase(uri))) {
+      const open = openDocument(this.uri(path));
+      if (open && !open.isClosed && open.isDirty) this.syncDocument(open);
+      else changed = this.index.remove(path) || changed;
+    }
+    if (changed) this.scheduleRefresh();
+  }
+
   private watch(root: vscode.Uri): void {
+    // Every path, not only `*.md`: a folder deleted, renamed or moved in comes as one event.
     const watcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(root, "**/*.md")
+      new vscode.RelativePattern(root, "**")
     );
-    const onDisk = (uri: vscode.Uri) => void this.reloadFromDisk(uri);
     this.rootWatchers.push(
       watcher,
-      watcher.onDidCreate(onDisk),
-      watcher.onDidChange(onDisk),
-      watcher.onDidDelete((uri) => {
-        const rel = this.relPath(uri);
-        if (rel !== undefined && this.index.remove(rel)) this.scheduleRefresh();
-      })
+      watcher.onDidCreate((uri) => void this.created(uri)),
+      watcher.onDidChange((uri) => void this.reloadFromDisk(uri)),
+      watcher.onDidDelete((uri) => this.deleted(uri))
     );
     // The plan folder itself may be deleted or renamed.
     const parent = vscode.Uri.joinPath(root, "..");

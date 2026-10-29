@@ -1,7 +1,7 @@
 // `planner export`: the same exporters as `Planner: Export…`, for CI pipelines and scripts.
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { latestBaseline, parseBaseline } from "../core/baseline";
+import { type Baseline, latestBaseline, parseBaseline } from "../core/baseline";
 import { type Plan } from "../core/resolve";
 import { schedulePlan } from "../core/scheduler";
 import {
@@ -13,7 +13,8 @@ import {
   type ReportSection,
   runExport,
 } from "../export/index";
-import { type CliIo, type ParsedArgs } from "./index";
+import { fsReason, numberFlag, type ParsedArgs } from "./args";
+import { type CliIo } from "./index";
 
 export const EXPORT_HELP = `Usage: planner export --format <formats> [options]
 
@@ -39,11 +40,16 @@ export async function runExportCommand(
   planDir: string,
   args: ParsedArgs,
   today: string,
-  io: CliIo
+  io: CliIo,
+  unassignedCapacity = 40
 ): Promise<number> {
   const str = (k: string) => {
     const v = args.flags.get(k);
     return typeof v === "string" ? v : undefined;
+  };
+  const fail = (message: string) => {
+    io.err(`${message}\n`);
+    return 2;
   };
   const ids = (str("format") ?? "")
     .split(",")
@@ -62,59 +68,132 @@ export async function runExportCommand(
     io.err(`Unknown section in --sections (${REPORT_SECTIONS.map((s) => s.id).join(", ")}).\n`);
     return 2;
   }
-  const unassignedCapacity = Number(str("unassigned-capacity") ?? 40);
-  const schedule = schedulePlan(plan, { today, unassignedCapacity });
-  const demand = schedulePlan(plan, { today, unassignedCapacity, mode: "demand" });
+  const periodDays = numberFlag(args, "period", 7, {
+    min: 1,
+    integer: true,
+    expected: "a whole number of days, 1 or more",
+  });
+  if (typeof periodDays !== "number") return fail(periodDays.error);
+  const ganttWeeks = numberFlag(args, "weeks", 12, {
+    min: 1,
+    integer: true,
+    expected: "a whole number of weeks, 1 or more",
+  });
+  if (typeof ganttWeeks !== "number") return fail(ganttWeeks.error);
+  const delimiter = str("delimiter") ?? ",";
+  if ([...delimiter].length !== 1 || /["\r\n]/.test(delimiter))
+    return fail(`Invalid --delimiter ${delimiter} (expected one character, e.g. , or ;).`);
+  const accent = str("accent");
+  if (accent !== undefined && !/^#[0-9a-f]{3,8}$/i.test(accent))
+    return fail(`Invalid --accent ${accent} (expected a colour like #0f766e).`);
+  const out = resolve(str("out") ?? join(planDir, "reports"));
+  const outStat = statOf(out);
+  if (outStat && !outStat.isDirectory())
+    return fail(`Not a folder: ${out} (--out expects the output folder).`);
 
-  const baselineDir = join(planDir, "baselines");
-  const baselineIds = existsSync(baselineDir)
-    ? readdirSync(baselineDir)
-        .filter((f) => f.endsWith(".json"))
-        .map((f) => f.slice(0, -5))
-    : [];
-  const baselines = baselineIds.map((id) => ({
-    id,
-    ...parseBaseline(readFileSync(join(baselineDir, `${id}.json`), "utf8"), id),
-  }));
-  const wanted = str("baseline");
-  const baseline = wanted ? baselines.find((b) => b.id === wanted) : latestBaseline(baselines);
-  if (wanted && !baseline) {
-    io.err(`Unknown baseline ${wanted} (${baselineIds.join(", ") || "none saved"}).\n`);
-    return 2;
-  }
   const logo = str("logo");
   let logoUri: string | undefined;
   if (logo) {
-    if (!existsSync(logo)) {
-      io.err(`Logo file not found: ${logo}\n`);
-      return 2;
+    if (!statOf(logo)) return fail(`Logo file not found: ${logo}`);
+    try {
+      logoUri = logoDataUri(readFileSync(logo), logo);
+    } catch (err) {
+      return fail(`Cannot read the logo ${logo}: ${fsReason(err)}.`);
     }
-    logoUri = logoDataUri(readFileSync(logo), logo);
+    if (!logoUri) return fail(`Unsupported logo ${logo} (PNG, JPEG, GIF, SVG or WebP).`);
   }
+
+  // Invalid baseline files are skipped with a warning, as in the extension and the MCP server.
+  const { baselines, invalid } = readBaselines(join(planDir, "baselines"));
+  for (const reason of invalid.values())
+    io.err(`warning: ${reason.replace(/\.$/, "")}; skipped.\n`);
+  const wanted = str("baseline");
+  const baseline = wanted ? baselines.find((b) => b.id === wanted) : latestBaseline(baselines);
+  if (wanted && !baseline) {
+    const reason = invalid.get(wanted);
+    return fail(
+      reason
+        ? `Cannot use baseline ${wanted}: ${reason}`
+        : `Unknown baseline ${wanted} (${baselines.map((b) => b.id).join(", ") || "none saved"}).`
+    );
+  }
+
+  const schedule = schedulePlan(plan, { today, unassignedCapacity });
+  const demand = schedulePlan(plan, { today, unassignedCapacity, mode: "demand" });
   const result = await runExport(plan, schedule, demand, {
     formats,
     sections,
     summary: str("summary"),
-    periodDays: Number(str("period") ?? 7),
-    ganttWeeks: Number(str("weeks") ?? 12),
+    periodDays,
+    ganttWeeks,
     author: str("author"),
     branding:
-      str("company") || str("accent") || logoUri
-        ? { company: str("company"), accentColor: str("accent"), logoDataUri: logoUri }
+      str("company") || accent || logoUri
+        ? { company: str("company"), accentColor: accent, logoDataUri: logoUri }
         : undefined,
     baseline,
     testPlan: str("test"),
-    csvDelimiter: str("delimiter") ?? ",",
+    csvDelimiter: delimiter,
     browserPath: str("browser"),
   });
-  const out = resolve(str("out") ?? join(planDir, "reports"));
-  mkdirSync(out, { recursive: true });
+  try {
+    mkdirSync(out, { recursive: true });
+  } catch (err) {
+    return fail(`Cannot create the output folder ${out}: ${fsReason(err)}.`);
+  }
   for (const f of result.files) {
-    const path = join(out, f.name);
-    writeFileSync(path, f.data);
+    // A file name never leaves the output folder, whatever a test plan id contains.
+    const path = join(out, f.name.replace(/[\\/]/g, "-"));
+    try {
+      writeFileSync(path, f.data);
+    } catch (err) {
+      return fail(`Cannot write ${path}: ${fsReason(err)}.`);
+    }
     io.out(`${path}\n`);
   }
   for (const w of result.warnings) io.err(`warning: ${w}\n`);
   const missing = formats.filter((f) => !result.files.some((x) => x.format === f));
   return missing.length ? 1 : 0;
+}
+
+function statOf(path: string) {
+  try {
+    return statSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The baselines in `dir` by id (file name without .json), and why the others were skipped. */
+function readBaselines(dir: string): {
+  baselines: Array<Baseline & { id: string }>;
+  invalid: Map<string, string>;
+} {
+  const baselines: Array<Baseline & { id: string }> = [];
+  const invalid = new Map<string, string>();
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir)
+      .filter((f) => f.endsWith(".json"))
+      .sort();
+  } catch {
+    // No baselines folder (or not one that can be read): no baselines.
+  }
+  for (const name of names) {
+    const id = name.slice(0, -5);
+    const file = `baselines/${name}`;
+    let text: string;
+    try {
+      text = readFileSync(join(dir, name), "utf8");
+    } catch (err) {
+      invalid.set(id, `${file} cannot be read (${fsReason(err)}).`);
+      continue;
+    }
+    try {
+      baselines.push({ id, ...parseBaseline(text, file) });
+    } catch (err) {
+      invalid.set(id, err instanceof Error ? err.message : String(err));
+    }
+  }
+  return { baselines, invalid };
 }

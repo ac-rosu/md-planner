@@ -1,5 +1,4 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TODAY } from "../helpers";
@@ -380,7 +379,7 @@ describe("MCP tools on the sample plan", () => {
   });
 
   it("exports reports and calibrates estimates", async () => {
-    const out = mkdtempSync(join(tmpdir(), "planner-mcp-out-"));
+    const out = mkdtempSync(join(s.workspace, "out-"));
     const r = (
       await call("export_report", { formats: ["html", "xlsx", "mspdi", "csv"], outDir: out })
     ).json;

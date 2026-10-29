@@ -3,6 +3,7 @@
 import { isValidDate } from "../core/dates";
 import { type TestPlan, TEST_TYPES } from "../core/model";
 import { appendRunLog, recordStepResult, resetResults } from "../core/testRun";
+import { oneLine } from "../core/text";
 import { appendBlock, insertLines } from "../core/writer";
 import { milestoneFileName } from "../core/writer/entities";
 import { findStep } from "./inboxTools";
@@ -37,7 +38,7 @@ export interface TestPlanInput {
 
 function caseLines(id: string, c: TestCaseInput): string[] {
   const out = [`## ${id} ${c.title.replace(/\s+/g, " ").trim()}`, ""];
-  if (c.pre?.trim()) out.push(`pre: ${c.pre.trim()}`, "");
+  if (c.pre?.trim()) out.push(`pre: ${oneLine(c.pre).trim()}`, "");
   for (const s of c.steps) if (s.trim()) out.push(`- [ ] ${s.replace(/\s+/g, " ").trim()}`);
   return out;
 }
@@ -89,10 +90,10 @@ export function stageTestPlans(st: Staging, plans: TestPlanInput[]): string[] {
     const cases = p.cases ?? [];
     checkCases(cases, `Test plan ${p.id}`);
     const lines = [`# ${p.title.replace(/\s+/g, " ").trim()}`, "", `id: ${p.id.trim()}`];
-    if (p.type) lines.push(`type: ${p.type}`);
-    if (milestone) lines.push(`milestone: ${milestone}`);
-    if (p.equipment) lines.push(`eq: ${p.equipment}`);
-    if (p.witness) lines.push(`witness: ${p.witness}`);
+    if (p.type) lines.push(`type: ${oneLine(p.type)}`);
+    if (milestone) lines.push(`milestone: ${oneLine(milestone)}`);
+    if (p.equipment) lines.push(`eq: ${oneLine(p.equipment)}`);
+    if (p.witness) lines.push(`witness: ${oneLine(p.witness)}`);
     const tcIds = caseIds([], cases, `Test plan ${p.id}`);
     cases.forEach((c, i) => lines.push("", ...caseLines(tcIds[i], c)));
     const path = milestoneFileName(p.id.trim(), p.title).replace(/^milestones\//, "tests/");

@@ -38,15 +38,15 @@ The files are written to `plan/reports/` and the first one is opened (turn this 
 
 ## Formats
 
-| Format             | File                             | Contents                                                                                                       |
-| ------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| HTML status report | `<date>-status-report.html`      | One self-contained file with inline styles and charts; no scripts, prints on A4.                               |
-| PDF status report  | `<date>-status-report.pdf`       | The HTML report printed to PDF by Edge or Chrome, without opening a browser window.                            |
-| Excel workbook     | `<date>-plan.xlsx`               | Sheets: Tasks, Schedule, Team load per week, Milestones, Tests, Punch list.                                    |
-| MS Project XML     | `<date>-plan.xml`                | MSPDI: tasks, durations, dependencies, resources, assignments and calendars.                                   |
-| CSV                | `<date>-tasks.csv`               | A flat task table (UTF-8 with BOM, so Excel opens it correctly).                                               |
-| Test report (HTML) | `<date>-<test plan>-report.html` | Results, punch items and signature block of a test plan ([Tests](12-tests-and-punch-list.md#the-test-report)). |
-| Test report (PDF)  | `<date>-<test plan>-report.pdf`  | The same, printed to PDF.                                                                                      |
+| Format             | File                             | Contents                                                                                                                                                          |
+| ------------------ | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HTML status report | `<date>-status-report.html`      | One self-contained file with inline styles and charts; no scripts, prints on A4.                                                                                  |
+| PDF status report  | `<date>-status-report.pdf`       | The HTML report printed to PDF by Edge or Chrome, without opening a browser window.                                                                               |
+| Excel workbook     | `<date>-plan.xlsx`               | Sheets: Tasks, Schedule, Team load per week, Milestones, Tests, Punch list.                                                                                       |
+| MS Project XML     | `<date>-plan.xml`                | MSPDI: tasks, durations, dependencies, resources, assignments and calendars.                                                                                      |
+| CSV                | `<date>-tasks.csv`               | A flat task table (UTF-8 with BOM, so Excel opens it correctly). Text that starts like a formula (`=`, `+`, `-`, `@`) gets a leading `'`, so Excel never runs it. |
+| Test report (HTML) | `<date>-<test plan>-report.html` | Results, punch items and signature block of a test plan ([Tests](12-tests-and-punch-list.md#the-test-report)).                                                    |
+| Test report (PDF)  | `<date>-<test plan>-report.pdf`  | The same, printed to PDF.                                                                                                                                         |
 
 `<date>` is today. Exporting twice on the same day overwrites the files of that day.
 
@@ -100,14 +100,14 @@ Put your company name, accent colour and logo on every report (also the test rep
 
 ## Report settings
 
-| Setting                          | Default | Meaning                                                                     |
-| -------------------------------- | ------- | --------------------------------------------------------------------------- |
-| `planner.export.periodDays`      | `7`     | Length of the reporting period ("done this period", "planned next period"). |
-| `planner.export.ganttWeeks`      | `12`    | Weeks in the report's Gantt and team-load sections.                         |
-| `planner.export.author`          | (empty) | Author name; empty = the name of `planner.me`.                              |
-| `planner.export.browserPath`     | (empty) | Edge or Chrome for PDF; empty = detect automatically.                       |
-| `planner.export.csvDelimiter`    | `,`     | `,`, `;` (Excel in many European locales) or a tab.                         |
-| `planner.export.openAfterExport` | `true`  | Open the first exported file.                                               |
+| Setting                          | Default | Meaning                                                                                                              |
+| -------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------- |
+| `planner.export.periodDays`      | `7`     | Length of the reporting period ("done this period", "planned next period").                                          |
+| `planner.export.ganttWeeks`      | `12`    | Weeks in the report's Gantt and team-load sections.                                                                  |
+| `planner.export.author`          | (empty) | Author name; empty = the name of `planner.me`.                                                                       |
+| `planner.export.browserPath`     | (empty) | Edge or Chrome for PDF; empty = detect automatically. Only a program named like Edge, Chrome or Chromium is started. |
+| `planner.export.csvDelimiter`    | `,`     | `,`, `;` (Excel in many European locales) or a tab.                                                                  |
+| `planner.export.openAfterExport` | `true`  | Open the first exported file.                                                                                        |
 
 ## PDF
 
@@ -133,7 +133,8 @@ and extra working days. Overtime on working days is not part of an MS Project ca
 exported; the scheduled dates already include it. Tasks are fixed-duration with a "start no earlier than" constraint at their scheduled start, so
 that a project planning tool reproduces the planner's resource-levelled dates instead of levelling
 the plan again. Work under way exports its `@started` as the actual start, and so does a to-do task
-with logged time.
+with logged time. A finished task's work is the hours logged on it (its estimate when none were),
+fully complete; a milestone's `depends:` becomes a link between the milestone summary rows.
 
 > [!NOTE]
 > The file is checked against the MSPDI structure in the extension's tests, but it has not yet been

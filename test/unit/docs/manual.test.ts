@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, normalize, relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ROOT } from "../helpers";
+import { ROOT, walkFiles } from "../helpers";
 
 // The user manual ships in the extension package and opens in the Markdown preview
 // (`Planner: Open user manual`), so its links must stay inside the files that are packaged.
@@ -63,6 +63,36 @@ describe("user manual", () => {
       return set !== undefined && !set.has(anchor);
     });
     expect(broken).toEqual([]);
+  });
+
+  it("lists every diagnostic the planner reports, and no other", () => {
+    // Codes are given as `code: "…"` (also in a condition, not a call such as the project's
+    // `code: getProp(…)`), as the first argument of `bad(…)`, the fourth of the resolver's
+    // `issue(issues, file, entry, "…")`, or right after the severity (`attrIssue`, `fileIssue`).
+    const sources = walkFiles(join(ROOT, "src"), (rel) => rel.endsWith(".ts")).map((f) =>
+      readFileSync(f, "utf8")
+    );
+    const code = /"([a-z][a-z0-9]*(?:-[a-z0-9]+)+|[a-z]{4,})"/g;
+    const reported = new Set<string>();
+    for (const text of sources) {
+      for (const m of text.matchAll(/\bcode:\s*([^,\n(]+)/g))
+        for (const c of m[1].matchAll(code)) reported.add(c[1]);
+      for (const m of text.matchAll(/\bbad\(\s*"([a-z][a-z0-9-]+)"/g)) reported.add(m[1]);
+      // Helpers that take the severity, then the code: attrIssue, fileIssue …
+      for (const m of text.matchAll(/"(?:error|warning|info|hint)",\s*"([a-z][a-z0-9-]+)"/g))
+        reported.add(m[1]);
+      for (const m of text.matchAll(
+        /\b(?:issue\(\s*issues|attrIssue\(\s*\w+)\s*,\s*(?:[^,()]|\([^()]*\))+,\s*(?:[^,()]|\([^()]*\))+,\s*"([a-z][a-z-]+)"/g
+      ))
+        reported.add(m[1]);
+    }
+    const table = new Set(
+      [
+        ...readFileSync(join(MANUAL, "05-editor.md"), "utf8").matchAll(/^\| `([a-z][a-z0-9-]+)`/gm),
+      ].map((m) => m[1])
+    );
+    expect([...reported].filter((c) => !table.has(c)).sort()).toEqual([]);
+    expect([...table].filter((c) => !reported.has(c)).sort()).toEqual([]);
   });
 
   it("uses every screenshot", () => {

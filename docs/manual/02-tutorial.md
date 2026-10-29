@@ -93,12 +93,9 @@ off: 2026-11-16..2026-11-20
 - Later, change anything with ✎ on the person's row, and add holidays with the 📅 button. Renaming
   a person keeps their id, so their tasks stay assigned.
 
-Now tell the planner which person you are, in **Settings → Workspace → Planner: Me**, or in
-`.vscode/settings.json`:
-
-```json
-{ "planner.me": "alex" }
-```
+The planner takes the first person in `team.md` to be you, and New project put you there, so My
+Work / Team already lists your tasks first. If someone else ever comes first, set your id in
+**Settings → Workspace → Planner: Me** ([Tell the planner who you are](01-getting-started.md#tell-the-planner-who-you-are)).
 
 → All properties: [Plan files › team.md](04-plan-files.md#teammd).
 
@@ -133,8 +130,9 @@ stakeholders.
 Change these with ✎ on the milestone's row or **Edit milestone** above its heading.
 
 **Add a milestone** with the milestone button in the Milestones toolbar. Type `Documentation` and
-press Enter. In the form, set the **Target date** to `2027-04-09` and tick **M5** under **Depends
-on**:
+press Enter. In the form, set the **Target date** to `2027-04-09`. **Depends on** already holds M5,
+the last milestone, so the documentation is planned after the launch (clear it for work that runs
+in parallel):
 
 ![The form of the new milestone](images/tutorial-milestone.png)
 
@@ -218,8 +216,9 @@ scheduled, its owner (click to change) and **Edit** for every other field:
   dependencies are at the top. In the file, several dependencies are separated by commas
   (`@dep:T102,T105`), and a lag adds working days after the predecessor finishes (`@dep:T303+2d`).
 - **Fixed start** and **Due date** offer _today_, _next Monday_, _end of month_ and more.
-- **Subtasks**: right-click a task → **Add subtask…**. A parent's estimate is the sum of its
-  subtasks. In the file, subtasks are checkbox lines indented under the task; **notes** are
+- **Subtasks**: right-click a task → **Add subtask…**. A parent without an estimate of its own
+  adds up its subtasks'; a parent's own estimate is a budget its subtasks share
+  ([Subtasks and notes](04-plan-files.md#subtasks-and-notes)). In the file, subtasks are checkbox lines indented under the task; **notes** are
   indented lines that are not checkboxes:
 
   ```markdown

@@ -21,6 +21,17 @@ way. This chapter is the complete reference of the format.
 
 Only `project.md` is required; every other file is optional.
 
+- Names are read whatever their case: `Project.md`, `Team.md` and `Milestones/` work, and the
+  planner writes to the files as they are spelled on disk.
+- Hidden files and folders (a name starting with `.`, such as macOS's `._M1.md`) are never plan
+  files.
+- Plan files are UTF-8. A file in another encoding (Latin-1) is reported and not changed by the
+  planner, so its accented letters are kept; a file that cannot be read (no permission, a broken
+  link) is left out with a warning. Neither stops the rest of the plan from loading.
+- A file with git merge conflict markers is reported; the planner asks before changing it, and the
+  MCP server does not change it, until the conflict is resolved.
+- A new task never gets the id of a deleted one that a saved baseline still names.
+
 ### Edits are minimal
 
 Whatever changes a file (a form, a click in a view, a drag on the Gantt, a command, an accepted AI

@@ -7,12 +7,14 @@ import {
   DEFAULT_TODO_INCLUDE,
   DEFAULT_TODO_KEYWORDS,
   globMatch,
+  linkedTask,
   promoteTodo as promoteTodoEdits,
   scanTodos,
 } from "../core/todos";
 import { applyEdits } from "../core/text";
 import { type InsertLocation } from "../core/writer";
 import { milestoneOf } from "./milestoneTools";
+import { workspacePath } from "./paths";
 import { workspaceSettings } from "./settings";
 import { personOf } from "./taskSpecs";
 import { type PlannerTools, ToolError } from "./tools";
@@ -45,7 +47,13 @@ function sourceFiles(tools: PlannerTools, o: ReturnType<typeof options>): string
       const full = join(dir, name);
       const rel = relative(root, full).split(sep).join("/");
       if (rel === planRel || rel.startsWith(`${planRel}/`)) continue;
-      const isDir = statSync(full).isDirectory();
+      // A broken link or a file that cannot be read is skipped, not a failure of the whole scan.
+      let isDir: boolean;
+      try {
+        isDir = statSync(full).isDirectory();
+      } catch {
+        continue;
+      }
       if (o.exclude && globMatch(o.exclude, isDir ? `${rel}/x` : rel)) continue;
       if (isDir) walk(full);
       else if (globMatch(o.include, rel)) out.push(rel);
@@ -87,7 +95,8 @@ export function promoteTodo(
   const plan = st.plan;
   const root = tools.workspaceDir;
   const sourcePath = args.file.split("\\").join("/").replace(/^\.\//, "");
-  const full = join(root, sourcePath);
+  // Only the workspace's code: a TODO comment is linked by editing its file.
+  const full = workspacePath(root, sourcePath, "file");
   if (!existsSync(full)) throw new ToolError(`File not found: ${sourcePath}`);
   const text = readFileSync(full, "utf8");
   const o = options(tools, {});
@@ -96,7 +105,9 @@ export function promoteTodo(
     throw new ToolError(
       `No ${o.keywords.join("/")} comment on line ${args.line} of ${sourcePath}.`
     );
-  if (todo.taskId) throw new ToolError(`That comment is already linked to ${todo.taskId}.`);
+  // Linked to a task that still exists; a link to a deleted task can be promoted again.
+  if (linkedTask(plan, todo))
+    throw new ToolError(`That comment is already linked to ${todo.taskId}.`);
   const m = milestoneOf(plan, args.milestone);
   if (!m) throw new ToolError(`Unknown milestone "${args.milestone}".`);
   const owner = args.owner ? personOf(plan, args.owner) : undefined;

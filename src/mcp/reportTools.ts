@@ -28,6 +28,7 @@ import {
   runExport,
 } from "../export/index";
 import { REPORT_SECTIONS, type ReportSection } from "../export/html/report";
+import { insideFolder, workspacePath } from "./paths";
 import { workspaceSettings } from "./settings";
 import { personOf } from "./taskSpecs";
 import { type PlannerTools, ToolError } from "./tools";
@@ -249,6 +250,19 @@ export async function exportReport(tools: PlannerTools, args: ExportArgs) {
     if (existsSync(path)) logo = logoDataUri(readFileSync(path), path);
   }
   const me = settings.me ? plan.personById(String(settings.me))?.name : undefined;
+  // Files go into the workspace only, under a plain file name.
+  if (args.name !== undefined && (/[\\/]/.test(args.name) || args.name.includes("..")))
+    throw new ToolError(`name is a file name without folders: "${args.name}" is not.`);
+  const outDir = args.outDir
+    ? workspacePath(workspace, args.outDir, "outDir")
+    : join(tools.planDir, "reports");
+  // The browser is started: never one inside the workspace (a repository could bring its own).
+  const configured = args.browserPath ?? ((settings["export.browserPath"] as string) || undefined);
+  const browserPath = configured && insideFolder(workspace, configured) ? undefined : configured;
+  const refused =
+    configured && !browserPath
+      ? [`The browser path ${configured} is inside the workspace, so it was not used.`]
+      : [];
   const result = await runExport(plan, tools.schedule, tools.scheduleOf(plan, "demand"), {
     formats,
     sections: args.sections,
@@ -266,21 +280,16 @@ export async function exportReport(tools: PlannerTools, args: ExportArgs) {
     tester: args.tester,
     witness: args.witness,
     csvDelimiter: args.csvDelimiter ?? (settings["export.csvDelimiter"] as string),
-    browserPath: args.browserPath ?? ((settings["export.browserPath"] as string) || undefined),
+    browserPath,
     name: args.name,
   });
-  const outDir = args.outDir
-    ? isAbsolute(args.outDir)
-      ? args.outDir
-      : join(workspace, args.outDir)
-    : join(tools.planDir, "reports");
   mkdirSync(outDir, { recursive: true });
   const files = result.files.map((f) => {
     const path = join(outDir, f.name);
     writeFileSync(path, f.data);
     return { format: f.format, file: relative(workspace, path).split("\\").join("/"), path };
   });
-  return { files, warnings: result.warnings };
+  return { files, warnings: [...refused, ...result.warnings] };
 }
 
 /**

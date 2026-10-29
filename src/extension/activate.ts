@@ -305,8 +305,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<Planne
   void refreshStableServer(context).catch(() => undefined);
   void refreshAgentSkill(context).catch(() => undefined);
 
-  await service.locate();
-  void todoScanner.scanAll();
+  // A plan that cannot be loaded must not stop the extension: its views, commands and Refresh work.
+  try {
+    await service.locate();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error(
+      `Could not load the plan: ${err instanceof Error ? (err.stack ?? message) : message}`
+    );
+    void vscode.window.showErrorMessage(
+      `Planner: could not load the plan (${message}). Planner: Refresh tries again; the Planner output has the details.`
+    );
+  }
+  void todoScanner.scanAll().catch((err: unknown) => log.warn(`TODO scan failed: ${String(err)}`));
   return {
     service,
     state,

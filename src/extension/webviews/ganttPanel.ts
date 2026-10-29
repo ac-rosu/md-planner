@@ -319,7 +319,7 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
       : "";
     if (ok && edits.length)
       this.changed(
-        `Saved ${t.id ?? t.title}.${note} ${describeScheduleChange(before, after)}`.trim()
+        `${state.service.savedMessage(t.id ?? t.title, [t.file])}.${note} ${describeScheduleChange(before, after)}`.trim()
       );
     return ok;
   }

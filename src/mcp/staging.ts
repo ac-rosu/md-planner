@@ -1,13 +1,17 @@
 // Staged changes to a plan folder. An MCP tool computes every step against the staged plan (so
 // later steps see earlier ones: a new person can own a new task, a new milestone can get tasks),
 // and nothing reaches the disk until `commit`. A tool that throws halfway writes nothing.
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { loadPlanIndex } from "../core/fsLoader";
+import { editRefusal, isMissing, loadPlanIndex, readText } from "../core/fsLoader";
 import { PlanIndex } from "../core/index";
+import { describeReadError } from "../core/parser/files";
 import { type Plan } from "../core/resolve";
 import { applyEdits, type TextEdit } from "../core/text";
 import { type FileEdit } from "../core/writer";
+
+/** An error a tool reports to the agent as its result (re-exported by tools.ts). */
+export class ToolError extends Error {}
 
 export interface ChangedLines {
   file: string;
@@ -52,11 +56,32 @@ export class Staging {
     return this.index.plan;
   }
 
-  /** Current text of a file (staged, else on disk); undefined when it does not exist. */
+  /**
+   * The path of a file as it is spelled on disk: `Team.md` for `team.md`, `Milestones/M2-x.md` for
+   * a new `milestones/M2-x.md` when the folder is `Milestones/` (see PlanIndex.canonicalPath).
+   */
+  private onDisk(path: string): string {
+    return this.index.canonicalPath(path);
+  }
+
+  /** A file's text on disk; undefined when it does not exist. */
+  private read(path: string): { text: string; utf8: boolean } | undefined {
+    try {
+      return readText(join(this.root, path));
+    } catch (err) {
+      if (isMissing(err)) return undefined;
+      throw new ToolError(`Cannot read ${path}: ${describeReadError(err)}.`);
+    }
+  }
+
+  /**
+   * Current text of a file (staged, else on disk); undefined when it does not exist. A file that
+   * is not UTF-8 reads with U+FFFD for what does not decode (it cannot be changed, see `set`).
+   */
   text(path: string): string | undefined {
-    if (this.staged.has(path)) return this.staged.get(path);
-    const full = join(this.root, path);
-    return existsSync(full) ? readFileSync(full, "utf8") : undefined;
+    const p = this.onDisk(path);
+    if (this.staged.has(p)) return this.staged.get(p);
+    return this.read(p)?.text;
   }
 
   exists(path: string): boolean {
@@ -69,7 +94,8 @@ export class Staging {
     const byPath = new Map<string, TextEdit[]>();
     for (const fe of Array.isArray(edits) ? edits : [edits]) {
       if (fe.edits.length === 0) continue;
-      byPath.set(fe.path, [...(byPath.get(fe.path) ?? []), ...fe.edits]);
+      const path = this.onDisk(fe.path);
+      byPath.set(path, [...(byPath.get(path) ?? []), ...fe.edits]);
     }
     for (const [path, list] of byPath) {
       const before = this.text(path);
@@ -88,15 +114,23 @@ export class Staging {
     this.set(path, undefined);
   }
 
+  /**
+   * Stages the text of a file (undefined deletes it). Refuses to change a file that is not UTF-8
+   * (its accented letters would be lost) or has git merge conflict markers (the change would land
+   * inside the conflict): a ToolError naming the file, and nothing is written.
+   */
   set(path: string, text: string | undefined): void {
-    if (!this.original.has(path)) {
-      const full = join(this.root, path);
-      this.original.set(path, existsSync(full) ? readFileSync(full, "utf8") : undefined);
+    const p = this.onDisk(path);
+    if (!this.original.has(p)) {
+      const disk = this.read(p);
+      const refusal = disk && editRefusal(p, disk.text, disk.utf8);
+      if (refusal) throw new ToolError(`Nothing was written: ${refusal}`);
+      this.original.set(p, disk?.text);
     }
-    this.staged.set(path, text);
-    if (!PlanIndex.isPlanPath(path)) return;
-    if (text === undefined) this.index.remove(path);
-    else this.index.update(path, text);
+    this.staged.set(p, text);
+    if (!PlanIndex.isPlanPath(p)) return;
+    if (text === undefined) this.index.remove(p);
+    else this.index.update(p, text);
   }
 
   /** The staged changes, as changed lines per file (nothing written). */

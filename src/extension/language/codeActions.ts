@@ -44,6 +44,8 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
     const rel = this.service.relPath(document.uri);
     const file = this.service.fileFor(document);
     if (rel === undefined || !file) return [];
+    // No fixes in a file that is not UTF-8 or that has merge conflict markers: resolve that first.
+    if (this.service.untouchable(rel)) return [];
     const plan = this.service.plan;
     const actions: vscode.CodeAction[] = [];
     for (const diagnostic of context.diagnostics) {

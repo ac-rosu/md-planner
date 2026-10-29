@@ -31,12 +31,28 @@ export class PlannerState implements vscode.Disposable {
   private issueCache:
     { plan: Plan; today: string; missingIds: boolean; issues: Issue[] } | undefined;
   private lastCache: string | undefined;
+  /** The date of the last recompute (see checkToday). */
+  private computedToday: string;
+  private readonly dayCheck: ReturnType<typeof setInterval>;
 
   constructor(readonly service: PlanService) {
+    this.computedToday = service.today();
     this.disposables.push(
       this.emitter,
       service.onDidChange(() => this.recompute())
     );
+    this.dayCheck = setInterval(() => this.checkToday(), 30_000);
+  }
+
+  /**
+   * Recomputes everything when the date changed since the last recompute: while VS Code stays
+   * open, the schedule, overdue counts, diagnostics and late flags move on to the new day as after
+   * a change of the plan. True when it did.
+   */
+  checkToday(): boolean {
+    if (this.service.today() === this.computedToday) return false;
+    this.recompute();
+    return true;
   }
 
   get plan(): Plan {
@@ -61,6 +77,7 @@ export class PlannerState implements vscode.Disposable {
 
   /** Recomputes derived data and notifies listeners. */
   recompute(): void {
+    this.computedToday = this.today;
     this.computed = undefined;
     this.issueCache = undefined;
     const c = this.ensure();
@@ -244,6 +261,7 @@ export class PlannerState implements vscode.Disposable {
   }
 
   dispose(): void {
+    clearInterval(this.dayCheck);
     for (const d of this.disposables) d.dispose();
   }
 }

@@ -36,6 +36,11 @@ import { assignBudgets } from "./rollup";
 
 export interface Plan {
   files: ParsedFile[];
+  /**
+   * Ids that are used outside the plan files (the tasks of saved baselines): taken, so a new task
+   * never gets the id of a deleted one that a baseline, a TODO link or a run log still names.
+   */
+  usedIds?: ReadonlySet<string>;
   project: Project;
   people: Person[];
   milestones: Milestone[];

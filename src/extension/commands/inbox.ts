@@ -2,7 +2,7 @@
 import * as vscode from "vscode";
 import { type InsertLocation, moveTask, nextId } from "../../core/writer";
 import { type PlanService } from "../planService";
-import { resolveTask, type TaskArg } from "./args";
+import { findAgain, resolveTask, type TaskArg } from "./args";
 
 export interface PlanIntoTarget {
   milestone: string;
@@ -29,10 +29,13 @@ export async function planIntoMilestone(
     void vscode.window.showWarningMessage("Planner: select an inbox item to plan.");
     return undefined;
   }
-  const plan = service.plan;
-  const item = r.task;
   const chosen = target ?? (await pickMilestoneLocation(service, "Plan into milestone…"));
   if (!chosen) return undefined;
+  // The plan as it is now, and the item in it: inbox.md may have changed while the milestone was
+  // chosen. Nothing is moved when the item cannot be found again.
+  const plan = service.plan;
+  const item = findAgain(plan, r.task);
+  if (!item) return undefined;
   const milestone = plan.milestoneById(chosen.milestone);
   if (!milestone) {
     void vscode.window.showErrorMessage(`Planner: unknown milestone ${chosen.milestone}.`);

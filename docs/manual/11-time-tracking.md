@@ -12,7 +12,8 @@ Start a timer on a task in any of these ways:
 - Right-click the task line in the editor → **Start timer**.
 - Put the cursor on the task and run **Planner: Start timer**.
 
-The status bar shows the task id and the elapsed time, updated every half minute:
+The status bar shows the task id and the elapsed time (`T12 1h 05m`, or `42m`), updated every half
+minute:
 
 ![The running timer next to the overdue/blocked counter](images/statusbar.png)
 
@@ -28,6 +29,12 @@ Rules:
   id and title, it logs nothing and a message gives the hours ("more than one task has the id
   T104; 1h not logged"), so you can add them with **Log time**.
 - **The timer survives a reload** of the window: it is kept with the workspace.
+- **A forgotten timer asks.** When it has run for longer than a working day, or since before
+  midnight, stopping it asks first: **Log 16.5h**, **Other amount…** or **Discard**. The status
+  bar turns yellow when that question is coming. If the computer's clock went back, it asks for the
+  hours instead of logging nothing.
+- **Finishing the task elsewhere** (the Kanban board, the checkbox, the form) while its timer runs
+  asks whether to stop the timer now.
 
 Stop the timer by clicking it in the status bar or running **Planner: Stop timer**. The elapsed
 time is rounded **up** to `planner.time.roundingMinutes` (15 minutes by default) and added to the
@@ -50,7 +57,9 @@ how long you worked:
 | `1h30m`  | 1 hour 30 min |
 | `1:30`   | 1 hour 30 min |
 
-The hours are added to the existing `@act` (it is created when missing).
+The hours are added to the existing `@act` (it is created when missing). When the task's `@act`
+was typed in a form the planner does not read as hours (`@act:90m`), Log time and the timer say so
+and change nothing, so no hours are lost: write it as hours (`@act:1.5h`) first.
 
 ## How actual hours are used
 

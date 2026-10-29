@@ -4,6 +4,7 @@
 // Every problem is collected and reported at once.
 import { isValidDate } from "../core/dates";
 import { parseDuration } from "../core/duration";
+import { titleMarkup } from "../core/parser/taskLine";
 import { type Priority, STATUSES, type Status } from "../core/model";
 import { type Plan } from "../core/resolve";
 import { type NewTask, nextIds, noteLines, statusDateAttrs } from "../core/writer";
@@ -46,6 +47,10 @@ export class TaskRefs {
   readonly byTitle = new Map<string, string | null>();
   readonly reserved = new Set<string>();
   readonly created: Array<{ ref?: string; id: string; title: string; milestone?: string }> = [];
+  /** Refs (lower case) given to more than one task: a dependency on them would be a guess. */
+  readonly duplicateRefs = new Set<string>();
+  /** Notes for the answer that do not stop the call (a title with `#42` in it). */
+  readonly warnings: string[] = [];
 }
 
 const LAG = /^(.*?)(\+\d+(?:\.\d+)?[hdw])$/i;
@@ -70,7 +75,9 @@ export function allocateIds(
   all.forEach((s, i) => {
     out.set(s, ids[i]);
     refs.reserved.add(ids[i]);
-    if (s.ref?.trim()) refs.byRef.set(s.ref.trim().toLowerCase(), ids[i]);
+    const ref = s.ref?.trim().toLowerCase();
+    if (ref && refs.byRef.has(ref)) refs.duplicateRefs.add(ref);
+    if (ref) refs.byRef.set(ref, ids[i]);
     const title = s.title?.trim().toLowerCase();
     if (title) refs.byTitle.set(title, refs.byTitle.has(title) ? null : ids[i]);
     refs.created.push({ ref: s.ref, id: ids[i], title: s.title?.trim() ?? "", milestone });
@@ -108,6 +115,15 @@ export function buildTasks(
     const title = s.title?.replace(/\s+/g, " ").trim();
     if (!title) errors.push(`${label}: a task needs a title.`);
     const name = `${label} "${title ?? ""}"`;
+    if (s.ref?.trim() && refs.duplicateRefs.has(s.ref.trim().toLowerCase()))
+      errors.push(
+        `${name}: ref "${s.ref.trim()}" is used by more than one task; give each its own.`
+      );
+    const markup = title ? titleMarkup(title) : [];
+    if (markup.length)
+      refs.warnings.push(
+        `${name}: ${markup.join(" ")} is read as a tag, attribute or id, not as title text. Use the task's fields, or put such text in brackets to keep it in the title.`
+      );
     const attrs: Record<string, string | undefined> = {};
     for (const [key, value] of Object.entries(s.attributes ?? {})) {
       if (!/^[A-Za-z][\w-]*$/.test(key)) errors.push(`${name}: invalid attribute name "${key}".`);

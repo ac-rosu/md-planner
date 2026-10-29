@@ -45,9 +45,15 @@ export const CSV_COLUMNS = [
   "Line",
 ];
 
+/**
+ * Text that a spreadsheet would read as a formula (starting with `=`, `+`, `-`, `@`, a tab or a
+ * carriage return, also after leading spaces) gets a leading `'`, so that a task title like
+ * `=HYPERLINK(…)` stays text. Numbers (hours, percentages, negative slack) are written unchanged.
+ */
 export function csvField(value: string | number | boolean | undefined, delimiter = ","): string {
   if (value === undefined) return "";
-  const s = String(value);
+  const s =
+    typeof value === "string" && /^\s*[=+\-@\t\r]/.test(value) ? `'${value}` : String(value);
   return s.includes(delimiter) || /["\r\n]/.test(s) || /^\s|\s$/.test(s)
     ? `"${s.replace(/"/g, '""')}"`
     : s;

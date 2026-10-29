@@ -14,7 +14,7 @@ import { parseFileAs } from "../parser/files";
 import { cleanTag, formatAttr, matchCheckbox } from "../parser/taskLine";
 import { type Plan } from "../resolve";
 import { hasLoggedWork, openSubtasks } from "../rollup";
-import { comparePositions, pos, range, type TextEdit, type TextLines } from "../text";
+import { comparePositions, oneLine, pos, range, type TextEdit, type TextLines } from "../text";
 import { minimalLineEdit, TaskLineEditor } from "./lineEditor";
 
 export { TaskLineEditor, minimalLineEdit } from "./lineEditor";
@@ -339,7 +339,7 @@ function insertionEdit(
       const h = headings.find(
         (x) => x.level === 2 && x.text.toLowerCase() === location.title.trim().toLowerCase()
       );
-      if (!h) return appendBlock(lines, [`## ${location.title.trim()}`, "", ...text]);
+      if (!h) return appendBlock(lines, [`## ${oneLine(location.title).trim()}`, "", ...text]);
       const next = headings.find((x) => x.line > h.line && x.level <= 2);
       return insertIntoRegion(file, h.line, next ? next.line : lines.lineCount, text);
     }
@@ -724,7 +724,7 @@ const ID_NUMBER = /^([A-Za-z]+)(\d+)$/;
 
 /** All ids in use across tasks, punch items and inbox items. */
 export function allIds(plan: Plan): Set<string> {
-  const ids = new Set<string>();
+  const ids = new Set<string>(plan.usedIds);
   for (const t of [...plan.tasks, ...plan.punch, ...plan.inbox]) if (t.id) ids.add(t.id);
   return ids;
 }
@@ -935,7 +935,7 @@ export function noteLines(notes: string[]): string[] {
  * id, so its marker is escaped (`\- [ ] call Bob`, shown the same); a code fence left open would
  * hide the rest of the file, so it is closed. Lists and closed code blocks are kept as they are.
  */
-export function guardNotes(notes: string[]): string[] {
+export function guardNotes(notes: string[], o: { headings?: boolean } = {}): string[] {
   const out: string[] = [];
   let fence: string | undefined;
   for (const n of notes) {
@@ -947,7 +947,9 @@ export function guardNotes(notes: string[]): string[] {
       continue;
     }
     if (f) fence = f[1];
-    out.push(matchCheckbox(n) ? n.replace(/^([ \t]*)/, "$1\\") : n);
+    // Top-level text (a milestone's description) would also turn `## x` into a section.
+    const structure = matchCheckbox(n) || (o.headings && /^ {0,3}#{1,6}(?:[ \t]|$)/.test(n));
+    out.push(structure ? n.replace(/^([ \t]*)/, "$1\\") : n);
   }
   if (fence) out.push(fence);
   return out;
@@ -1013,8 +1015,9 @@ export function setProperty(
   lines: TextLines,
   block: PropertyBlock,
   key: string,
-  value: string
+  raw: string
 ): TextEdit[] {
+  const value = oneLine(raw);
   const entry = block.entries.find((e) => e.key.toLowerCase() === key.toLowerCase());
   if (!entry) return [addProperty(lines, block, key, value)];
   if (entry.value === value) return [];
@@ -1038,7 +1041,7 @@ export function addProperty(
   key: string,
   value: string
 ): TextEdit {
-  const line = `${key}: ${value}`;
+  const line = `${key}: ${oneLine(value)}`;
   if (block.entries.length > 0) return insertLines(lines, block.insertLine, [line]);
   const h = block.headingLine;
   if (h < 0) return insertLines(lines, 0, [line, ""]);

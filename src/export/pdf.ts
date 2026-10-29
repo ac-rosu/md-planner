@@ -40,9 +40,24 @@ export function browserCandidates(platform = process.platform, env = process.env
   return out;
 }
 
+/**
+ * Why a configured browser path is not started: it is not named like Edge, Chrome, Chromium or
+ * Brave, or it is a script (`.sh`, `.cmd` …) rather than a program. The path comes from a
+ * setting a repository's `.vscode/settings.json` can hold, or from an agent's tool call, and it is
+ * run: only a browser may be.
+ */
+export function browserPathProblem(path: string): string | undefined {
+  const name = (path.split(/[\\/]/).pop() ?? "").toLowerCase();
+  const ext = /\.[^.\s]+$/.exec(name)?.[0] ?? "";
+  if ((ext && ext !== ".exe") || !/chrom|edge|brave/.test(name))
+    return `${path} is not Microsoft Edge, Google Chrome or Chromium`;
+  return undefined;
+}
+
 /** The browser to print with: the configured path when it exists, else the first one found. */
 export function findBrowser(configured?: string): string | undefined {
-  if (configured) return existsSync(configured) ? configured : undefined;
+  if (configured)
+    return existsSync(configured) && !browserPathProblem(configured) ? configured : undefined;
   return browserCandidates().find((p) => existsSync(p));
 }
 

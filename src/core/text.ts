@@ -112,6 +112,15 @@ export class TextLines {
   }
 }
 
+/**
+ * A value for a single line (an attribute, a property, a heading): line breaks, including the
+ * Unicode line and paragraph separators, become one space. Written as they are, they would start
+ * new lines in the file: a task, a property or a heading nobody typed.
+ */
+export function oneLine(value: string): string {
+  return value.replace(/[ \t]*[\r\n\u0085\u2028\u2029]+[ \t]*/g, " ");
+}
+
 export function pos(line: number, character: number): Position {
   return { line, character };
 }

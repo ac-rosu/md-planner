@@ -10,12 +10,13 @@ import {
   parseWorkday,
   personIdFromName,
 } from "../../core/resolve";
-import { parseCapacity } from "../../core/duration";
+import { formatNumber, parseCapacity } from "../../core/duration";
 import {
   addPerson,
   addRepeatedProperty,
   changePerson,
   changeProject,
+  type Creation,
   type PersonChange,
   type PersonFields,
   type ProjectChange,
@@ -130,7 +131,7 @@ export function resolvePerson(service: PlanService, arg: unknown): Person | unde
     if (typeof a.id === "string") return plan.personById(a.id);
   }
   const editor = vscode.window.activeTextEditor;
-  if (editor && service.relPath(editor.document.uri) === "team.md") {
+  if (editor && service.relPath(editor.document.uri)?.toLowerCase() === "team.md") {
     const line = editor.selection.active.line;
     return [...plan.people].reverse().find((p) => p.headingLine <= line);
   }
@@ -169,9 +170,20 @@ function personFields(
       changed: changed("name"),
       detail: creating ? undefined : "Renaming keeps the id, so assigned tasks stay assigned",
       edit: async (s) => {
-        const v = await askText({ title: "Name", value: s.name, required: true });
+        // A new person's id follows the name until it is changed: a name whose id is taken is
+        // refused here, before the person is added.
+        const follows = creating && s.id === personIdFromName(s.name);
+        const v = await askText({
+          title: "Name",
+          value: s.name,
+          required: true,
+          validate: (x) =>
+            follows && state.plan.personById(personIdFromName(x))
+              ? `A person with the id ${personIdFromName(x)} already exists; choose another name, or change the id first`
+              : undefined,
+        });
         if (!v) return;
-        if (creating && s.id === personIdFromName(s.name)) s.id = personIdFromName(v);
+        if (follows) s.id = personIdFromName(v);
         s.name = v;
       },
     },
@@ -189,7 +201,7 @@ function personFields(
           validate: (x) =>
             !/^[a-z0-9][\w.-]*$/.test(x)
               ? "Lower case letters, digits, dots and dashes"
-              : plan.personById(x)
+              : state.plan.personById(x)
                 ? "This id is already in use"
                 : undefined,
         });
@@ -257,7 +269,7 @@ function personFields(
         const v = await askList("Capacity changes", s.capacityFrom, {
           addLabel: "Add a capacity change…",
           empty: "No capacity changes",
-          add: () => askCapacityChange("Capacity change", today),
+          add: () => askCapacityChange("Capacity change", today, fullTime(state.plan, s.workweek)),
         });
         if (v !== undefined) s.capacityFrom = sortDates(v);
       },
@@ -339,41 +351,74 @@ export async function addPersonCommand(
 ): Promise<string | undefined> {
   const service = state.service;
   if (!service.root) return undefined;
-  let fields = values;
-  if (!fields) {
-    const name = await askText({
-      title: "Add person",
-      prompt: "Press Enter to continue to role, capacity, time off and skills",
-      placeHolder: "Name, e.g. Robin Lee",
-      required: true,
-      validate: (v) =>
-        state.plan.personById(personIdFromName(v))
-          ? "A person with this id already exists"
-          : undefined,
-    });
-    if (!name) return undefined;
-    const form: PersonForm = {
-      name,
-      id: personIdFromName(name),
-      role: "",
-      capacity: "",
-      workweek: "",
-      skills: [],
-      color: "",
-      off: [],
-      capacityFrom: [],
-      overtime: [],
-      workday: [],
-    };
+  let added: { fields: PersonFields; creation: Creation } | undefined;
+  if (values) {
+    try {
+      added = { fields: values, creation: addPerson(service.plan, values) };
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `Planner: ${err instanceof Error ? err.message : String(err)}`
+      );
+      return undefined;
+    }
+  } else {
+    added = await askNewPerson(state);
+    if (!added) return undefined;
+  }
+  const { fields, creation } = added;
+  if (creation.create && !(await service.createFiles([creation.create]))) return undefined;
+  if (creation.edits && !(await service.apply(creation.edits, { source: "view" })))
+    return undefined;
+  service.fireNow();
+  const id = (fields.id || personIdFromName(fields.name)).toLowerCase();
+  message(`Added ${fields.name} (@owner:${id})`);
+  return id;
+}
+
+/**
+ * The name, then the form of a new person, and the edits that add them. When they cannot be added
+ * (their id was taken meanwhile), the form stays open with everything filled in, and says why.
+ */
+async function askNewPerson(
+  state: PlannerState
+): Promise<{ fields: PersonFields; creation: Creation } | undefined> {
+  const name = await askText({
+    title: "Add person",
+    prompt: "Press Enter to continue to role, capacity, time off and skills",
+    placeHolder: "Name, e.g. Robin Lee",
+    required: true,
+    validate: (v) =>
+      state.plan.personById(personIdFromName(v))
+        ? "A person with this id already exists"
+        : undefined,
+  });
+  if (!name) return undefined;
+  const form: PersonForm = {
+    name,
+    id: personIdFromName(name),
+    role: "",
+    capacity: "",
+    workweek: "",
+    skills: [],
+    color: "",
+    off: [],
+    capacityFrom: [],
+    overtime: [],
+    workday: [],
+  };
+  let problem: string | undefined;
+  for (;;) {
     const action = await showForm({
-      title: `Add person – ${name}`,
+      title: `Add person – ${form.name}`,
       state: form,
       actions: [{ id: "create", icon: "check", label: "Add person", description: "Enter" }],
       fields: personFields(state, true),
-      placeholder: "Press Enter to add the person, or choose a field first",
+      placeholder: problem
+        ? `${problem} Change the name or the id, then press Enter.`
+        : "Press Enter to add the person, or choose a field first",
     });
     if (!action) return undefined;
-    fields = {
+    const fields: PersonFields = {
       name: form.name,
       id: form.id,
       role: form.role || undefined,
@@ -386,23 +431,13 @@ export async function addPersonCommand(
       overtime: form.overtime,
       workday: form.workday,
     };
+    try {
+      return { fields, creation: addPerson(state.plan, fields) };
+    } catch (err) {
+      problem = err instanceof Error ? err.message : String(err);
+      void vscode.window.showErrorMessage(`Planner: ${problem}`);
+    }
   }
-  let creation;
-  try {
-    creation = addPerson(service.plan, fields);
-  } catch (err) {
-    void vscode.window.showErrorMessage(
-      `Planner: ${err instanceof Error ? err.message : String(err)}`
-    );
-    return undefined;
-  }
-  if (creation.create && !(await service.createFiles([creation.create]))) return undefined;
-  if (creation.edits && !(await service.apply(creation.edits, { source: "view" })))
-    return undefined;
-  service.fireNow();
-  const id = (fields.id || personIdFromName(fields.name)).toLowerCase();
-  message(`Added ${fields.name} (@owner:${id})`);
-  return id;
 }
 
 export async function editPersonCommand(
@@ -485,7 +520,7 @@ export async function editPersonCommand(
   const edits = changePerson(file.lines, fresh, edit);
   if (edits.length === 0) return false;
   const ok = await service.apply([{ path: file.path, edits }], { source: "view" });
-  if (ok) message(`Saved ${edit.name ?? fresh.name}`);
+  if (ok) message(service.savedMessage(edit.name ?? fresh.name, [file.path]));
   return ok;
 }
 
@@ -591,16 +626,13 @@ export async function addTimeOffCommand(
     );
     return false;
   }
-  const file = state.plan.file(person.file);
-  if (!file) return false;
-  const ok = await service.apply(
-    [{ path: file.path, edits: [addRepeatedProperty(file.lines, person.props, "off", value)] }],
-    {
-      source: "view",
-    }
+  return addPersonLine(
+    state,
+    person,
+    "off",
+    value,
+    (name) => `Added time off for ${name}: ${value}`
   );
-  if (ok) message(`Added time off for ${person.name}: ${value}`);
-  return ok;
 }
 
 /** Upcoming days off (weekends, holidays) for a person with work week `workweek` (or the project's). */
@@ -613,6 +645,12 @@ function daysOff(
   const ww = (workweek ? parseWorkweek(workweek) : undefined) ?? plan.project.workweek;
   const from = week?.from ?? parseDate(today)!;
   return daysOffSuggestions(from, ww, plan.project.holidays, { to: week?.to });
+}
+
+/** Full time as a capacity for a person with work week `workweek` (or the project's): `40h/week`. */
+function fullTime(plan: PlannerState["plan"], workweek: string): string {
+  const ww = (workweek ? parseWorkweek(workweek) : undefined) ?? plan.project.workweek;
+  return `${formatNumber(plan.project.hoursPerDay * ww.size)}h/week`;
 }
 
 /** Hours of a normal working day for a capacity such as `32h/week` (or full time). */
@@ -674,7 +712,13 @@ export async function addOvertimeCommand(
     );
     return false;
   }
-  return addPersonLine(state, person, "overtime", v, `Planned overtime for ${person.name}: ${v}`);
+  return addPersonLine(
+    state,
+    person,
+    "overtime",
+    v,
+    (name) => `Planned overtime for ${name}: ${v}`
+  );
 }
 
 /** Adds a `workday:` line: from the value, or asked (with the days off of the week first). */
@@ -702,23 +746,34 @@ export async function addWorkdayCommand(
     );
     return false;
   }
-  return addPersonLine(state, person, "workday", v, `${person.name} works on ${v}`);
+  return addPersonLine(state, person, "workday", v, (name) => `${name} works on ${v}`);
 }
 
+/**
+ * Adds a `key: value` line to a person's properties. The person is found again first: lines may
+ * have moved in team.md while the questions before were open. Nothing is written when they are no
+ * longer on the team.
+ */
 async function addPersonLine(
   state: PlannerState,
   person: Person,
   key: string,
   value: string,
-  done: string
+  done: (name: string) => string
 ): Promise<boolean> {
-  const file = state.plan.file(person.file);
-  if (!file) return false;
+  const fresh = state.plan.personById(person.id);
+  const file = fresh && state.plan.file(fresh.file);
+  if (!fresh || !file) {
+    void vscode.window.showWarningMessage(
+      `Planner: ${person.name} (${person.id}) is no longer on the team; nothing was added.`
+    );
+    return false;
+  }
   const ok = await state.service.apply(
-    [{ path: file.path, edits: [addRepeatedProperty(file.lines, person.props, key, value)] }],
+    [{ path: file.path, edits: [addRepeatedProperty(file.lines, fresh.props, key, value)] }],
     { source: "view" }
   );
-  if (ok) message(done);
+  if (ok) message(done(fresh.name));
   return ok;
 }
 
@@ -906,6 +961,6 @@ export async function editProjectCommand(
   const edits = changeProject(fresh.lines, state.plan.project, edit);
   if (edits.length === 0) return false;
   const ok = await service.apply([{ path: fresh.path, edits }], { source: "view" });
-  if (ok) message("Saved the project settings");
+  if (ok) message(service.savedMessage("the project settings", [fresh.path]));
   return ok;
 }

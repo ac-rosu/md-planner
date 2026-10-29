@@ -364,44 +364,78 @@ export async function askList(
   }
 }
 
+const CAPACITY_PRESETS = [
+  "40h/week",
+  "36h/week",
+  "32h/week",
+  "24h/week",
+  "16h/week",
+  "8h/day",
+  "6h/day",
+  "4h/day",
+];
+
+/** A person's capacity; "" is full time (no `capacity:` line). */
 export async function askCapacity(
   title: string,
   current: string | undefined
 ): Promise<string | undefined> {
-  const presets = [
-    "40h/week",
-    "36h/week",
-    "32h/week",
-    "24h/week",
-    "16h/week",
-    "8h/day",
-    "6h/day",
-    "4h/day",
-  ];
-  const choices: Array<Choice<string>> = [
+  return pickCapacity(
+    title,
     { label: "Full time", value: "", description: "hours per day × working days (default)" },
-    ...presets.map((p) => ({ label: p, value: p })),
+    current ?? "",
+    current
+  );
+}
+
+/**
+ * A capacity change from a date: `2027-01-01 24h/week`. Full time is written as the person's
+ * full-time hours, `fullTime` (`40h/week`: hours per day × their working days), as a change needs a
+ * value.
+ */
+export async function askCapacityChange(
+  title: string,
+  today: string,
+  fullTime: string
+): Promise<string | undefined> {
+  const from = await askDate(`${title} – from`, undefined, today, [], false);
+  if (!from) return undefined;
+  const cap = await pickCapacity(
+    `${title} – new capacity from ${from}`,
+    {
+      label: "Full time",
+      value: fullTime,
+      description: `${fullTime}: hours per day × working days`,
+    },
+    undefined,
+    undefined
+  );
+  if (!cap) return undefined;
+  return `${from} ${cap}`;
+}
+
+/** The capacity presets after `fullTime`, or a typed capacity (starting from `typed`). */
+async function pickCapacity(
+  title: string,
+  fullTime: Choice<string>,
+  current: string | undefined,
+  typed: string | undefined
+): Promise<string | undefined> {
+  const choices: Array<Choice<string>> = [
+    fullTime,
+    ...CAPACITY_PRESETS.filter((p) => p !== fullTime.value).map((p) => ({ label: p, value: p })),
     { label: "$(edit) Other…", value: "\u0000custom" },
   ];
-  const pick = await askChoice(title, choices, current ?? "", "Hours available for this project");
+  const pick = await askChoice(title, choices, current, "Hours available for this project");
   if (!pick) return undefined;
   if (pick.value !== "\u0000custom") return pick.value;
   return askText({
     title,
-    value: current,
+    value: typed,
     placeHolder: "e.g. 28h/week or 5h/day",
     validate: (v) =>
       parseCapacity(v) ? undefined : "Use hours per week or day, e.g. 28h/week or 5h/day",
   });
-}
-
-/** A capacity change from a date: `2027-01-01 24h/week`. */
-export async function askCapacityChange(title: string, today: string): Promise<string | undefined> {
-  const from = await askDate(`${title} – from`, undefined, today, [], false);
-  if (!from) return undefined;
-  const cap = await askCapacity(`${title} – new capacity from ${from}`, undefined);
-  if (!cap) return undefined;
-  return `${from} ${cap}`;
 }
 
 /**

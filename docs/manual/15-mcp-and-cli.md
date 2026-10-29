@@ -218,6 +218,19 @@ uses the tools above.
   dependency, a loop, a duplicate id …) is refused and nothing is written; the answer says why.
 - **Up to date.** The server reads the plan folder at every call, so it sees your saved edits, and
   the extension shows the agent's changes at once (also a plan the agent has just created).
+- **Inside the workspace.** Paths in tool calls stay inside the workspace folder: the export's
+  `outDir` and `name`, the code file of `promote_todo` and a `templatesFolder`; anything else is
+  refused. Templates copy only Markdown files (and a `.gitignore`).
+- **Only a browser is started.** PDF printing runs Edge, Chrome or Chromium, never a program from
+  inside the workspace or one that is not named like a browser, whether the path comes from the
+  call or from `planner.export.browserPath`.
+- **One line where one line belongs.** Line breaks in titles, attributes, properties, names and
+  test-plan fields become spaces, and a milestone description cannot add tasks, headings or an
+  open code block, so a value can never add lines nobody asked for.
+- **No guessing.** A `ref` given to two tasks in one call is refused; a title with `#42` or
+  `@est:4h` in it is written, with a `warnings` entry saying what it became. Logged time over
+  1,000 hours in one entry, and an `@act` the planner cannot read (`@act:90m` typed by hand), are
+  refused rather than overwritten.
 - Settings such as the export branding come from the workspace's `.vscode/settings.json`.
 
 > [!IMPORTANT]
@@ -322,6 +335,12 @@ as flags.
 | `--author`, `--company`, `--accent <#rrggbb>`, `--logo <file>` | export             | Report header and branding.                                                                      |
 | `--browser <path>`                                             | export             | Edge or Chrome for PDF (default: detect).                                                        |
 | `--delimiter <char>`                                           | export             | CSV delimiter (default `,`).                                                                     |
+
+A mistake in the call is reported in one line and ends with exit code **2**, so a CI job fails
+instead of passing on a typo: a `--plan` that is not a plan folder (no `project.md`), an unknown
+option, a missing or invalid value (`--weeks abc`, `--mode bogus`), or an `--out` that is a file or
+cannot be written. A baseline file that is not valid is skipped with a warning; one named with
+`--baseline` stops the export.
 
 ### Example: GitHub Actions
 

@@ -28,8 +28,27 @@ export function config(scope?: vscode.ConfigurationScope): vscode.WorkspaceConfi
   return vscode.workspace.getConfiguration("planner", scope);
 }
 
+/**
+ * Decodes UTF-8 without a BOM, like VS Code's documents. Lenient: bytes that are not UTF-8 become
+ * U+FFFD, so the text is only good for display. Use decodeChecked for text that may be written back.
+ */
 export function decode(bytes: Uint8Array): string {
   return new TextDecoder("utf-8").decode(bytes);
+}
+
+const STRICT = new TextDecoder("utf-8", { fatal: true });
+
+/**
+ * Decodes like `decode`, and says whether the bytes are valid UTF-8. When they are not (a file in
+ * Latin-1 or Windows-1252), the text is the lenient decoding: writing it back would replace every
+ * accented letter of the file with U+FFFD.
+ */
+export function decodeChecked(bytes: Uint8Array): { text: string; utf8: boolean } {
+  try {
+    return { text: STRICT.decode(bytes), utf8: true };
+  } catch {
+    return { text: decode(bytes), utf8: false };
+  }
 }
 
 export function encode(text: string): Uint8Array {

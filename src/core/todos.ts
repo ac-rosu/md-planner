@@ -1,5 +1,6 @@
 // TODO/FIXME comments in source code, and the edits that promote one to a plan task.
-import { type ParsedFile } from "./model";
+import { type ParsedFile, type Task } from "./model";
+import { tokenize } from "./parser/taskLine";
 import { type Plan } from "./resolve";
 import { range, type TextEdit } from "./text";
 import { type InsertLocation, insertTasks, nextId } from "./writer";
@@ -12,15 +13,26 @@ export const DEFAULT_TODO_EXCLUDE =
 
 export interface TodoItem {
   keyword: string;
-  /** Task id from `TODO(T142)`, when the comment is already linked. */
+  /**
+   * Task id from `TODO(T142)` or `TODO(T142, alice)`, when the comment is linked: the first entry
+   * in the parentheses that looks like a task id (TASK_ID). The task may be gone (see linkedTask).
+   */
   taskId?: string;
+  /** What the parentheses after the keyword hold (`alice` in `TODO(alice):`), when it has any. */
+  ref?: string;
   text: string;
   line: number;
   /** Column of the keyword. */
   column: number;
-  /** Column right after the keyword (where `(T142)` is inserted). */
+  /** Column right after the keyword (where `(T142)` is inserted, or the parentheses open). */
   keywordEnd: number;
 }
+
+/**
+ * A task id in `TODO(…)`: capital letters and digits, as the planner's ids (`T142`, `P007`).
+ * Other notes there are not links: a version (`v2`), an issue (`issue42`) or a name (`alice`).
+ */
+const TASK_ID = /^[A-Z]+\d+$/;
 
 /** Characters that close comments and should not end up in task titles. */
 const TRAILERS = /\s*(\*\/|-->|\*\)|#>|"""|''')\s*$/;
@@ -41,10 +53,14 @@ export function scanTodos(text: string, keywords: string[] = DEFAULT_TODO_KEYWOR
     const column = m.index + m[1].length;
     const body = m[4].replace(TRAILERS, "").trim();
     if (!body) continue;
-    const ref = m[3]?.trim();
+    const ref = m[3];
     items.push({
       keyword: m[2],
-      taskId: ref && /^[A-Za-z]+\d+$/.test(ref) ? ref : undefined,
+      taskId: ref
+        ?.split(",")
+        .map((s) => s.trim())
+        .find((s) => TASK_ID.test(s)),
+      ref,
       text: body,
       line: i,
       column,
@@ -52,6 +68,27 @@ export function scanTodos(text: string, keywords: string[] = DEFAULT_TODO_KEYWOR
     });
   }
   return items;
+}
+
+/** The task a comment is linked to; undefined when it is not, or that task is no longer planned. */
+export function linkedTask(plan: Plan, todo: TodoItem): Task | undefined {
+  return todo.taskId === undefined ? undefined : plan.taskById(todo.taskId);
+}
+
+/**
+ * A comment's text as a task title that reads back as written: what a task line reads as a tag,
+ * an attribute or its id (see titleMarkup) goes in parentheses, so `remove once #1234 is merged`
+ * keeps `(#1234)` in the title instead of losing it to a tag.
+ */
+export function todoTitle(text: string): string {
+  let out = "";
+  let at = 0;
+  for (const t of tokenize(text, 0)) {
+    if (t.kind !== "tag" && t.kind !== "attr" && t.kind !== "id") continue;
+    out += `${text.slice(at, t.start)}(${text.slice(t.start, t.end)})`;
+    at = t.end;
+  }
+  return out + text.slice(at);
 }
 
 export interface PromoteTodo {
@@ -67,23 +104,32 @@ export interface PromoteTodo {
 export interface Promotion {
   id: string;
   planEdits: TextEdit[];
-  /** Edit of the source line: `TODO:` → `TODO(T142):`. */
+  /** Edit of the source line: `TODO:` → `TODO(T142):`, `TODO(alice):` → `TODO(T142, alice):`. */
   sourceEdit: TextEdit;
 }
 
-/** A task with `@src:path#Lline` in the milestone, and `(T142)` after the keyword in the code. */
+/**
+ * A task with `@src:path#Lline` in the milestone, and its id after the keyword in the code: in
+ * parentheses, or first in the ones the comment has, so that scanTodos reads it back and nothing
+ * written there is lost.
+ */
 export function promoteTodo(plan: Plan, p: PromoteTodo): Promotion {
   const id = nextId(plan, "T");
   const attrs: Array<[string, string]> = [];
   if (p.owner) attrs.push(["owner", p.owner]);
   attrs.push(["src", `${p.sourcePath}#L${p.todo.line + 1}`]);
   const planEdits = insertTasks(p.milestoneFile, p.location, [
-    { title: p.title ?? p.todo.text, attrs, id },
+    { title: p.title ?? todoTitle(p.todo.text), attrs, id },
   ]);
-  const sourceEdit: TextEdit = {
-    range: range(p.todo.line, p.todo.keywordEnd, p.todo.keywordEnd),
-    newText: `(${id})`,
-  };
+  const { line, keywordEnd, ref } = p.todo;
+  // Inside the parentheses: right after `(`; an empty pair is replaced.
+  const inside = keywordEnd + 1;
+  const sourceEdit: TextEdit =
+    ref === undefined
+      ? { range: range(line, keywordEnd, keywordEnd), newText: `(${id})` }
+      : ref.trim()
+        ? { range: range(line, inside, inside), newText: `${id}, ` }
+        : { range: range(line, inside, inside + ref.length), newText: id };
   return { id, planEdits, sourceEdit };
 }
 

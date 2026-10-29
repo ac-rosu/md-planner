@@ -1,5 +1,5 @@
 // Tokenizer for checkbox list items:  `- [/] Title text @est:12h @owner:mark #tag ^T102`
-import { type Range, range } from "../text";
+import { oneLine, type Range, range } from "../text";
 
 /** `- [ ] `, `* [x]`, `1. [/]` … captures indent, marker, gap, status char and what follows. */
 const CHECKBOX = /^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)\[([^\]\r\n])\](?=[ \t]|$)/;
@@ -216,7 +216,8 @@ export function formatAttr(key: string, value: string): string {
   return `@${key}:${formatAttrValue(value)}`;
 }
 
-export function formatAttrValue(value: string): string {
+export function formatAttrValue(raw: string): string {
+  const value = oneLine(raw);
   if (value === "" || /[\s"]/.test(value)) {
     return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
   }

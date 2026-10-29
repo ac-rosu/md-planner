@@ -19,6 +19,21 @@ export const XLSX_SHEETS = [
 
 type Cell = string | number | boolean | undefined;
 
+/**
+ * Characters XML 1.0 does not allow. exceljs drops the C0 controls itself but writes U+FFFE and
+ * U+FFFF as they are, which would make the workbook unreadable.
+ */
+// eslint-disable-next-line no-control-regex
+const NOT_XML = /[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]/g;
+
+/**
+ * Plan text for a cell, without the characters XML forbids. exceljs stores a string as a text cell,
+ * never as a formula, so `=HYPERLINK(…)` in a title is shown, not run.
+ */
+function xlsxText<T extends Cell>(value: T): T {
+  return (typeof value === "string" ? value.replace(NOT_XML, "") : value) as T;
+}
+
 function sheet(
   wb: ExcelJS.Workbook,
   name: string,
@@ -28,7 +43,7 @@ function sheet(
 ): ExcelJS.Worksheet {
   const ws = wb.addWorksheet(name, { views: [{ state: "frozen", ySplit: 1 }] });
   ws.addRow(headers);
-  for (const r of rows) ws.addRow(r.map((v) => (v === undefined ? null : v)));
+  for (const r of rows) ws.addRow(r.map((v) => (v === undefined ? null : xlsxText(v))));
   const head = ws.getRow(1);
   head.font = { bold: true };
   head.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8EEF4" } };
@@ -49,8 +64,8 @@ export async function exportXlsx(
   author?: string
 ): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = author ?? "Markdown Project Planner";
-  wb.title = plan.project.name;
+  wb.creator = xlsxText(author ?? "Markdown Project Planner");
+  wb.title = xlsxText(plan.project.name);
   const today = formatDate(schedule.today);
   wb.created = new Date(`${today}T00:00:00Z`);
   wb.modified = wb.created;

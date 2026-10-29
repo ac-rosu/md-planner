@@ -205,8 +205,8 @@ export function buildKanbanModel(
   const laneOf = (t: Task): { key: string; title: string } => {
     switch (options.swimlane) {
       case "owner": {
-        const o = ownerOf(t)?.toLowerCase();
-        if (!o || o === UNASSIGNED) return { key: UNASSIGNED, title: "Unassigned" };
+        const o = ownerLane(t);
+        if (o === UNASSIGNED) return { key: UNASSIGNED, title: "Unassigned" };
         return { key: o, title: plan.personById(o)?.name ?? o };
       }
       case "milestone": {
@@ -288,6 +288,14 @@ export function buildKanbanModel(
     filter,
     projectName: plan.project.name,
   };
+}
+
+/**
+ * The key of the owner swimlane a task's card is in: its owner, or the owner it has from a parent
+ * (a subtask without `@owner`), in lower case; UNASSIGNED without one.
+ */
+export function ownerLane(t: Task): string {
+  return ownerOf(t)?.toLowerCase() || UNASSIGNED;
 }
 
 /**

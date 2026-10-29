@@ -340,7 +340,7 @@ export class PlanCompletionProvider implements vscode.CompletionItemProvider {
       // Extra working days: the coming days off of the person whose section this is.
       const person = [...plan.people]
         .reverse()
-        .find((p) => p.file === "team.md" && p.headingLine <= position.line);
+        .find((p) => p.file.toLowerCase() === "team.md" && p.headingLine <= position.line);
       return daysOffSuggestions(
         today,
         person?.workweek ?? plan.project.workweek,

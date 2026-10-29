@@ -13,7 +13,7 @@ import {
   type Task,
 } from "../model";
 import { type Plan, personIdFromName } from "../resolve";
-import { type TextEdit, type TextLines } from "../text";
+import { oneLine, type TextEdit, type TextLines } from "../text";
 import {
   addProperty,
   appendSection,
@@ -23,6 +23,7 @@ import {
   editTaskLine,
   type FileEdit,
   formatTaskBlock,
+  guardNotes,
   insertLines,
   insertTasks,
   type InsertLocation,
@@ -335,10 +336,11 @@ export function milestoneHeading(id: string, name: string, prefix = `${id} – `
 
 export function formatMilestoneFile(m: NewMilestone): string {
   const lines = [`# ${milestoneHeading(m.id, m.name)}`, "", `id: ${m.id}`];
-  if (m.target) lines.push(`target: ${m.target}`);
+  if (m.target) lines.push(`target: ${oneLine(m.target)}`);
   lines.push(`status: ${m.status ?? "planned"}`);
-  if (m.depends?.length) lines.push(`depends: ${m.depends.join(", ")}`);
-  if (m.description?.trim()) lines.push("", m.description.trim());
+  if (m.depends?.length) lines.push(`depends: ${oneLine(m.depends.join(", "))}`);
+  if (m.description?.trim())
+    lines.push("", ...guardNotes(m.description.trim().split(/\r\n|\n|\r/), { headings: true }));
   return lines.join("\n") + "\n";
 }
 
@@ -427,13 +429,13 @@ export function changeProperties(
     if (value === undefined) continue;
     const [entry] = find(key);
     if (!entry) {
-      if (value.trim()) added.push(`${key}: ${value.trim()}`);
+      if (value.trim()) added.push(`${key}: ${oneLine(value).trim()}`);
     } else if (!value.trim()) edits.push(removeProperty(lines, entry));
     else edits.push(...setProperty(lines, block, key, value.trim()));
   }
   for (const [key, values] of Object.entries(change.lists ?? {})) {
     if (values === undefined) continue;
-    const wanted = values.map((v) => v.trim()).filter(Boolean);
+    const wanted = values.map((v) => oneLine(v).trim()).filter(Boolean);
     const existing = find(key);
     for (const e of existing)
       if (!wanted.includes(e.value.trim())) edits.push(removeProperty(lines, e));
@@ -500,9 +502,11 @@ export function setMilestoneDescription(lines: TextLines, m: Milestone, text: st
   while (end < stop && !/^ {0,3}#{1,6}(?:[ \t]|$)/.test(lines.line(end))) end++;
   const current: number[] = [];
   for (let i = start; i < end; i++) if (lines.line(i).trim() !== "") current.push(i);
-  const body = text.split(/\r\n|\n|\r/).map((l) => l.trimEnd());
-  while (body.length && !body[0]) body.shift();
-  while (body.length && !body[body.length - 1]) body.pop();
+  const lines0 = text.split(/\r\n|\n|\r/).map((l) => l.trimEnd());
+  while (lines0.length && !lines0[0]) lines0.shift();
+  while (lines0.length && !lines0[lines0.length - 1]) lines0.pop();
+  // Text, not structure: a `- [ ]` line, a heading or an open code fence would change the plan.
+  const body = guardNotes(lines0, { headings: true });
   const blank = (line: number) => line >= lines.lineCount || lines.line(line).trim() === "";
   if (!current.length) {
     if (!body.length) return [];
@@ -604,17 +608,18 @@ export interface PersonFields {
 
 /** The `##` section of a new person, with an explicit `id:` so renaming them later is safe. */
 export function formatPersonSection(p: PersonFields): string[] {
-  const body = [`id: ${p.id || personIdFromName(p.name)}`];
-  if (p.role) body.push(`role: ${p.role}`);
-  if (p.capacity) body.push(`capacity: ${p.capacity}`);
-  for (const c of p.capacityFrom ?? []) body.push(`capacityFrom: ${c}`);
-  if (p.workweek) body.push(`workweek: ${p.workweek}`);
-  if (p.skills?.length) body.push(`skills: ${p.skills.join(", ")}`);
-  if (p.color) body.push(`color: ${p.color}`);
-  for (const o of p.off ?? []) body.push(`off: ${o}`);
-  for (const o of p.overtime ?? []) body.push(`overtime: ${o}`);
-  for (const w of p.workday ?? []) body.push(`workday: ${w}`);
-  return [`## ${p.name.trim()}`, "", ...body];
+  const prop = (key: string, value: string) => `${key}: ${oneLine(value).trim()}`;
+  const body = [prop("id", p.id || personIdFromName(p.name))];
+  if (p.role) body.push(prop("role", p.role));
+  if (p.capacity) body.push(prop("capacity", p.capacity));
+  for (const c of p.capacityFrom ?? []) body.push(prop("capacityFrom", c));
+  if (p.workweek) body.push(prop("workweek", p.workweek));
+  if (p.skills?.length) body.push(prop("skills", p.skills.join(", ")));
+  if (p.color) body.push(prop("color", p.color));
+  for (const o of p.off ?? []) body.push(prop("off", o));
+  for (const o of p.overtime ?? []) body.push(prop("overtime", o));
+  for (const w of p.workday ?? []) body.push(prop("workday", w));
+  return [`## ${oneLine(p.name).trim()}`, "", ...body];
 }
 
 /** Adds a person to team.md (creating the file when needed). */

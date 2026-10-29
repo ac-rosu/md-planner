@@ -27,6 +27,34 @@ export interface ScanResult {
 const HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/;
 const FENCE = /^[ \t]*(`{3,}|~{3,})/;
 
+/** Git's merge conflict markers that open and close a conflict: `<<<<<<< HEAD`, `>>>>>>> topic`. */
+const CONFLICT_SIDE = /^(?:<{7}|>{7})(?:[ \t]|$)/;
+/** The base (`||||||| base`, diff3 style) and the divider (`=======`) between the two sides. */
+const CONFLICT_MIDDLE = /^(?:\|{7}(?:[ \t]|$)|={7}[ \t]*$)/;
+
+/**
+ * The lines of git merge conflict markers in a file. `=======` alone is also a Markdown heading
+ * underline (and `|||||||` a table row), so those only count in a file that also has a `<<<<<<<`
+ * or `>>>>>>>` line. Code fences do not matter: git does not know them.
+ */
+export function conflictMarkerLines(lines: TextLines): number[] {
+  const found: number[] = [];
+  let side = false;
+  for (let i = 0; i < lines.lineCount; i++) {
+    const text = lines.line(i);
+    const c = text.charCodeAt(0);
+    // Every marker starts with < > | or =.
+    if (c !== 60 && c !== 62 && c !== 124 && c !== 61) continue;
+    if (CONFLICT_SIDE.test(text)) {
+      side = true;
+      found.push(i);
+    } else if (CONFLICT_MIDDLE.test(text)) {
+      found.push(i);
+    }
+  }
+  return side ? found : [];
+}
+
 export function scanLines(file: string, lines: TextLines, kind: ItemKind): ScanResult {
   const headings: Heading[] = [];
   const props = new Map<number, PropertyBlock>();
@@ -39,6 +67,17 @@ export function scanLines(file: string, lines: TextLines, kind: ItemKind): ScanR
   let stack: Task[] = [];
   let fence: { marker: string; owner?: Task } | undefined;
   let level2: Heading | undefined;
+
+  for (const line of conflictMarkerLines(lines)) {
+    issues.push({
+      file,
+      range: range(line, 0, lines.line(line).length),
+      severity: "error",
+      code: "merge-conflict",
+      message:
+        "Git merge conflict marker. Resolve the conflict: keep the lines you want and delete the marker lines (<<<<<<<, =======, >>>>>>>). Until then the tasks of both sides count, and planner edits could land inside the conflict.",
+    });
+  }
 
   for (let i = 0; i < lines.lineCount; i++) {
     const text = lines.line(i);

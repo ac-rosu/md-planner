@@ -119,6 +119,7 @@ export function createTasks(tools: PlannerTools, args: TaskLocation & { tasks: T
   return {
     created: refs.created.map(({ ref, id, title }) => ({ ...(ref ? { ref } : {}), id, title })),
     changed,
+    ...(refs.warnings.length ? { warnings: refs.warnings } : {}),
   };
 }
 
@@ -382,6 +383,14 @@ export function logTime(tools: PlannerTools, args: { id: string; time: string | 
   const hours = typeof args.time === "number" ? args.time : parseLoggedTime(String(args.time));
   if (hours === undefined || !(hours > 0))
     throw new ToolError(`Invalid time "${args.time}" (e.g. 1.5, 90m, 1h30m, 1:30).`);
+  if (hours > 1000)
+    throw new ToolError(`${hours} h in one entry is not plausible; log the time per day or week.`);
+  // An @act the planner cannot read (typed by hand as 90m) would be replaced, not added to.
+  const act = t.attrs.find((a) => a.key === "act");
+  if (act && t.act === undefined)
+    throw new ToolError(
+      `${args.id} has @act:${act.value}, which is not read as hours; write it as hours first (e.g. @act:1.5h).`
+    );
   const file = st.plan.file(t.file)!;
   st.apply({
     path: file.path,

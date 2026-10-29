@@ -228,19 +228,27 @@ export class PlanRenameProvider implements vscode.RenameProvider {
     return { range: toRange(ref.range), placeholder: ref.id };
   }
 
-  provideRenameEdits(
+  async provideRenameEdits(
     document: vscode.TextDocument,
     position: vscode.Position,
     newName: string
-  ): vscode.WorkspaceEdit {
+  ): Promise<vscode.WorkspaceEdit> {
     const ref = refAt(this.service, document, position);
     if (!ref || ref.kind !== "task") throw new Error("Only task ids can be renamed.");
     const plan = this.service.plan;
     const id = newName.trim().replace(/^\^/, "");
     if (!isValidTaskId(id)) throw new Error(`"${newName}" is not a valid id (e.g. T142).`);
     if (id !== ref.id && allIds(plan).has(id)) throw new Error(`The id ${id} is already in use.`);
+    const changes = renameTaskId(plan, ref.id, id);
+    // The rename edits every file that names the id, also ones not open: the same rules as any
+    // planner edit (no file that is not UTF-8; a conflicted one only when the user says so).
+    const touched = [...new Set(changes.map((fe) => fe.path))];
+    const notUtf8 = touched.find((p) => this.service.untouchable(p) === "not UTF-8");
+    if (notUtf8)
+      throw new Error(`${notUtf8} names ${ref.id} but is not UTF-8; save it as UTF-8 first.`);
+    if (!(await this.service.mayChange(touched))) throw new Error("Rename cancelled.");
     const edit = new vscode.WorkspaceEdit();
-    for (const fe of renameTaskId(plan, ref.id, id)) {
+    for (const fe of changes) {
       for (const e of fe.edits)
         edit.replace(this.service.uri(fe.path), toRange(e.range), e.newText);
     }

@@ -1,14 +1,15 @@
 // The MCP tools as plain functions over a plan folder on disk. Every call re-reads the plan (so
 // edits made in VS Code are seen), and every write goes through the minimal-diff writer and
 // returns the changed lines.
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { formatDate, isValidDate, localToday, parseDate, weekStart } from "../core/dates";
 import { matchesFilter, type TaskFilter } from "../core/filter";
-import { loadPlanIndex } from "../core/fsLoader";
+import { isMissing, loadPlanIndex } from "../core/fsLoader";
 import { taskOvertime, teamLoad } from "../core/load";
 import { describeAccuracy, estimateAccuracy } from "../core/metrics";
 import { type Status, type Task } from "../core/model";
+import { describeReadError } from "../core/parser/files";
 import { type Plan } from "../core/resolve";
 import { actualHours, estimateHours, isLeaf, ownerOf, remainingHours } from "../core/rollup";
 import { scheduleDiagnostics } from "../core/scheduleDiagnostics";
@@ -19,9 +20,9 @@ import { newErrors, type PlanErrors, planErrors } from "../core/newErrors";
 import { validatePlan } from "../core/validate";
 import { readNotes } from "../core/writer";
 import { findWorkspace } from "./settings";
-import { type ChangedLines, Staging } from "./staging";
+import { type ChangedLines, Staging, ToolError } from "./staging";
 
-export { changedLines, type ChangedLines } from "./staging";
+export { changedLines, type ChangedLines, ToolError } from "./staging";
 
 export interface ToolsOptions {
   planDir: string;
@@ -31,8 +32,6 @@ export interface ToolsOptions {
   today?: string;
   unassignedCapacity?: number;
 }
-
-export class ToolError extends Error {}
 
 /**
  * A task, punch or inbox item by id or key (`file#line`, as list tools return for items without
@@ -79,9 +78,34 @@ export class PlannerTools {
     return (this.scheduled ??= this.scheduleOf(this.loaded));
   }
 
-  /** True when the plan folder has a project.md. */
+  /** True when the plan folder has a project.md (in any casing: `Project.md` is read too). */
   hasPlan(): boolean {
-    return existsSync(join(this.options.planDir, "project.md"));
+    this.checkFolder();
+    let names: string[];
+    try {
+      names = readdirSync(this.options.planDir);
+    } catch (err) {
+      if (isMissing(err)) return false;
+      throw new ToolError(
+        `Cannot read the plan folder ${this.options.planDir}: ${describeReadError(err)}.`
+      );
+    }
+    return names.some((name) => name.toLowerCase() === "project.md");
+  }
+
+  /**
+   * Refuses a plan folder that is not there when the folder it should be in is not there either:
+   * the server was configured for a project that has been moved or deleted since, and creating a
+   * plan would bring back the whole old path.
+   */
+  private checkFolder(): void {
+    const dir = this.options.planDir;
+    if (existsSync(dir)) return;
+    const workspace = this.options.workspaceDir ?? dirname(dir);
+    if (existsSync(workspace)) return;
+    throw new ToolError(
+      `The plan folder ${dir} does not exist, and neither does ${workspace}: this MCP server is configured for a project that was moved or deleted. Re-run "Planner: Configure MCP for Claude Code" in VS Code (or fix the --plan path), then restart the server.`
+    );
   }
 
   private checkPlan(): void {
@@ -110,6 +134,7 @@ export class PlannerTools {
   /** Staged changes on top of the plan on disk (see staging.ts). */
   stage(options: { allowMissingPlan?: boolean } = {}): Staging {
     if (!options.allowMissingPlan) this.checkPlan();
+    else this.checkFolder();
     const st = new Staging(this.options.planDir);
     this.baselines.set(st, planErrors(st.exists("project.md") ? st.plan : undefined));
     return st;

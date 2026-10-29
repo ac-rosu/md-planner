@@ -295,10 +295,14 @@ async function applyAndReport(
   const after = scheduleAfter(state.plan, state.scheduleOptions(), edits);
   if (!(await state.service.apply(edits, { source }))) return false;
   const moved = describeScheduleChange(before, after);
-  if (!moved) message(`Saved ${name}`);
+  const saved = state.service.savedMessage(
+    name,
+    edits.map((e) => e.path)
+  );
+  if (!moved) message(saved);
   else
     void vscode.window
-      .showInformationMessage(`Saved ${name}. ${moved}`, "Open Gantt")
+      .showInformationMessage(`${saved}. ${moved}`, "Open Gantt")
       .then((pick) => pick && vscode.commands.executeCommand("planner.openGantt"));
   return true;
 }
@@ -1539,6 +1543,6 @@ async function editPunchItem(state: PlannerState, t: Task, change?: TaskChange):
   const edits = changeTask(file.lines, fresh, edit, state.today);
   if (edits.length === 0) return false;
   const ok = await service.apply([{ path: fresh.file, edits }], { source: "view" });
-  if (ok) message(`Saved ${t.id ?? t.title}`);
+  if (ok) message(service.savedMessage(t.id ?? t.title, [fresh.file]));
   return ok;
 }

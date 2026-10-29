@@ -16,11 +16,15 @@ export const TEMPLATE_DESCRIPTIONS: Record<string, string> = {
 /** Every file below `dir` (dotfiles included) as { relative POSIX path: text }. */
 export function readTemplateDir(dir: string): Record<string, string> {
   const out: Record<string, string> = {};
+  // A template is Markdown files (and a .gitignore): nothing else is copied into the plan, where
+  // read_plan_file could hand it out.
   const walk = (d: string) => {
     for (const name of readdirSync(d).sort()) {
       const full = join(d, name);
-      if (statSync(full).isDirectory()) walk(full);
-      else out[relative(dir, full).split(sep).join("/")] = readFileSync(full, "utf8");
+      if (statSync(full).isDirectory()) {
+        if (!name.startsWith(".")) walk(full);
+      } else if (/\.md$/i.test(name) || name === ".gitignore")
+        out[relative(dir, full).split(sep).join("/")] = readFileSync(full, "utf8");
     }
   };
   walk(dir);

@@ -102,8 +102,13 @@ export async function newProject(
   }
   const planFolder = config().get<string>("planFolder", "plan") || "plan";
   const root = vscode.Uri.joinPath(folder, ...planFolder.split(/[\\/]/));
-  if (await exists(vscode.Uri.joinPath(root, "project.md"))) {
-    void vscode.window.showErrorMessage(`Planner: ${planFolder}/project.md already exists.`);
+  // Also Project.md: the plan is read whatever the case of its file names.
+  const existing = await vscode.workspace.fs.readDirectory(root).then(
+    (entries) => entries.find(([n]) => n.toLowerCase() === "project.md")?.[0],
+    () => undefined
+  );
+  if (existing) {
+    void vscode.window.showErrorMessage(`Planner: ${planFolder}/${existing} already exists.`);
     return undefined;
   }
   const today = service.today();

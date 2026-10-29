@@ -1,6 +1,6 @@
 // Export orchestration shared by the extension (`Planner: Export…`) and the CLI (`planner export`):
 // produces the files in memory; the caller writes them to plan/reports/.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Baseline } from "../core/baseline";
@@ -16,7 +16,7 @@ import {
   type ReportSection,
 } from "./html/report";
 import { exportMspdi } from "./mspdi";
-import { findBrowser, printToPdf } from "./pdf";
+import { browserPathProblem, findBrowser, printToPdf } from "./pdf";
 import { exportXlsx } from "./xlsx";
 
 export type ExportFormat =
@@ -103,9 +103,14 @@ export interface ExportResult {
 export function exportFileName(
   format: ExportFormat,
   today: string,
-  name = "status-report",
-  testPlan?: string
+  rawName = "status-report",
+  rawTestPlan?: string
 ): string {
+  // A file name, never a path: a report name or a test plan id such as `../../x` stays in the
+  // reports folder.
+  const plain = (s: string) => s.replace(/[\\/]+/g, "-").replace(/\.{2,}/g, ".");
+  const name = plain(rawName);
+  const testPlan = rawTestPlan === undefined ? undefined : plain(rawTestPlan);
   switch (format) {
     case "html":
       return `${today}-${name}.html`;
@@ -218,6 +223,13 @@ async function toPdf(
   browserPath: string | undefined,
   warnings: string[]
 ): Promise<Uint8Array | undefined> {
+  // A missing browser is reported as missing; one that is there must be a browser to be started.
+  const problem =
+    browserPath && existsSync(browserPath) ? browserPathProblem(browserPath) : undefined;
+  if (problem) {
+    warnings.push(`${problem}, so it was not started; the HTML report was written instead.`);
+    return undefined;
+  }
   const browser = findBrowser(browserPath || undefined);
   if (!browser) {
     warnings.push(

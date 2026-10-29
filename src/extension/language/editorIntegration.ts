@@ -35,6 +35,9 @@ export function registerEditorIntegration(
       if (!config().get<boolean>("autoAssignIds", true)) return;
       const file = service.fileFor(e.document);
       if (!file || (file.kind !== "milestone" && file.kind !== "punch")) return;
+      // Not into a merge conflict (a copy on each side would get an id) or a file in another
+      // encoding.
+      if (service.untouchable(file.path)) return;
       e.waitUntil(idEdits(service, guard, e.document));
     }),
   ];

@@ -83,14 +83,15 @@ Pressing Escape on the form itself closes it; if you changed something, the plan
 
 ![Keep your changes?](images/form-discard.png)
 
-**Cancel** returns to the form. The entries under **More** (add a subtask, move, open the file …)
-leave the form too: with unsaved changes they ask first, and **Cancel** goes back to the form so
-you can save. Saving checks that the change adds no error to the plan (a dependency loop, say) and
-asks before it does.
+**Cancel** returns to the form.
 
-A title is written into the task line as typed, so text that a task line reads as something else
-gets a note under the title box (Enter still works): `#42` becomes a tag and `@est:4h` an
-attribute. To keep such text in the title, put it in brackets: `Fix bug (#42)`.
+- The entries under **More** (add a subtask, move, open the file …) leave the form too. With
+  unsaved changes they ask first; **Cancel** takes you back to the form so you can save.
+- Before saving, the planner checks that the change adds no error to the plan, such as a
+  dependency loop, and asks first if it would.
+- A title is written into the task line as you type it. When part of it would be read as something
+  else, a note appears under the title box (Enter still works): `#42` becomes a tag, `@est:4h` an
+  attribute. To keep such text in the title, put it in brackets: `Fix bug (#42)`.
 
 ### Pickers
 

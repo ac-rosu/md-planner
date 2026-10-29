@@ -1,7 +1,7 @@
 // "Promote to task": a TODO comment becomes a task with @src:path#Lline, and the comment gets the
 // task id (`TODO(T142): …`) so the link works both ways. One undoable WorkspaceEdit.
 import * as vscode from "vscode";
-import { promoteTodo, scanTodos, type TodoItem } from "../../core/todos";
+import { linkedTask, promoteTodo, scanTodos, type TodoItem } from "../../core/todos";
 import { type InsertLocation } from "../../core/writer";
 import { type PlanService } from "../planService";
 import { type TodoScanner } from "../todoScanner";
@@ -40,11 +40,14 @@ export async function promoteTodoCommand(
     void vscode.window.showWarningMessage("Planner: put the cursor on a TODO or FIXME comment.");
     return undefined;
   }
-  if (item.taskId) {
+  // A link to a task that is gone (deleted, or never there) does not stop it: the new id goes
+  // first in the comment's parentheses, before what they hold.
+  const linked = linkedTask(service.plan, item);
+  if (linked) {
     void vscode.window.showInformationMessage(
-      `Planner: this comment is already linked to ${item.taskId}.`
+      `Planner: this comment is already linked to ${linked.id}.`
     );
-    return item.taskId;
+    return linked.id;
   }
   const chosen =
     target ?? (await pickMilestoneLocation(service, "Promote to a task in milestone…"));
@@ -63,7 +66,7 @@ export async function promoteTodoCommand(
   // Positions in the source come from the current document text.
   const doc = await vscode.workspace.openTextDocument(uri);
   const fresh = scanTodos(doc.getText(), [item.keyword]).find((i) => i.line === item!.line);
-  if (!fresh || fresh.taskId) {
+  if (!fresh || fresh.text !== item.text || linkedTask(plan, fresh)) {
     void vscode.window.showWarningMessage(
       "Planner: the comment changed; refresh the TODO list and try again."
     );
@@ -77,6 +80,7 @@ export async function promoteTodoCommand(
     title: target?.title,
     owner: target?.owner,
   });
+  if (!(await service.mayChange([milestoneFile.path]))) return undefined;
   const edit = new vscode.WorkspaceEdit();
   for (const e of p.planEdits)
     edit.replace(service.uri(milestoneFile.path), toRange(e.range), e.newText);

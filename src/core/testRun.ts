@@ -1,7 +1,7 @@
 // Test runner edits: step results, punch items raised from failed steps, and the run log.
 import { type ParsedFile, type Status, type Task, type TestCase, type TestPlan } from "./model";
 import { type Plan } from "./resolve";
-import { type TextEdit } from "./text";
+import { oneLine, type TextEdit } from "./text";
 import {
   appendSection,
   editTaskLine,
@@ -79,15 +79,17 @@ export interface RunInfo {
 /** Appends `## Run <date>` with tester, witness, result counts and the punch items raised. */
 export function appendRunLog(file: ParsedFile, tp: TestPlan, run: RunInfo): TextEdit {
   const c = countResults(tp);
+  // Results are recorded on substeps too: a failed substep fails its case, as in the counts.
+  const stepsOf = (cs: TestCase) => cs.steps.flatMap((s) => [s, ...s.children]);
   const punch = tp.cases
-    .flatMap((cs) => cs.steps)
+    .flatMap(stepsOf)
     .filter((s) => s.result === "fail" && s.punch)
     .map((s) => s.punch!);
   const failed = tp.cases
-    .filter((cs) => cs.steps.some((s) => s.result === "fail"))
+    .filter((cs) => stepsOf(cs).some((s) => s.result === "fail"))
     .map((cs) => cs.id);
-  const body = [`tester: ${run.tester}`];
-  if (run.witness) body.push(`witness: ${run.witness}`);
+  const body = [`tester: ${oneLine(run.tester)}`];
+  if (run.witness) body.push(`witness: ${oneLine(run.witness)}`);
   body.push(
     `result: ${c.pass} pass, ${c.fail} fail, ${c.na} n.a., ${c.open} open (${c.steps} steps)`
   );

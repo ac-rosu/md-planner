@@ -2,16 +2,20 @@
 //   planner validate [--plan plan] [--today YYYY-MM-DD] [--json] [--strict]
 //   planner schedule [--plan plan] [--today YYYY-MM-DD] [--json] [--mode capacity|demand]
 //   planner export   --format html,pdf,xlsx,mspdi,csv,test-report,test-report-pdf [...]
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { type Stats, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { isValidDate, localToday } from "../core/dates";
 import { loadPlanIndex } from "../core/fsLoader";
+import { type PlanIndex } from "../core/index";
 import { type Issue } from "../core/model";
 import { scheduleDiagnostics } from "../core/scheduleDiagnostics";
 import { scheduleToJson } from "../core/scheduleJson";
 import { schedulePlan } from "../core/scheduler";
 import { validatePlan } from "../core/validate";
+import { argumentError, fsReason, numberFlag, type ParsedArgs, parseArgs } from "./args";
 import { EXPORT_HELP, runExportCommand } from "./export";
+
+export { parseArgs, type ParsedArgs };
 
 declare const PLANNER_VERSION: string | undefined;
 
@@ -38,29 +42,7 @@ Options:
   --unassigned-capacity <h>  hours per week of the unassigned pool (default 40)
 `;
 
-export interface ParsedArgs {
-  command?: string;
-  flags: Map<string, string | true>;
-  positional: string[];
-}
-
-export function parseArgs(argv: string[]): ParsedArgs {
-  const flags = new Map<string, string | true>();
-  const positional: string[] = [];
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a.startsWith("--")) {
-      const eq = a.indexOf("=");
-      if (eq > 0) flags.set(a.slice(2, eq), a.slice(eq + 1));
-      else if (i + 1 < argv.length && !argv[i + 1].startsWith("--"))
-        flags.set(a.slice(2), argv[++i]);
-      else flags.set(a.slice(2), true);
-    } else {
-      positional.push(a);
-    }
-  }
-  return { command: positional.shift(), flags, positional };
-}
+const COMMANDS = new Set(["validate", "schedule", "export"]);
 
 export async function main(
   argv: string[],
@@ -71,6 +53,11 @@ export async function main(
     const v = args.flags.get(k);
     return typeof v === "string" ? v : undefined;
   };
+  const usageError = argumentError(args);
+  if (usageError) {
+    io.err(`${usageError}\n`);
+    return 2;
+  }
   if (args.flags.has("version")) {
     io.out(`${typeof PLANNER_VERSION === "string" ? PLANNER_VERSION : "dev"}\n`);
     return 0;
@@ -79,9 +66,14 @@ export async function main(
     io.out(args.command === "export" || args.positional[0] === "export" ? EXPORT_HELP : HELP);
     return 0;
   }
+  if (!COMMANDS.has(args.command)) {
+    io.err(`Unknown command "${args.command}".\n\n${HELP}`);
+    return 2;
+  }
   const planDir = resolve(str("plan") ?? "plan");
-  if (!existsSync(planDir)) {
-    io.err(`Plan folder not found: ${planDir}\n`);
+  const planError = checkPlanFolder(planDir);
+  if (planError) {
+    io.err(`${planError}\n`);
     return 2;
   }
   const today = str("today") ?? localToday();
@@ -89,9 +81,27 @@ export async function main(
     io.err(`Invalid --today ${today} (expected YYYY-MM-DD)\n`);
     return 2;
   }
-  const index = loadPlanIndex(planDir);
+  const mode = str("mode") ?? "capacity";
+  if (mode !== "capacity" && mode !== "demand") {
+    io.err(`Invalid --mode ${mode} (expected capacity or demand).\n`);
+    return 2;
+  }
+  const unassignedCapacity = numberFlag(args, "unassigned-capacity", 40, {
+    min: 0,
+    expected: "hours per week, 0 or more",
+  });
+  if (typeof unassignedCapacity !== "number") {
+    io.err(`${unassignedCapacity.error}\n`);
+    return 2;
+  }
+  let index: PlanIndex;
+  try {
+    index = loadPlanIndex(planDir);
+  } catch (err) {
+    io.err(`Cannot read the plan in ${planDir}: ${fsReason(err)}.\n`);
+    return 2;
+  }
   const plan = index.plan;
-  const unassignedCapacity = Number(str("unassigned-capacity") ?? 40);
 
   switch (args.command) {
     case "validate": {
@@ -113,7 +123,6 @@ export async function main(
       return errors > 0 || (args.flags.has("strict") && warnings > 0) ? 1 : 0;
     }
     case "schedule": {
-      const mode = str("mode") === "demand" ? "demand" : "capacity";
       const schedule = schedulePlan(plan, { today, unassignedCapacity, mode });
       const json = scheduleToJson(plan, schedule);
       if (args.flags.has("json")) {
@@ -163,12 +172,32 @@ export async function main(
       io.out(`\nCritical path: ${json.criticalPath.join(" → ") || "—"}\n`);
       return 0;
     }
-    case "export":
-      return runExportCommand(plan, planDir, args, today, io);
-    default:
-      io.err(`Unknown command "${args.command}".\n\n${HELP}`);
-      return 2;
+    default: // export
+      return runExportCommand(plan, planDir, args, today, io, unassignedCapacity);
   }
+}
+
+/** Why `planDir` is not a plan folder (missing, a file, no project.md), else undefined. */
+function checkPlanFolder(planDir: string): string | undefined {
+  let stat: Stats;
+  try {
+    stat = statSync(planDir);
+  } catch (err) {
+    const code = (err as { code?: unknown }).code;
+    return code === "ENOENT" || code === "ENOTDIR"
+      ? `Plan folder not found: ${planDir}`
+      : `Cannot read the plan folder ${planDir}: ${fsReason(err)}.`;
+  }
+  if (!stat.isDirectory()) return `Not a folder: ${planDir} (--plan expects the plan folder).`;
+  // project.md is the one required plan file; without it this is not a plan (a typo in --plan).
+  let project: Stats | undefined;
+  try {
+    project = statSync(join(planDir, "project.md"));
+  } catch {
+    project = undefined;
+  }
+  if (!project?.isFile()) return `No plan in ${planDir} (no project.md).`;
+  return undefined;
 }
 
 function formatIssue(planDir: string, i: Issue): string {
@@ -191,6 +220,14 @@ if (require.main === module) {
   main(process.argv.slice(2)).then(
     (code) => process.exit(code),
     (err) => {
+      // A file system error (a file that cannot be read or written) is the user's to fix: one
+      // line. Anything else is a bug in the planner, where the stack trace helps.
+      const code = (err as { code?: unknown } | undefined)?.code;
+      if (typeof code === "string" && /^E[A-Z]+$/.test(code)) {
+        const path = (err as { path?: unknown }).path;
+        process.stderr.write(`${typeof path === "string" ? `${path}: ` : ""}${fsReason(err)}\n`);
+        process.exit(2);
+      }
       process.stderr.write(`${err instanceof Error ? err.stack : String(err)}\n`);
       process.exit(1);
     }

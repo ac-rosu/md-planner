@@ -8,6 +8,7 @@ import {
   buildKanbanModel,
   KANBAN_COLUMNS,
   kanbanCardKey,
+  ownerLane,
   priorityForDrop,
 } from "../../core/views/kanban";
 import { applyStatus, editTaskLine, statusSideEdits } from "../../core/writer";
@@ -156,11 +157,17 @@ export class KanbanPanel extends WebviewPanelHost<HostToKanban, KanbanToHost> {
     const today = this.ctx.state.today;
     const parts: string[] = [];
 
-    // Owner swimlanes: dropping into another lane reassigns the card.
+    // Owner swimlanes: dropping into another lane reassigns the card. A subtask without @owner is
+    // in the lane of the owner it has from a parent: within that lane it keeps it.
     let owner: string | null | undefined;
     if (this.options.swimlane === "owner" && m.lane !== undefined) {
-      const current = (t.owner ?? "").toLowerCase() || UNASSIGNED;
-      if (m.lane !== current && !(m.lane === UNASSIGNED && !t.owner)) {
+      if (m.lane !== ownerLane(t)) {
+        if (m.lane === UNASSIGNED && !t.owner) {
+          const from = ownerSource(t);
+          throw new Error(
+            `${t.id ?? t.title} has the owner of ${from?.id ?? from?.title ?? "its parent"}; change the owner there to leave it unassigned.`
+          );
+        }
         owner = m.lane === UNASSIGNED ? null : m.lane;
         parts.push(owner ? `owner ${owner}` : "no owner");
       }
@@ -245,4 +252,10 @@ export class KanbanPanel extends WebviewPanelHost<HostToKanban, KanbanToHost> {
     if (KanbanPanel.current === this) KanbanPanel.current = undefined;
     super.dispose();
   }
+}
+
+/** The parent a subtask without @owner has its owner from. */
+function ownerSource(t: Task): Task | undefined {
+  for (let p = t.parent; p; p = p.parent) if (p.owner) return p;
+  return undefined;
 }

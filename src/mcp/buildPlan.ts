@@ -160,10 +160,13 @@ export function buildPlan(tools: PlannerTools, args: BuildPlanArgs) {
       wouldFail: tools.newErrors(st),
       files: st.changes().map((c) => ({ file: c.file, created: c.created ?? false })),
       ...forecast(plan, schedule),
-      warnings: issues
-        .filter((i) => i.severity !== "error")
-        .map((i) => i.message)
-        .slice(0, 30),
+      warnings: [
+        ...refs.warnings,
+        ...issues
+          .filter((i) => i.severity !== "error")
+          .map((i) => i.message)
+          .slice(0, 30),
+      ],
     };
   }
   const changed = tools.commit(st);
@@ -173,10 +176,13 @@ export function buildPlan(tools: PlannerTools, args: BuildPlanArgs) {
     ...summary,
     files: changed.map((c) => ({ file: c.file, created: c.created ?? false })),
     ...forecast(plan, tools.schedule),
-    warnings: issues
-      .filter((i) => i.severity !== "error")
-      .map((i) => i.message)
-      .slice(0, 30),
+    warnings: [
+      ...refs.warnings,
+      ...issues
+        .filter((i) => i.severity !== "error")
+        .map((i) => i.message)
+        .slice(0, 30),
+    ],
   };
 }
 

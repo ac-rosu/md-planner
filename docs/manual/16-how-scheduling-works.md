@@ -85,12 +85,11 @@ Each day, for each person:
       review that someone else waits for therefore comes before a long task that only has its own
       deadline. The task's own estimate does not change its place, so making a bar longer in the
       Gantt does not move it ahead of the person's other work.
-   4. Work without any deadline to count back from (no `@due`, no milestone target, nothing with
-      one waiting for it) comes after the work that has one. Among itself it keeps the milestone
-      order (a task counts for the earliest milestone that waits for it), and within that, the
-      work that others wait for goes first. So a plan without targets is already ordered the way
-      a target would order it: giving the first milestone a target later does not reshuffle its
-      work.
+   4. then the work with no deadline to count back from (no `@due`, no milestone target, and
+      nothing with one waits for it), after all the work that has one: in milestone order (a task
+      counts for the earliest milestone that waits for it), and within a milestone the work others
+      wait for first. A plan without targets is therefore already in the order a target would
+      give it, and giving the first milestone a target later does not reshuffle its work.
    5. then in file order (milestones by id, then line by line).
 3. It gives the person's free hours of that day to the tasks in that order. A task can take several
    days and can share a day with other tasks. It finishes on the day its remaining hours reach zero.
@@ -141,7 +140,8 @@ Check, in this order:
 2. **Owner capacity**: is the owner busy with other tasks, part-time, or on leave? (Team load; the
    owner hover shows this week's load.)
 3. **Order**: do other ready tasks of the same owner have a fixed start, a higher priority or a
-   tighter deadline?
+   tighter deadline? Work with a deadline (its own `@due` or a milestone target) goes before work
+   without one.
 4. **`@start`**: does it, or its parent, have a fixed start date?
 5. **Unassigned**: does it run in the unassigned pool, which is shared by all unowned tasks?
 

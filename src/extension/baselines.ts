@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import {
   type Baseline,
   baselineFileName,
+  baselineIds,
   baselineSlug,
   baselineLookup,
   baselineText,
@@ -64,6 +65,7 @@ export class BaselineService implements BaselineSource, vscode.Disposable {
       this.watcher.onDidCreate(changed);
       this.watcher.onDidChange(changed);
       this.watcher.onDidDelete(changed);
+      const texts: Array<{ text: string; name: string }> = [];
       try {
         for (const [name, type] of await vscode.workspace.fs.readDirectory(folder)) {
           if (!(type & vscode.FileType.File) || !name.endsWith(".json")) continue;
@@ -71,6 +73,7 @@ export class BaselineService implements BaselineSource, vscode.Disposable {
             const text = decode(
               await vscode.workspace.fs.readFile(vscode.Uri.joinPath(folder, name))
             );
+            texts.push({ text, name });
             this.baselines.set(name.replace(/\.json$/, ""), parseBaseline(text, name));
           } catch (err) {
             this.state.service.log.warn(String(err instanceof Error ? err.message : err));
@@ -79,6 +82,8 @@ export class BaselineService implements BaselineSource, vscode.Disposable {
       } catch {
         // No baselines folder yet.
       }
+      // Their task ids stay taken: a new task never gets the id of a deleted one they name.
+      this.state.service.index.setUsedIds(baselineIds(texts));
     }
     this.emitter.fire();
   }

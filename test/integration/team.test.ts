@@ -18,6 +18,14 @@ import {
 
 const M2 = "milestones/M2-backend.md";
 
+/**
+ * The timer's clock in these tests: today from noon on, so that no timer runs into the next day
+ * when they run late in the evening (stopping one would ask first).
+ */
+const NOON = new Date().setHours(12, 0, 0, 0);
+const LOADED = Date.now();
+const clock = () => NOON + (Date.now() - LOADED);
+
 function line(rel: string, id: string): string {
   return docText(rel)
     .split("\n")
@@ -32,7 +40,7 @@ async function stopAfter50Minutes(): Promise<number | undefined> {
   try {
     return await vscode.commands.executeCommand<number | undefined>("planner.stopTimer");
   } finally {
-    api.timer.now = () => Date.now();
+    api.timer.now = clock;
   }
 }
 
@@ -89,7 +97,7 @@ async function warnings(f: () => Promise<unknown>): Promise<string[]> {
 
 describe("team load, dashboard, baselines and time tracking", () => {
   before(async () => {
-    await getApi();
+    (await getApi()).timer.now = clock;
     await restorePlan();
   });
   afterEach(restorePlan);
@@ -176,7 +184,7 @@ describe("team load, dashboard, baselines and time tracking", () => {
     await waitFor(() => api.state.plan.taskById("T121")?.status === "doing", "index");
     api.timer.now = () => running.startedAt + 50 * 60_000;
     const hours = await vscode.commands.executeCommand<number>("planner.stopTimer");
-    api.timer.now = () => Date.now();
+    api.timer.now = clock;
     assert.equal(hours, 1);
     assert.match(line(M2, "T121"), /@est:3d @act:1h @owner:sam/);
     assert.equal(api.timer.running, undefined);
@@ -369,7 +377,7 @@ describe("team load, dashboard, baselines and time tracking", () => {
       assert.equal(api.timer.running?.key, started.slice(started.lastIndexOf("^") + 1));
     } finally {
       await vscode.commands.executeCommand("planner.stopTimer");
-      api.timer.now = () => Date.now();
+      api.timer.now = clock;
     }
   });
 
@@ -394,7 +402,7 @@ describe("team load, dashboard, baselines and time tracking", () => {
       assert.equal(api.timer.running?.key, id);
     } finally {
       await vscode.commands.executeCommand("planner.stopTimer");
-      api.timer.now = () => Date.now();
+      api.timer.now = clock;
     }
   });
 
