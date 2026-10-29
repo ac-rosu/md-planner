@@ -3,7 +3,9 @@
 // Every command also accepts its values as an argument, which skips the form (tests, automation).
 import * as vscode from "vscode";
 import { UNASSIGNED } from "../../core/calendar";
-import { wouldCreateCycle } from "../../core/graph";
+import { describeScheduleChange, scheduleAfter } from "../../core/drag";
+import { newTaskWouldCycle, wouldCreateCycle } from "../../core/graph";
+import { cleanTag, titleMarkup } from "../../core/parser/taskLine";
 import {
   isOpen,
   STATUS_LABEL,
@@ -15,6 +17,7 @@ import {
 import { type Plan } from "../../core/resolve";
 import { addPunchItem } from "../../core/testRun";
 import {
+  type FileEdit,
   type InsertLocation,
   moveTaskTo,
   nextId,
@@ -42,6 +45,7 @@ import {
   captureInbox,
   type Creation,
 } from "../../core/writer/entities";
+import { newTaskLeavesSchedule } from "../../core/writer/structure";
 import { type PlannerState } from "../state";
 import { type PlanService } from "../planService";
 import { type FormField, showForm } from "../ui/form";
@@ -61,7 +65,7 @@ import {
 import { pickMilestoneLocation, type PlanIntoTarget } from "./inbox";
 import { findAgain, resolveTask, stringArg, type TaskArg, valuesArg } from "./args";
 import { statusEffects } from "./status";
-import { confirmNoNewErrors } from "../guard";
+import { confirmNoNewErrors, confirmStillScheduled } from "../guard";
 
 /** Where a new task goes, from a tree node, a Kanban column, a Gantt row or the editor. */
 export interface AddTaskTarget {
@@ -264,6 +268,41 @@ function message(text: string): void {
   void vscode.window.setStatusBarMessage(`$(check) ${text}`, 5000);
 }
 
+/**
+ * A note under a typed title (Enter still works) when part of it would not stay in the title: a
+ * task line reads `#42` as a tag and `@est:4h` as an attribute.
+ */
+function titleWarning(title: string): string | undefined {
+  const parts = titleMarkup(title);
+  if (parts.length === 0) return undefined;
+  return `Not part of the title: ${parts.join(" ")} (read as ${parts.length === 1 ? "a tag, attribute or id" : "tags, attributes or an id"}). To keep such text in the title, put it in brackets, e.g. (#42).`;
+}
+
+/**
+ * Writes a form's edit. A target, a dependency, an estimate, an owner or a priority can move other
+ * work: the schedule after the edit is worked out before writing, and when anything moves a
+ * message says what (with Open Gantt) instead of the status bar's "Saved …", so the Gantt never
+ * reshuffles without a word.
+ */
+async function applyAndReport(
+  state: PlannerState,
+  edits: FileEdit[],
+  name: string,
+  source: "view" | "editor"
+): Promise<boolean> {
+  if (!(await confirmNoNewErrors(state.service, edits, `Saving ${name}`, "save"))) return false;
+  const before = state.schedule;
+  const after = scheduleAfter(state.plan, state.scheduleOptions(), edits);
+  if (!(await state.service.apply(edits, { source }))) return false;
+  const moved = describeScheduleChange(before, after);
+  if (!moved) message(`Saved ${name}`);
+  else
+    void vscode.window
+      .showInformationMessage(`Saved ${name}. ${moved}`, "Open Gantt")
+      .then((pick) => pick && vscode.commands.executeCommand("planner.openGantt"));
+  return true;
+}
+
 function rawAttr(t: Task, key: string): string {
   return t.attrs.find((a) => a.key === key)?.value ?? "";
 }
@@ -273,11 +312,15 @@ function locationLabel(m: Milestone, section: string | undefined, parent?: Task)
   return section ? `${m.id} › ${section}` : m.title;
 }
 
-/** The fields of the task form; `self` is the task being edited (none when creating). */
+/**
+ * The fields of the task form; `self` is the task being edited (none when creating), `creating`
+ * where a new one goes (its milestone and parent, for the dependencies it can have).
+ */
 function taskFields(
   state: PlannerState,
   self: Task | undefined,
-  original?: TaskForm
+  original?: TaskForm,
+  creating?: { milestone: string; parent?: Task }
 ): Array<FormField<TaskForm>> {
   const plan = state.plan;
   const today = state.today;
@@ -295,7 +338,12 @@ function taskFields(
       value: (s) => s.title,
       changed: changed("title"),
       edit: async (s) => {
-        const v = await askText({ title: "Title", value: s.title, required: true });
+        const v = await askText({
+          title: "Title",
+          value: s.title,
+          required: true,
+          warn: titleWarning,
+        });
         if (v) s.title = v;
       },
     },
@@ -378,7 +426,9 @@ function taskFields(
       changed: changed("deps"),
       edit: async (s) => {
         const v = await askTasks(plan, "Depends on – tasks that must finish first", s.deps, (t) =>
-          self ? !block.has(t) && !wouldCreateCycle(graph, t, self) : true
+          self
+            ? !block.has(t) && !wouldCreateCycle(graph, t, self)
+            : !creating || !newTaskWouldCycle(graph, t, creating.milestone, creating.parent)
         );
         if (v !== undefined) s.deps = v;
       },
@@ -434,7 +484,11 @@ function taskFields(
       value: (s) => (s.tags.length ? s.tags.map((t) => `#${t}`).join(" ") : undefined),
       changed: changed("tags"),
       edit: async (s) => {
-        const v = await askValues("Tags", plan.tags, s.tags, { prefix: "#", noun: "tag" });
+        const v = await askValues("Tags", plan.tags, s.tags, {
+          prefix: "#",
+          noun: "tag",
+          clean: cleanTag,
+        });
         if (v !== undefined) s.tags = v;
       },
     },
@@ -612,6 +666,20 @@ async function createTasks(
   values: TaskValues | undefined
 ): Promise<string | undefined> {
   const service = state.service;
+  // Under a done or cancelled task, or in a cancelled milestone, open work is not scheduled: ask
+  // before the form, so a follow-up does not vanish from the Gantt unnoticed.
+  const parent =
+    location.kind === "child"
+      ? location.task
+      : location.kind === "after" || location.kind === "before"
+        ? location.task.parent
+        : undefined;
+  const firstForm = formFromValues(values, target);
+  if (isOpen(firstForm.status)) {
+    const name = values?.title ?? (location.kind === "child" ? "A subtask" : "A new task");
+    const warning = newTaskLeavesSchedule(service.plan, parent, milestone.id, name);
+    if (!(await confirmStillScheduled(warning, "Add anyway"))) return undefined;
+  }
   let lastId: string | undefined;
   for (;;) {
     const form = formFromValues(values, target);
@@ -622,12 +690,14 @@ async function createTasks(
         prompt: "Press Enter to continue to the details (owner, estimate, dependencies …)",
         placeHolder: "What needs to be done?",
         required: true,
+        warn: titleWarning,
       });
       if (!title) return lastId;
       form.title = title;
-      const fields = taskFields(state, undefined).filter(
-        (f) => f.label !== "Status" || target?.status
-      );
+      const fields = taskFields(state, undefined, undefined, {
+        milestone: milestone.id,
+        parent,
+      }).filter((f) => f.label !== "Status" || target?.status);
       const action = await showForm({
         title: `Add task – ${where}`,
         state: form,
@@ -652,9 +722,10 @@ async function createTasks(
       loc = { ...location, task: t };
     }
     const id = nextId(plan, "T");
-    const ok = await applyCreation(service, {
-      edits: [addTask(file, loc, newTaskFields(form, state.today), id)],
-    });
+    const edits = [addTask(file, loc, newTaskFields(form, state.today), id)];
+    // Dependencies given as arguments are not filtered like the form's: a loop is asked about.
+    if (!(await confirmNoNewErrors(service, edits, `Adding "${form.title}"`, "add"))) return lastId;
+    const ok = await applyCreation(service, { edits });
     if (!ok) return lastId;
     lastId = id;
     message(`Added ${id} · ${form.title}`);
@@ -768,11 +839,12 @@ export async function editTaskCommand(
     ...(status ? statusSideEdits(file.lines, current, status, state.today, effects) : []),
   ];
   if (edits.length === 0) return false;
-  const ok = await service.apply([{ path: current.file, edits }], {
-    source: r.fromEditor ? "editor" : "view",
-  });
-  if (ok) message(`Saved ${current.id ?? current.title}`);
-  return ok;
+  return applyAndReport(
+    state,
+    [{ path: current.file, edits }],
+    current.id ?? current.title,
+    r.fromEditor ? "editor" : "view"
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1129,9 +1201,7 @@ export async function editMilestoneCommand(
   if (!file || !fresh) return false;
   const edits = changeMilestone(file.lines, fresh, edit);
   if (edits.length === 0) return false;
-  const ok = await service.apply([{ path: file.path, edits }], { source: "view" });
-  if (ok) message(`Saved ${m.id}`);
-  return ok;
+  return applyAndReport(state, [{ path: file.path, edits }], m.id, "view");
 }
 
 /**
@@ -1164,7 +1234,7 @@ export async function deleteMilestoneCommand(
         ? `${n(dependents.tasks.length, "task")} of other milestones depend on its tasks (${ids(dependents.tasks)}); those dependencies are removed.`
         : "",
       dependents.milestones.length
-        ? `${ids(dependents.milestones)} ${dependents.milestones.length === 1 ? "depends" : "depend"} on it; ${m.id} is removed from their depends.`
+        ? `${ids(dependents.milestones)} ${dependents.milestones.length === 1 ? "depends" : "depend"} on it; ${m.depends.length ? `${dependents.milestones.length === 1 ? "it waits" : "they wait"} for ${m.depends.join(", ")} instead, as ${m.id} did.` : `${m.id} is removed from their depends.`}`
         : "",
       tests.length
         ? `${ids(tests)} keep${tests.length === 1 ? "s" : ""} "milestone: ${m.id}".`
@@ -1258,7 +1328,12 @@ function punchFields(
       value: (s) => s.title,
       changed: changed("title"),
       edit: async (s) => {
-        const v = await askText({ title: "Title", value: s.title, required: true });
+        const v = await askText({
+          title: "Title",
+          value: s.title,
+          required: true,
+          warn: titleWarning,
+        });
         if (v) s.title = v;
       },
     },
@@ -1341,7 +1416,11 @@ function punchFields(
       value: (s) => (s.tags.length ? s.tags.map((t) => `#${t}`).join(" ") : undefined),
       changed: changed("tags"),
       edit: async (s) => {
-        const v = await askValues("Tags", plan.tags, s.tags, { prefix: "#", noun: "tag" });
+        const v = await askValues("Tags", plan.tags, s.tags, {
+          prefix: "#",
+          noun: "tag",
+          clean: cleanTag,
+        });
         if (v !== undefined) s.tags = v;
       },
     },
@@ -1368,6 +1447,7 @@ export async function addPunchItemCommand(
       prompt: "Press Enter to continue to severity, owner and due date",
       placeHolder: "What is wrong or still open?",
       required: true,
+      warn: titleWarning,
     });
     if (!title) return undefined;
     const form: PunchForm = {

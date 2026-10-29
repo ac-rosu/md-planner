@@ -41,7 +41,45 @@ export function consistencyIssues(plan: Plan): Issue[] {
   milestoneTargets(plan, issues);
   milestonesStartedEarly(plan, issues);
   teamDates(plan, issues);
+  projectHolidays(plan, issues);
   return issues;
+}
+
+/** Project holidays longer than this close the project for what is rarely meant: a year typo. */
+const LONG_HOLIDAY_DAYS = 31;
+
+/**
+ * Project holidays that stop all work for over a month (`2026-12-24..2027-12-02` for a Christmas
+ * break, a year typo), and ones after the project end with a year that fits (as for team.md).
+ * Nobody works on a holiday, so a wrong one quietly pushes the whole plan out.
+ */
+function projectHolidays(plan: Plan, issues: Issue[]): void {
+  const project = plan.project;
+  for (const e of project.props.entries) {
+    const key = e.key.toLowerCase();
+    if (key !== "holidays" && key !== "holiday") continue;
+    for (const m of e.value.matchAll(PERIOD)) {
+      const [text, from, to = from] = m;
+      const period = parseDateRange(text);
+      if (!period) continue;
+      const at = e.valueRange.start.character + m.index;
+      const days = period[1] - period[0] + 1;
+      const suggestion =
+        project.end && to > project.end ? suggestPeriodYear(plan, text) : undefined;
+      if (days > LONG_HOLIDAY_DAYS || suggestion)
+        issues.push({
+          file: project.file,
+          range: range(e.line, at, at + text.length),
+          severity: "warning",
+          code: days > LONG_HOLIDAY_DAYS ? "long-holiday" : "date-outside-project",
+          message:
+            days > LONG_HOLIDAY_DAYS
+              ? `${e.key}: ${text} closes the project for ${Math.round(days / 7)} weeks: nobody works then. Is the year right?`
+              : `${e.key}: ${text} is after the project end ${project.end}. Is the year right?`,
+          data: { date: text, ...(suggestion ? { suggestion } : {}) },
+        });
+    }
+  }
 }
 
 /** A date or a period (`2026-12-21..2026-12-31`) in a team.md value. */
@@ -189,6 +227,20 @@ function dates(plan: Plan, t: Task, issues: Issue[]): void {
     );
   }
 
+  // A subtask's own @due wins over its parent's: a later one quietly lets it finish after the
+  // parent is due.
+  const parentDue = t.due && !outside.has("due") ? inheritedDue(t) : undefined;
+  if (parentDue && t.due! > parentDue.due)
+    issues.push(
+      attrIssue(
+        t,
+        "due",
+        "warning",
+        "due-after-parent-due",
+        `@due ${t.due} is after the @due ${parentDue.due} of ${parentDue.from.id ?? parentDue.from.title}, so the task is not reported late until ${t.due}, although ${parentDue.from.id ?? "its parent"} is late by then.`
+      )
+    );
+
   if (!m?.target) return;
   if (t.start && t.start > m.target && !outside.has("start")) {
     issues.push(
@@ -213,6 +265,12 @@ function dates(plan: Plan, t: Task, issues: Issue[]): void {
       )
     );
   }
+}
+
+/** The nearest @due above a task and whose it is. */
+function inheritedDue(t: Task): { due: string; from: Task } | undefined {
+  for (let p = t.parent; p; p = p.parent) if (p.due) return { due: p.due, from: p };
+  return undefined;
 }
 
 /** Dependencies on cancelled tasks (or tasks of a cancelled parent or milestone) never hold. */

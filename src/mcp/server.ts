@@ -376,7 +376,7 @@ export function createServer(tools: PlannerTools): McpServer {
   );
   tool(
     "update_milestone",
-    "Change a milestone: name, target date, status (cancelled cancels its tasks), depends, description.",
+    "Change a milestone: name, target date, status (cancelled cancels its tasks), depends, description. A target, depends or status can move other work: `schedule` in the result says which milestones and tasks move; tell the user.",
     {
       id: z.string().describe("Milestone id or name"),
       name: z.string().optional(),
@@ -398,7 +398,7 @@ export function createServer(tools: PlannerTools): McpServer {
   );
   tool(
     "delete_milestone",
-    "Delete a milestone file; dependencies on it and on its tasks are removed elsewhere. Refuses with open tasks unless force (or set status cancelled instead).",
+    "Delete a milestone file; dependencies on its tasks are removed elsewhere, and milestones that depend on it wait for what it waited for instead. Refuses with open tasks unless force (or set status cancelled instead).",
     { id: z.string(), force: z.boolean().optional() },
     (a) => deleteMilestone(tools, a)
   );

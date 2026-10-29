@@ -4,12 +4,14 @@ import {
   describeMove,
   describeMoved,
   describeResize,
+  describeScheduleChange,
   dragDay,
   movedTasks,
   moveReasons,
   parentEstimates,
   type Resize,
   resizeTo,
+  scheduleAfter,
   sharedIdReason,
 } from "../../../src/core/drag";
 import { PlanIndex } from "../../../src/core/index";
@@ -18,6 +20,7 @@ import { estimateHours } from "../../../src/core/rollup";
 import type * as Scheduler from "../../../src/core/scheduler";
 import { type Schedule, schedulePlan, type ScheduleOptions } from "../../../src/core/scheduler";
 import { applyEdits } from "../../../src/core/text";
+import { changeMilestone } from "../../../src/core/writer/entities";
 import { LARGE_PLAN_TODAY, largePlanFiles } from "../../fixtures/largePlan";
 import { md, planFrom, task } from "../helpers";
 
@@ -786,5 +789,44 @@ describe("why a moved bar starts later than where it was dropped", () => {
     expect(describeMove(p, s, s, task(p, "T3"), d("2026-10-11"), d("2026-10-12"))).toBe(
       "T3 already has the fixed start 2026-10-12 (Sun 2026-10-11 is not a working day)."
     );
+  });
+});
+
+describe("what a milestone edit does to the schedule", () => {
+  // Alex's spec is what Sam's build waits for; with a target, M2's work goes first.
+  const p = planFrom(
+    files(["- [ ] docs @est:8h @owner:alex ^T1", "- [ ] api @est:8h @owner:alex ^T2"], {
+      "milestones/M2.md": md(
+        "# M2",
+        "",
+        "id: M2",
+        "",
+        "- [ ] spec @est:16h @owner:alex ^T3",
+        "- [ ] build @est:16h @owner:sam @dep:T3 ^T4"
+      ),
+    })
+  );
+  const options = { today: "2026-10-05" };
+  const before = schedulePlan(p, options);
+  const withTarget = (id: string, target: string) => {
+    const m = p.milestoneById(id)!;
+    const f = p.file(m.file)!;
+    return scheduleAfter(p, options, [
+      { path: f.path, edits: changeMilestone(f.lines, m, { target }) },
+    ]);
+  };
+
+  it("says which milestones and tasks move", () => {
+    expect(describeScheduleChange(before, withTarget("M2", "2026-10-09"))).toBe(
+      "M1 now ends Thu 2026-10-08 (was Tue 2026-10-06). M2 now ends Thu 2026-10-08 (was Mon 2026-10-12). Moves T1 (+2 d), T2 (+2 d), T3 (−2 d) and 1 more."
+    );
+  });
+
+  it("says when a milestone becomes late", () => {
+    expect(describeScheduleChange(before, withTarget("M1", "2026-10-05"))).toBe("M1 is now late.");
+  });
+
+  it("is empty when nothing moves, although the new target line moves the tasks' lines", () => {
+    expect(describeScheduleChange(before, withTarget("M1", "2026-12-18"))).toBe("");
   });
 });

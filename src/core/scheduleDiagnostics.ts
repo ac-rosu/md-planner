@@ -1,6 +1,6 @@
 // Diagnostics that need a schedule: tasks finishing after their deadline, unschedulable tasks,
 // milestones that float, and people whose workload makes tasks late.
-import { type DayNumber, formatDate } from "./dates";
+import { type DayNumber, formatDate, parseDate } from "./dates";
 import { formatHours } from "./duration";
 import { describeLateCause, lateCause, unscheduledCause } from "./lateCause";
 import { type Issue, type Person } from "./model";
@@ -9,6 +9,7 @@ import { type Plan } from "./resolve";
 import { remainingHours } from "./rollup";
 import { range } from "./text";
 import { type Schedule } from "./scheduler";
+import { attrIssue } from "./issueRanges";
 import { lineContentRange } from "./validate";
 
 const EPS = 1e-6;
@@ -21,7 +22,22 @@ export function scheduleDiagnostics(
   const issues: Issue[] = [];
   for (const ts of schedule.tasks.values()) {
     const t = ts.task;
-    if (ts.done) continue;
+    if (ts.done) {
+      // A done task is fixed at @started → @done: a @done after today (a year typo) holds up
+      // every task after it until then, with only "late" to show for it.
+      const done = t.done ? parseDate(t.done) : undefined;
+      if (done !== undefined && done > schedule.today)
+        issues.push(
+          attrIssue(
+            t,
+            "done",
+            "warning",
+            "done-in-future",
+            `@done ${t.done} is after today: the tasks that wait for it are scheduled after that date. Is the date right?`
+          )
+        );
+      continue;
+    }
     if (ts.unscheduled === "horizon") {
       issues.push({
         file: t.file,
@@ -66,6 +82,7 @@ export function scheduleDiagnostics(
     }
   }
   issues.push(...floatingMilestones(plan, schedule));
+  issues.push(...incompleteForecasts(plan, schedule));
   if (options.workload) issues.push(...workloadDiagnostics(plan, schedule));
   return issues;
 }
@@ -92,6 +109,36 @@ function floatingMilestones(plan: Plan, schedule: Schedule): Issue[] {
       code: "floating-milestone",
       message: `${m.id} does not depend on an earlier milestone, so its work starts ${formatDate(start)}, before ${prev.id} finishes (${formatDate(finish)}). Add depends: ${prev.id} if it should wait.`,
       data: { previous: prev.id },
+    });
+  }
+  return issues;
+}
+
+/**
+ * A warning on a milestone whose forecast leaves out open tasks that cannot be scheduled (no
+ * capacity, a dependency cycle, waiting for those): the forecast is that of the rest, so the
+ * milestone can look on time while it cannot finish.
+ */
+function incompleteForecasts(plan: Plan, schedule: Schedule): Issue[] {
+  const missing = new Map<string, string[]>();
+  for (const ts of schedule.tasks.values()) {
+    if (ts.done || !ts.unscheduled || !ts.task.milestoneId) continue;
+    const id = ts.task.milestoneId;
+    missing.set(id, [...(missing.get(id) ?? []), ts.task.id ?? `"${ts.task.title}"`]);
+  }
+  const issues: Issue[] = [];
+  for (const m of plan.milestones) {
+    const tasks = missing.get(m.id);
+    if (!tasks || m.status === "done" || m.status === "cancelled") continue;
+    const ms = schedule.milestones.get(m.id);
+    const line = Math.max(0, m.headingLine);
+    const shown = tasks.length > 5 ? `${tasks.slice(0, 5).join(", ")} …` : tasks.join(", ");
+    issues.push({
+      file: m.file,
+      range: range(line, 0, plan.file(m.file)?.lines.line(line).length ?? 0),
+      severity: "warning",
+      code: "incomplete-forecast",
+      message: `${m.id} cannot finish: ${tasks.length === 1 ? "1 task cannot" : `${tasks.length} tasks cannot`} be scheduled (${shown}).${ms?.forecast !== undefined ? ` Its forecast ${formatDate(ms.forecast)} is that of the other tasks.` : ""}`,
     });
   }
   return issues;

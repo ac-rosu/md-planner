@@ -1,6 +1,6 @@
 // Token-level editor for one checkbox line. Changes are applied to the token list and turned into a
 // single minimal TextEdit (common prefix/suffix diff), so untouched characters are never rewritten.
-import { formatAttr, matchCheckbox, type Token } from "../parser/taskLine";
+import { cleanTag, formatAttr, matchCheckbox, type Token } from "../parser/taskLine";
 import { range, type TextEdit } from "../text";
 
 /** Canonical order of known attributes; new attributes are inserted at their place in it. */
@@ -99,8 +99,9 @@ export class TaskLineEditor {
     return this;
   }
 
-  addTag(tag: string): this {
-    if (this.tokens.some((t) => t.kind === "tag" && t.tag === tag)) return this;
+  addTag(raw: string): this {
+    const tag = cleanTag(raw);
+    if (!tag || this.tokens.some((t) => t.kind === "tag" && t.tag === tag)) return this;
     this.insertToken({ kind: "tag", text: `#${tag}`, tag });
     return this;
   }

@@ -190,6 +190,28 @@ describe("entity writers", () => {
     );
   });
 
+  it("keeps the dependencies on an id that a copy of the deleted task still has", () => {
+    // The line was copied elsewhere with its id first; deleting the original keeps T1 waited for.
+    const plan = planFrom({
+      "milestones/M1-a.md": md(
+        "# M1 – A",
+        "",
+        "id: M1",
+        "",
+        "- [ ] One ^T1",
+        "- [ ] Next @dep:T1+1d ^T2"
+      ),
+      "milestones/M2-b.md": md("# M2 – B", "", "id: M2", "", "- [ ] One ^T1"),
+    });
+    const original = plan.tasks.find((t) => t.file === "milestones/M1-a.md" && t.id === "T1")!;
+    expect(dependentsOf(plan, original)).toEqual([]);
+    const edits = deleteTaskWithLinks(plan, original);
+    expect(edits.map((e) => e.path)).toEqual(["milestones/M1-a.md"]);
+    expect(apply(plan.file("milestones/M1-a.md")!, edits[0].edits)).toBe(
+      md("# M1 – A", "", "id: M1", "", "- [ ] Next @dep:T1+1d ^T2")
+    );
+  });
+
   it("creates milestone files with the next id", () => {
     const plan = planFrom(files());
     expect(nextMilestoneId(plan)).toBe("M3");
@@ -440,6 +462,23 @@ describe("entity writers", () => {
         "- [ ] Inside ^T3"
       )
     );
+  });
+
+  it("lets the milestones after a deleted one wait for what it waited for", () => {
+    const plan = planFrom({
+      "milestones/M1-a.md": md("# M1 – A", "", "id: M1", "", "- [ ] One ^T1"),
+      "milestones/M2-b.md": md("# M2 – B", "", "id: M2", "depends: M1", "", "- [ ] Two ^T2"),
+      "milestones/M3-c.md": md("# M3 – C", "", "id: M3", "depends: M2, M1", "", "- [ ] Three ^T3"),
+      "milestones/M4-d.md": md("# M4 – D", "", "id: M4", "depends: M0, M2", "", "- [ ] Four ^T4"),
+    });
+    const edits = deleteMilestoneLinks(plan, plan.milestoneById("M2")!);
+    const after = (path: string) =>
+      apply(
+        plan.file(path)!,
+        edits.filter((e) => e.path === path).flatMap((e) => e.edits)
+      );
+    expect(after("milestones/M3-c.md")).toContain("depends: M1\n");
+    expect(after("milestones/M4-d.md")).toContain("depends: M0, M1\n");
   });
 
   it("sets, changes and removes a milestone's description", () => {

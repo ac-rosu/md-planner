@@ -217,6 +217,34 @@ export function cycleDeclarations(graph: DepGraph): { tasks: Set<Task>; mileston
 }
 
 /**
+ * True when a new task in milestone `milestoneId` (a subtask of `parent`, when given) could not
+ * depend on `predecessor` without a cycle or a dependency on its own parent: the predecessor is
+ * the parent or above it, or it already waits (transitively) for the parent's work or for the
+ * whole milestone (`depends:`), which the new task will be part of.
+ */
+export function newTaskWouldCycle(
+  graph: DepGraph,
+  predecessor: Task,
+  milestoneId: string,
+  parent?: Task
+): boolean {
+  if (parent && wouldCreateCycle(graph, predecessor, parent)) return true;
+  const key = `milestone:${milestoneId}`;
+  const seen = new Set<Task>();
+  const stack = [...leavesOf(predecessor)];
+  while (stack.length) {
+    const t = stack.pop()!;
+    if (seen.has(t)) continue;
+    seen.add(t);
+    for (const r of graph.requirements.get(t) ?? []) {
+      if (r.node.kind === "group" && r.node.key === key) return true;
+      stack.push(...(r.node.kind === "leaf" ? [r.node.task] : r.node.members));
+    }
+  }
+  return false;
+}
+
+/**
  * True when making `successor` depend on `predecessor` would create a cycle, i.e. when some leaf
  * of `predecessor` already depends (transitively) on a leaf of `successor`.
  */

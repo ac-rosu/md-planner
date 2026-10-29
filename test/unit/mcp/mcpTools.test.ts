@@ -161,6 +161,15 @@ describe("MCP tools on the sample plan", () => {
       })
     ).json;
     const id = t.created[0].id;
+    // Making M6 wait for M5 moves its task after the launch: the result says what moves.
+    const waits = (await call("update_milestone", { id: "M6", depends: ["M5"] })).json;
+    expect(waits.schedule).toMatch(/^M6 now ends .* \(was .*\)\. Moves T\d+ \(\+\d+ d\)\.$/);
+    expect(waits.schedule).toContain(id);
+    const back = (await call("update_milestone", { id: "M6", depends: [] })).json;
+    expect(back.schedule).toContain("M6 now ends");
+    expect((await call("update_milestone", { id: "M6", name: "Docs" })).json.schedule).toBe(
+      undefined
+    );
     // A task elsewhere depends on it (M6 no longer waits for M5, so this is no cycle); deleting M6
     // removes that dependency too.
     await call("update_task", { id: "T407", addDependsOn: [id] });

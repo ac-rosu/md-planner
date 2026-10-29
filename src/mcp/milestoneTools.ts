@@ -1,6 +1,7 @@
 // Milestone tools: create milestone files (with sections), change them, add sections, delete a
 // milestone together with every dependency on it.
 import { formatDate, isValidDate } from "../core/dates";
+import { describeScheduleChange } from "../core/drag";
 import { type Milestone, type MilestoneStatus } from "../core/model";
 import { milestoneStats } from "../core/queries";
 import { type Plan } from "../core/resolve";
@@ -199,8 +200,13 @@ export function createMilestones(tools: PlannerTools, args: { milestones: Milest
 
 export function updateMilestone(tools: PlannerTools, args: MilestoneUpdate) {
   const st = tools.stage();
+  // A target, a dependency or a status can move other work: the result says what moves.
+  const before = tools.scheduleOf(st.plan);
   const id = stageMilestoneUpdate(st, args);
-  return { id, changed: tools.commit(st) };
+  const after = tools.scheduleOf(st.plan);
+  const changed = tools.commit(st);
+  const schedule = describeScheduleChange(before, after);
+  return { id, changed, ...(schedule ? { schedule } : {}) };
 }
 
 export function addSections(tools: PlannerTools, args: { milestone: string; sections: string[] }) {

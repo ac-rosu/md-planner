@@ -53,9 +53,12 @@ export function isPlainListItem(text: string): boolean {
   return PLAIN_LIST_ITEM.test(text);
 }
 
-/** A list item or bracket that looks like a checkbox: indent, marker, gap, box, gap, rest. */
+/**
+ * A list item or bracket that looks like a checkbox: indent, marker (or a pasted bullet), gap,
+ * box (up to three characters: `[x ]`, `[  ]`), gap, rest.
+ */
 const NEAR_CHECKBOX =
-  /^([ \t]*)(?:([-*+]|\d{1,9}[.)])([ \t]*))?\[([ xX/?!-]?)\]([ \t]*)(?![(:[])(.*)$/;
+  /^([ \t]*)(?:([-*+•]|\d{1,9}[.)])([ \t]*))?\[([ xX/?!-]{0,3})\]([ \t]*)(?![(:[])(.*)$/;
 
 export interface NearMissCheckbox {
   /** What is wrong, as an instruction ("add a space after the list marker"). */
@@ -66,22 +69,27 @@ export interface NearMissCheckbox {
 
 /**
  * A line that was almost certainly meant as a task but is not read as one: `- []`, `-[ ]`,
- * `- [ ]Title` or `[ ] Title` (no list marker). Links (`[x](…)`) and reference definitions
+ * `- [ ]Title`, `[ ] Title` (no list marker), `- [x ]` (more than one character in the box) or
+ * `• [ ] Title` (a bullet pasted from elsewhere). Links (`[x](…)`) and reference definitions
  * (`[x]: …`) are not matched.
  */
 export function nearMissCheckbox(text: string): NearMissCheckbox | undefined {
   if (matchCheckbox(text)) return undefined;
   const m = NEAR_CHECKBOX.exec(text);
   if (!m) return undefined;
-  const [, indent, marker, gap, box, gap2, rest] = m;
-  if (!marker && (!box || !rest.trim())) return undefined;
+  const [, indent, marker, gap, raw, gap2, rest] = m;
+  // A box typed with extra spaces holds its one status character, or a space.
+  const box = raw.length > 1 ? raw.trim().charAt(0) || " " : raw;
+  if (!marker && (!raw || !rest.trim())) return undefined;
   let problem: string;
-  if (!box) problem = "the checkbox is empty – write [ ]";
+  if (!raw) problem = "the checkbox is empty – write [ ]";
+  else if (raw.length > 1) problem = `the box holds one character – write [${box}]`;
   else if (!marker) problem = "it has no list marker – write - [ ]";
+  else if (marker === "•") problem = "• is not a list marker – write - [ ]";
   else if (!gap) problem = "add a space after the list marker";
   else if (!gap2 && rest) problem = "add a space after ]";
   else return undefined;
-  const fixed = `${indent}${marker ?? "-"} [${box || " "}]${rest ? ` ${rest}` : ""}`;
+  const fixed = `${indent}${marker && marker !== "•" ? marker : "-"} [${box || " "}]${rest ? ` ${rest}` : ""}`;
   return { problem, fixed };
 }
 
@@ -180,6 +188,30 @@ function readAttr(text: string, at: number): Token | undefined {
 }
 
 /** Formats an attribute token, quoting values that contain whitespace or quotes. */
+/**
+ * `raw` as a tag that reads back as written: without `#`, with the characters a tag cannot hold
+ * turned into `-` ("v1.2" → "v1-2", "R&D" → "R-D"); empty when nothing is left. Otherwise `#v1.2`
+ * would be read as the tag `v1` with ".2" in the title.
+ */
+export function cleanTag(raw: string): string {
+  return raw
+    .trim()
+    .replace(/[^\p{L}\p{N}_/-]+/gu, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^[^\p{L}\p{N}_]+/u, "")
+    .replace(/-+$/, "");
+}
+
+/**
+ * The parts of a title typed in a form that a task line reads as something else: tags (`#42`),
+ * attributes (`@est:4h`) and a last `^id`, for a warning before they are written.
+ */
+export function titleMarkup(title: string): string[] {
+  return tokenize(title, 0)
+    .filter((t) => t.kind === "tag" || t.kind === "attr" || t.kind === "id")
+    .map((t) => title.slice(t.start, t.end));
+}
+
 export function formatAttr(key: string, value: string): string {
   return `@${key}:${formatAttrValue(value)}`;
 }

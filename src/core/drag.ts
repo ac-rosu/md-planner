@@ -457,15 +457,22 @@ export interface MovedTask {
 
 /**
  * The scheduled tasks other than `except` whose dates differ between two schedules, matched by
- * file and line (the schedule after a change may come from the plan parsed again).
+ * file and line (the schedule after a change may come from the plan parsed again), or by
+ * `matchBy` for edits that add or remove lines.
  */
-export function movedTasks(before: Schedule, after: Schedule, except: Task): MovedTask[] {
+export function movedTasks(
+  before: Schedule,
+  after: Schedule,
+  except?: Task,
+  matchBy: (t: Task) => string = lineOf
+): MovedTask[] {
   const cal = before.calendar;
   const out: MovedTask[] = [];
-  const now = byLine(after);
+  const now = new Map<string, TaskSchedule>();
+  for (const ts of after.tasks.values()) now.set(matchBy(ts.task), ts);
   for (const [task, a] of before.tasks) {
     if (task === except || a.done) continue;
-    const b = now.get(lineOf(task));
+    const b = now.get(matchBy(task));
     if (!b || (a.start === b.start && a.finish === b.finish)) continue;
     const shift = (x?: DayNumber, y?: DayNumber) =>
       x === undefined || y === undefined ? 0 : cal.workingDaysBetween(x, y);
@@ -540,10 +547,7 @@ export function describeMoved(
   if (moved.length === 0) return "";
   const reasons = moveReasons(before, dragged, moved);
   const of = (r: MoveReason) => moved.filter((m) => reasons.get(m.task) === r);
-  const name = (m: MovedTask) => {
-    const id = taskName(m.task);
-    return m.days === 0 ? id : `${id} (${m.days > 0 ? "+" : "−"}${Math.abs(m.days)} d)`;
-  };
+  const name = movedName;
   const parts: string[] = [];
   const waits = of("waits");
   if (waits.length)
@@ -578,6 +582,27 @@ export function describeMoved(
 }
 
 /**
+ * What an edit other than a drag (a milestone's target, its dependencies) does to the schedule,
+ * for its notice, so work that moves is never a surprise: "M1 now ends Wed 2026-11-04 (was Fri
+ * 2026-11-06). M2 is now late. Moves T2 (−2 d), T1 (+2 d) and T3 (+1 d)." Tasks are matched by
+ * their place in the plan, so an edit that adds a line (a first `target:`) matches them all the
+ * same. Empty when nothing moves.
+ */
+export function describeScheduleChange(before: Schedule, after: Schedule): string {
+  const parts: string[] = [];
+  for (const [id, a] of before.milestones) {
+    const b = after.milestones.get(id);
+    if (!b) continue;
+    if (a.forecast !== undefined && b.forecast !== undefined && a.forecast !== b.forecast)
+      parts.push(`${id} now ends ${dragDay(b.forecast)} (was ${dragDay(a.forecast)}).`);
+    if (a.late !== b.late) parts.push(b.late ? `${id} is now late.` : `${id} is on time now.`);
+  }
+  const moved = movedTasks(before, after, undefined, (t) => String(t.order));
+  if (moved.length) parts.push(`Moves ${list(moved.map(movedName))}.`);
+  return parts.join(" ");
+}
+
+/**
  * A schedule's tasks by file and line. A drag's edits leave every task on its line, so this finds
  * them in the schedule of the plan parsed again after the edits, also when two tasks share an id.
  */
@@ -585,6 +610,12 @@ function byLine(s: Schedule): Map<string, TaskSchedule> {
   const out = new Map<string, TaskSchedule>();
   for (const ts of s.tasks.values()) out.set(lineOf(ts.task), ts);
   return out;
+}
+
+/** A moved task in notices: "T430 (+2 d)". */
+function movedName(m: MovedTask): string {
+  const id = taskName(m.task);
+  return m.days === 0 ? id : `${id} (${m.days > 0 ? "+" : "−"}${Math.abs(m.days)} d)`;
 }
 
 function lineOf(t: Task): string {

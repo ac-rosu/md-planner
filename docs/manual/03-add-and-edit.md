@@ -83,7 +83,14 @@ Pressing Escape on the form itself closes it; if you changed something, the plan
 
 ![Keep your changes?](images/form-discard.png)
 
-**Cancel** returns to the form.
+**Cancel** returns to the form. The entries under **More** (add a subtask, move, open the file …)
+leave the form too: with unsaved changes they ask first, and **Cancel** goes back to the form so
+you can save. Saving checks that the change adds no error to the plan (a dependency loop, say) and
+asks before it does.
+
+A title is written into the task line as typed, so text that a task line reads as something else
+gets a note under the title box (Enter still works): `#42` becomes a tag and `@est:4h` an
+attribute. To keep such text in the title, put it in brackets: `Fix bug (#42)`.
 
 ### Pickers
 
@@ -94,7 +101,7 @@ Pressing Escape on the form itself closes it; if you changed something, the plan
 | Dates (fixed start, due, target, time off …) | Suggestions such as _today_, _next Monday_, _end of month_ (and the milestone target for due dates), **Other date…** to type `YYYY-MM-DD`, or **No date** to remove it.                              |
 | Estimate, actual hours                       | Type `4h`, `1.5d` or `1w`. Empty removes it.                                                                                                                                                         |
 | Status                                       | The six statuses. **Blocked** asks for the reason (`@blocked:"…"`).                                                                                                                                  |
-| Tags, skills                                 | Tick known values, or type a new one and tick **New tag: …**.                                                                                                                                        |
+| Tags, skills                                 | Tick known values, or type a new one and tick **New tag: …**. A new tag is shown as it will be written: characters a tag cannot hold become `-` (`v1.2` → `#v1-2`).                                  |
 | Lists (time off, holidays, capacity changes) | **Done**, **Add…**, or choose an entry to remove it.                                                                                                                                                 |
 
 ![Choosing dependencies](images/form-depends.png)
@@ -179,7 +186,8 @@ are. Notes and free text are edited in the file: **More → Open in editor**.
   subtask by accident.
 - A move that would put an open task under a cancelled or done task, or into a cancelled
   milestone, asks first: its checkbox stays open, but it leaves the schedule, the Gantt chart and
-  the workload. **Move anyway** still moves it.
+  the workload. **Move anyway** still moves it. Adding a task or subtask there asks the same
+  before the form opens (**Add anyway**), so a follow-up under a done task does not vanish.
 - A move that would make the plan invalid asks first, for example a task that would depend on its
   own new parent, or a dependency loop through the milestones' `depends:`. **Move anyway** still
   moves it, and the problem is listed in the Problems panel.
@@ -188,7 +196,8 @@ are. Notes and free text are edited in the file: **More → Open in editor**.
   ![The delete confirmation](images/delete-confirm.png)
 
   Subtasks and notes are deleted with the task, and every `@dep` on it is removed, so no broken
-  dependency is left behind. Cmd+Z in the file brings everything back.
+  dependency is left behind. When a copy of the line kept the same id elsewhere, the dependencies
+  stay: they now point at the copy. Cmd+Z in the file brings everything back.
 
 ## Milestones and sections
 
@@ -211,13 +220,20 @@ that one finishes, gets a note with a quick fix **Add depends: M3**.
 The name keeps its id prefix (`M2 – `). Setting the status to _cancelled_ cancels its tasks; this
 is also the way to retire a milestone and keep it for the record.
 
+A target date, a dependency or a status can move other work: a target puts the work it needs
+first for the people on it. When saving moves anything, a message says what: "Saved M2. M1 now
+ends Thu 2026-10-08 (was Tue 2026-10-06). Moves T1 (+2 d), T2 (+2 d), T3 (−2 d) and 1 more.",
+with **Open Gantt** to see it. When nothing moves, the status bar just says _Saved M2_. The task
+form does the same when a new estimate, owner, priority or dependency moves work.
+
 **Delete a milestone** with right-click → **Delete milestone…** on its row (also on a Gantt
 milestone row, or More in the milestone form). The confirmation says what goes with it:
 
 ![Deleting a milestone](images/delete-milestone.png)
 
-Its file and tasks are deleted, `depends:` on it is removed from other milestones and `@dep` on its
-tasks from tasks elsewhere, so nothing is left pointing at it. Test plans keep their `milestone:`
+Its file and tasks are deleted and `@dep` on its tasks is removed from tasks elsewhere, so nothing
+is left pointing at it. Milestones that depended on it wait for what it waited for instead (delete
+M2 from M1 → M2 → M3, and M3 waits for M1), so they do not jump forward. Test plans keep their `milestone:`
 line. When it still has open tasks, **Set to cancelled** keeps the milestone on record instead.
 The message after the delete has an **Undo** button that brings the file and the dependencies back.
 

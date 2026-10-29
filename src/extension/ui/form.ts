@@ -83,6 +83,23 @@ export async function showForm<S>(o: FormOptions<S>): Promise<string | undefined
       if (choice === "Discard") return undefined;
       continue;
     }
+    if (
+      pick.action &&
+      JSON.stringify(o.state) !== initial &&
+      o.more?.some((a) => a.id === pick.action)
+    ) {
+      // A further action leaves the form: say that the changes made in it are not saved.
+      const discard = "Discard changes";
+      const choice = await vscode.window.showWarningMessage(
+        `${o.title}: your changes are not saved yet.`,
+        {
+          modal: true,
+          detail: `${pick.label.replace(/^\$\([^)]*\)\s*/, "")} leaves the form without saving them. Cancel goes back to the form, where ${o.actions[0].label} saves them.`,
+        },
+        discard
+      );
+      if (choice !== discard) continue;
+    }
     if (pick.action) return pick.action;
     if (pick.field !== undefined) await o.fields[pick.field].edit(o.state);
   }

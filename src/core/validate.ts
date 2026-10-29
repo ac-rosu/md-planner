@@ -24,6 +24,10 @@ export function validatePlan(plan: Plan, options: ValidateOptions = {}): Issue[]
   const graph = options.graph ?? buildDepGraph(plan);
 
   checkDuplicateIds(plan, issues);
+  checkDuplicateMilestones(plan, issues);
+
+  for (const t of [...plan.tasks, ...plan.punch, ...plan.inbox]) checkIdNotLast(plan, t, issues);
+  for (const t of plan.tasks) checkLagAfterSpace(plan, t, issues);
 
   for (const t of plan.tasks) {
     checkOwner(plan, t, issues);
@@ -218,6 +222,76 @@ function checkDuplicateIds(plan: Plan, issues: Issue[]): void {
         data: { id },
       });
     }
+  }
+}
+
+/**
+ * Two milestones with one id (a copied file that kept `id:`, or a copy named after the original):
+ * only the first counts for `depends:`, targets and the schedule's milestone, silently.
+ */
+function checkDuplicateMilestones(plan: Plan, issues: Issue[]): void {
+  const byId = new Map<string, Plan["milestones"]>();
+  for (const m of plan.milestones) {
+    const key = m.id.toLowerCase();
+    byId.set(key, [...(byId.get(key) ?? []), m]);
+  }
+  for (const list of byId.values()) {
+    if (list.length < 2) continue;
+    for (const m of list) {
+      const id = m.props.entries.find((e) => e.key.toLowerCase() === "id");
+      issues.push({
+        file: m.file,
+        range: id?.valueRange ?? headingRange(plan, m.file, m.headingLine),
+        severity: "error",
+        code: "duplicate-milestone",
+        message: `Duplicate milestone id "${m.id}" (also ${list
+          .filter((o) => o !== m)
+          .map((o) => o.file)
+          .join(", ")}); give each milestone its own id: line.`,
+      });
+    }
+  }
+}
+
+/**
+ * A `^T6` that is not the last thing on the line is read as title text, so the task has no id and
+ * the tasks that depend on it get "unknown dependency" instead of the real cause.
+ */
+function checkIdNotLast(plan: Plan, t: Task, issues: Issue[]): void {
+  const file = plan.file(t.file);
+  if (!file) return;
+  for (const r of t.titleRanges) {
+    const text = file.lines.line(r.start.line).slice(r.start.character, r.end.character);
+    if (!/^\^[A-Za-z0-9_-]+$/.test(text)) continue;
+    issues.push({
+      file: t.file,
+      range: r,
+      severity: "warning",
+      code: "id-not-last",
+      message: `${text} is read as title text: the id has to be the last thing on the line.`,
+      data: { id: text },
+    });
+  }
+}
+
+/** `@dep:T1 +2d`: the space ends the value, so the lag is title text and not waited for. */
+function checkLagAfterSpace(plan: Plan, t: Task, issues: Issue[]): void {
+  const dep = t.attrs.find((a) => a.key === "dep");
+  const text = dep && plan.file(t.file)?.lines.line(dep.range.end.line);
+  if (!dep || text === undefined) return;
+  for (const r of t.titleRanges) {
+    if (r.start.line !== dep.range.end.line || r.start.character < dep.range.end.character)
+      continue;
+    const gap = text.slice(dep.range.end.character, r.start.character);
+    const word = text.slice(r.start.character, r.end.character);
+    if (!/^[ \t]+$/.test(gap) || !/^\+\d+(\.\d+)?[hdw]?$/.test(word)) continue;
+    issues.push({
+      file: t.file,
+      range: range(r.start.line, dep.range.start.character, r.end.character),
+      severity: "warning",
+      code: "dep-space",
+      message: `${word} after the space is title text, not the lag: write it without a space (@dep:${dep.value}${word}).`,
+    });
   }
 }
 

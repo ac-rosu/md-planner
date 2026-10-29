@@ -50,9 +50,12 @@ Rules:
 - A property line is `key:` followed by a space (or the end of the line) and the value. A line such
   as `See https://example.com` is not a property, because there is no space after the colon.
 - The block is the run of consecutive property lines after the heading. Blank lines are allowed
-  only between the heading and the first property; the first other line ends the block.
+  only between the heading and the first property; the first other line ends the block. A property
+  line further down (after a blank line or the description) is not read: it gets a warning with a
+  quick fix that moves it up.
 - `#` (space, hash, space) starts a comment: `capacity: 32h/week # rest goes to lead work`.
 - Some keys may be repeated, for example `off:` and `capacityFrom:` in `team.md`. All lines count.
+  Of the others (`capacity:`, `target:` …) only the first line counts; a second one gets a warning.
 - Dates are always `YYYY-MM-DD`; ranges are `from..to` (both days included).
 
 ## project.md

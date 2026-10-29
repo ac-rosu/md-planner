@@ -1,6 +1,6 @@
-// Before a move, checks whether it would add validation errors (a cycle through a milestone's
-// `depends:`, a dependency on its own parent …) or take open tasks out of the schedule, and asks
-// first. The same checks make the MCP server refuse such writes; here the user may still go ahead.
+// Before a move or a form's save, checks whether it would add validation errors (a cycle through
+// a milestone's `depends:`, a dependency on its own parent …) or take open tasks out of the
+// schedule, and asks first. The same checks make the MCP server refuse such writes; here the user may still go ahead.
 import * as vscode from "vscode";
 import { PlanIndex } from "../core/index";
 import { newErrors, planErrors } from "../core/newErrors";
@@ -12,7 +12,8 @@ import { type PlanService } from "./planService";
 export async function confirmNoNewErrors(
   service: PlanService,
   edits: FileEdit[],
-  what: string
+  what: string,
+  verb = "move"
 ): Promise<boolean> {
   const plan = service.plan;
   const byPath = new Map<string, TextEdit[]>();
@@ -25,12 +26,12 @@ export async function confirmNoNewErrors(
   }
   const added = newErrors(planErrors(plan), planErrors(staged.plan));
   if (added.length === 0) return true;
-  const go = "Move anyway";
+  const go = `${verb.charAt(0).toUpperCase()}${verb.slice(1)} anyway`;
   const pick = await vscode.window.showWarningMessage(
     `${what} would add ${added.length === 1 ? "an error" : `${added.length} errors`} to the plan.`,
     {
       modal: true,
-      detail: `${added.slice(0, 5).join("\n")}${added.length > 5 ? "\n…" : ""}\n\nIf you move it anyway, the errors are listed in the Problems panel.`,
+      detail: `${added.slice(0, 5).join("\n")}${added.length > 5 ? "\n…" : ""}\n\nIf you ${verb} it anyway, the errors are listed in the Problems panel.`,
     },
     go
   );
@@ -41,9 +42,11 @@ export async function confirmNoNewErrors(
  * True when a move keeps its open tasks scheduled (no `warning` from the core move), or the user
  * wants it anyway. Nothing else would show it: the moved tasks keep their open checkboxes.
  */
-export async function confirmStillScheduled(warning: string | undefined): Promise<boolean> {
+export async function confirmStillScheduled(
+  warning: string | undefined,
+  go = "Move anyway"
+): Promise<boolean> {
   if (!warning) return true;
-  const go = "Move anyway";
   const pick = await vscode.window.showWarningMessage(
     warning,
     {

@@ -11,7 +11,7 @@ import {
   type Task,
 } from "../model";
 import { parseFileAs } from "../parser/files";
-import { formatAttr } from "../parser/taskLine";
+import { cleanTag, formatAttr, matchCheckbox } from "../parser/taskLine";
 import { type Plan } from "../resolve";
 import { hasLoggedWork, openSubtasks } from "../rollup";
 import { comparePositions, pos, range, type TextEdit, type TextLines } from "../text";
@@ -267,7 +267,7 @@ export function formatTaskLine(t: NewTask, indent: string, marker = "-"): string
   const parts = [`${indent}${marker} [${STATUS_CHAR[t.status ?? "todo"]}]`];
   if (t.title) parts.push(t.title.replace(/\s+/g, " ").trim());
   for (const [k, v] of t.attrs ?? []) parts.push(formatAttr(k, v));
-  for (const tag of t.tags ?? []) parts.push(`#${tag.replace(/^#/, "")}`);
+  for (const tag of (t.tags ?? []).map(cleanTag)) if (tag) parts.push(`#${tag}`);
   if (t.id) parts.push(`^${t.id}`);
   return parts.join(" ");
 }
@@ -276,7 +276,7 @@ export function formatTaskLine(t: NewTask, indent: string, marker = "-"): string
 export function formatTaskBlock(t: NewTask, indent = "", marker = "-"): string[] {
   const out = [formatTaskLine(t, indent, marker)];
   const contentIndent = indent + " ".repeat(marker.length + 5);
-  for (const note of t.notes ?? []) out.push(note === "" ? "" : contentIndent + note);
+  for (const note of guardNotes(t.notes ?? [])) out.push(note === "" ? "" : contentIndent + note);
   for (const c of t.children ?? []) out.push(...formatTaskBlock(c, indent + "  ", marker));
   return out;
 }
@@ -927,7 +927,30 @@ export function noteLines(notes: string[]): string[] {
   const given = notes.flatMap((n) => n.split(/\r\n|\n|\r/));
   while (given.length && !given[0].trim()) given.shift();
   while (given.length && !given[given.length - 1].trim()) given.pop();
-  return dedent(given).lines;
+  return guardNotes(dedent(given).lines);
+}
+
+/**
+ * Note lines that stay notes: a checkbox line (`- [ ] call Bob`) would become a subtask without an
+ * id, so its marker is escaped (`\- [ ] call Bob`, shown the same); a code fence left open would
+ * hide the rest of the file, so it is closed. Lists and closed code blocks are kept as they are.
+ */
+export function guardNotes(notes: string[]): string[] {
+  const out: string[] = [];
+  let fence: string | undefined;
+  for (const n of notes) {
+    const f = /^[ \t]*(`{3,}|~{3,})/.exec(n);
+    if (fence) {
+      if (f && f[1][0] === fence[0] && f[1].length >= fence.length && n.trim() === f[1])
+        fence = undefined;
+      out.push(n);
+      continue;
+    }
+    if (f) fence = f[1];
+    out.push(matchCheckbox(n) ? n.replace(/^([ \t]*)/, "$1\\") : n);
+  }
+  if (fence) out.push(fence);
+  return out;
 }
 
 /** A task's note lines in runs: consecutive notes with only blank lines between them. */

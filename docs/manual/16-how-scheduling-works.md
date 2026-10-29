@@ -85,7 +85,13 @@ Each day, for each person:
       review that someone else waits for therefore comes before a long task that only has its own
       deadline. The task's own estimate does not change its place, so making a bar longer in the
       Gantt does not move it ahead of the person's other work.
-   4. then in file order (milestones by id, then line by line).
+   4. Work without any deadline to count back from (no `@due`, no milestone target, nothing with
+      one waiting for it) comes after the work that has one. Among itself it keeps the milestone
+      order (a task counts for the earliest milestone that waits for it), and within that, the
+      work that others wait for goes first. So a plan without targets is already ordered the way
+      a target would order it: giving the first milestone a target later does not reshuffle its
+      work.
+   5. then in file order (milestones by id, then line by line).
 3. It gives the person's free hours of that day to the tasks in that order. A task can take several
    days and can share a day with other tasks. It finishes on the day its remaining hours reach zero.
    A task in progress keeps its place in the order, so a person finishes one task before the next

@@ -8,7 +8,9 @@
 //     dependencies have finished (plus lag) and their @start has been reached.
 //  4. Ready tasks are ordered: fixed @start first, then @prio, then the latest day they can finish
 //     without making anything late (their own @due or milestone target, their owner's last
-//     working day, and the tasks that wait for them), then file order.
+//     working day, and the tasks that wait for them), then file order. Work no deadline bounds
+//     comes after that, in milestone order (a task counts for the earliest milestone that waits
+//     for it), the work others wait for first, then file order.
 //  5. The person's free hours of the day go to tasks in that order; tasks span days and share days.
 //  6. A task finishes on the day its remaining hours reach 0.
 //  7. Per task start/finish and per person-day allocations are recorded.
@@ -86,7 +88,8 @@ export interface TaskSchedule {
   fixedStart?: DayNumber;
   /**
    * Its place among its owner's work that is ready, lowest first (tasks with hours left): a fixed
-   * start first, then @prio, the latest finish that keeps everything on time, file order.
+   * start first, then @prio, the latest finish that keeps everything on time; for work without a
+   * latest finish the earliest milestone waiting for it and the work waiting behind it; file order.
    */
   precedence?: number[];
   deadline?: DayNumber;
@@ -188,7 +191,8 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
   const byKey = new Map<string, TaskSchedule>();
   const allocations: Allocation[] = [];
   const load = new Map<string, Map<DayNumber, number>>();
-  const resources = [...plan.people.map((p) => p.id.toLowerCase()), UNASSIGNED];
+  // Once each: a person with the pool's id (an error) would otherwise get its day twice.
+  const resources = [...new Set([...plan.people.map((p) => p.id.toLowerCase()), UNASSIGNED])];
 
   const addLoad = (resource: string, day: DayNumber, hours: number) => {
     let m = load.get(resource);
@@ -326,6 +330,16 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
     hpd,
     deadlineIdx,
   });
+  const unbounded = unboundedRanks(
+    plan,
+    graph,
+    groupsOf,
+    pending,
+    tasks,
+    remaining,
+    hpd,
+    latestFinish
+  );
 
   // --- Simulation ------------------------------------------------------------------------------
   // Per resource: `future` holds released tasks by earliest day, `ready` holds eligible tasks by
@@ -418,10 +432,13 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
     // Zero-hour tasks (nothing left, or unestimated) need no capacity: they complete on the first
     // working day they are ready.
     if (remaining.get(leaf)! <= EPS) return calendar.nextWorkingDay(earliest);
+    const free = unbounded.get(leaf);
     ts.precedence = [
       fixedStart.has(leaf) ? 0 : 1,
       PRIORITY_RANK[leaf.prio],
       latestFinish.get(leaf)!,
+      free?.milestone ?? 0,
+      free?.lead ?? 0,
       leaf.order,
     ];
     queueOf(ts.resource).future.push({ task: leaf, earliest, key: ts.precedence });
@@ -526,7 +543,7 @@ export function schedulePlan(plan: Plan, options: ScheduleOptions): Schedule {
  * takes over, minus the lag). A backward pass like CPM's on the estimated durations, so work that
  * others wait for goes first. The task's own estimate does not change its own place: making a bar
  * longer in the Gantt does not make it jump ahead of the person's other work. Infinity when
- * nothing bounds it.
+ * nothing bounds it (see `unboundedRanks`).
  */
 function latestFinishes(
   plan: Plan,
@@ -544,12 +561,86 @@ function latestFinishes(
     if (last?.hours === 0)
       capacityEnd.set(p.id.toLowerCase(), workIndex(calendar, start, last.from - 1));
   }
-  const latest = new Map<Task, number>();
   const own = (t: Task) =>
     Math.min(
       deadlineIdx.get(t) ?? Number.POSITIVE_INFINITY,
       capacityEnd.get(tasks.get(t)!.resource) ?? Number.POSITIVE_INFINITY
     );
+  return backwardPass(graph, groupsOf, pending, tasks, remaining, hpd, own);
+}
+
+/**
+ * What orders the work no deadline bounds (latest finish Infinity), so that a plan without targets
+ * gets the order a target would give it, and adding one does not reshuffle the work: first the
+ * earliest milestone that waits for the task (its own, or one with work that waits for it), then
+ * how many working days before the end of that work it has to finish (`lead`: the latest-finish
+ * pass with that work due on day 0, lower the more of it waits behind the task). Tasks with a
+ * deadline get the `lead` of the unbounded work waiting for them, which only breaks ties between
+ * equal latest finishes, so a target keeps the work another milestone waits for first. Ties keep
+ * the file order. Not in the map: tasks with nothing unbounded waiting for them (all of them when
+ * every task has a deadline, so such a plan is scheduled as without this).
+ */
+function unboundedRanks(
+  plan: Plan,
+  graph: DepGraph,
+  groupsOf: Map<Task, GroupNode[]>,
+  pending: Set<Task>,
+  tasks: Map<Task, TaskSchedule>,
+  remaining: Map<Task, number>,
+  hpd: number,
+  latestFinish: Map<Task, number>
+): Map<Task, { milestone: number; lead: number }> {
+  const out = new Map<Task, { milestone: number; lead: number }>();
+  // The tasks waiting for an unbounded task are unbounded too: it would have their bound otherwise.
+  const free = new Set([...pending].filter((t) => latestFinish.get(t) === Infinity));
+  if (free.size === 0) return out;
+  const lead = backwardPass(graph, groupsOf, pending, tasks, remaining, hpd, (t) =>
+    free.has(t) ? 0 : Infinity
+  );
+  const rankOf = new Map(plan.milestones.map((m, i) => [m.id, i]));
+  const first = new Map<Task, number>();
+  const ownRank = (t: Task) => rankOf.get(t.milestoneId ?? "") ?? Infinity;
+  const firstOfWaiting = (node: DepNode): number => {
+    let r = Infinity;
+    // Tasks around a cycle the graph did not flag are not in the walk: their own milestone counts.
+    for (const dep of graph.dependents.get(node) ?? [])
+      if (free.has(dep)) r = Math.min(r, first.get(dep) ?? ownRank(dep));
+    return r;
+  };
+  // Worked out once per group: its members share what waits for the whole group.
+  const groupFirst = new Map<GroupNode, number>();
+  const order = dependencyOrder(graph, groupsOf, free);
+  for (let i = order.length - 1; i >= 0; i--) {
+    const t = order[i];
+    let r = Math.min(ownRank(t), firstOfWaiting(graph.leafNode.get(t)!));
+    for (const g of groupsOf.get(t) ?? []) {
+      let gr = groupFirst.get(g);
+      if (gr === undefined) groupFirst.set(g, (gr = firstOfWaiting(g)));
+      r = Math.min(r, gr);
+    }
+    first.set(t, r);
+  }
+  for (const t of pending) {
+    if (free.has(t)) out.set(t, { milestone: first.get(t) ?? ownRank(t), lead: lead.get(t)! });
+    else if (lead.get(t)! < Infinity) out.set(t, { milestone: 0, lead: lead.get(t)! });
+  }
+  return out;
+}
+
+/**
+ * The latest working-day index each task of `pending` can finish so that the tasks of `pending`
+ * waiting for it can still finish by theirs: walked backwards from what `own` gives each task.
+ */
+function backwardPass(
+  graph: DepGraph,
+  groupsOf: Map<Task, GroupNode[]>,
+  pending: Set<Task>,
+  tasks: Map<Task, TaskSchedule>,
+  remaining: Map<Task, number>,
+  hpd: number,
+  own: (t: Task) => number
+): Map<Task, number> {
+  const latest = new Map<Task, number>();
   const latestStart = (t: Task) => latest.get(t)! - remaining.get(t)! / hpd;
   // What the tasks waiting for a whole group leave to its tasks, per person who waits: for the same
   // person (no hand-over day) and for anyone else. Worked out once per group, not once per member.
@@ -879,7 +970,7 @@ export function isoOrUndefined(day: DayNumber | undefined): string | undefined {
 interface Queued {
   task: Task;
   earliest: DayNumber;
-  /** Fixed start first, then @prio, the latest finish, file order. */
+  /** See `TaskSchedule.precedence`. */
   key: number[];
 }
 

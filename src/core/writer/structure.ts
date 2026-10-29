@@ -209,12 +209,42 @@ export function leavesSchedule(
   );
   if (open.length === 0) return undefined;
   const names = open.map((t) => t.id ?? t.title).join(", ");
+  const where = unscheduledPlace(plan, parent, milestoneId);
+  if (!where) return undefined;
+  return where.under
+    ? `${names} would end up under ${where.under}, and no longer be scheduled.`
+    : `${names} would move into ${where.into}, and no longer be scheduled.`;
+}
+
+/**
+ * Says so when a new open task under `parent`, in milestone `milestoneId`, would not be scheduled
+ * (a done or cancelled task above it, a cancelled milestone): created there, it would look open
+ * but never appear in the Gantt. Undefined when it would be scheduled.
+ */
+export function newTaskLeavesSchedule(
+  plan: Plan,
+  parent: Task | undefined,
+  milestoneId: string,
+  name: string
+): string | undefined {
+  const where = unscheduledPlace(plan, parent, milestoneId);
+  if (!where) return undefined;
+  return where.under
+    ? `"${name}" would be under ${where.under}, and not be scheduled.`
+    : `"${name}" would be in ${where.into}, and not be scheduled.`;
+}
+
+/** The done or cancelled task above `parent` (itself included), else the cancelled milestone. */
+function unscheduledPlace(
+  plan: Plan,
+  parent: Task | undefined,
+  milestoneId: string | undefined
+): { under?: string; into?: string } | undefined {
   for (let p = parent; p; p = p.parent)
     if (p.status === "cancelled" || p.status === "done")
-      return `${names} would end up under ${p.id ?? p.title}, which is ${p.status}, and no longer be scheduled.`;
+      return { under: `${p.id ?? p.title}, which is ${p.status}` };
   const m = plan.milestoneById(milestoneId);
-  if (m?.status === "cancelled")
-    return `${names} would move into ${m.id}, which is cancelled, and no longer be scheduled.`;
+  if (m?.status === "cancelled") return { into: `${m.id}, which is cancelled` };
   return undefined;
 }
 

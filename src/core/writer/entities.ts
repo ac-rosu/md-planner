@@ -144,12 +144,25 @@ export function taskAndDescendants(task: Task): Task[] {
   return [task, ...task.children.flatMap(taskAndDescendants)];
 }
 
+/**
+ * The ids (lower case) of the tasks in `going` that no other task keeps: a line copied with its id
+ * is a task of its own, so deleting the original leaves the dependencies on that id to the copy.
+ */
+function goneIds(plan: Plan, going: Set<Task>): Set<string> {
+  const kept = new Set(
+    plan.tasks.filter((t) => t.id && !going.has(t)).map((t) => t.id!.toLowerCase())
+  );
+  return new Set(
+    [...going].map((t) => t.id?.toLowerCase()).filter((id): id is string => !!id && !kept.has(id))
+  );
+}
+
 /** Tasks outside `task`'s block that depend on it or one of its subtasks. */
 export function dependentsOf(plan: Plan, task: Task): Task[] {
   const block = new Set(taskAndDescendants(task));
-  const ids = new Set([...block].map((t) => t.id).filter((id): id is string => !!id));
+  const ids = goneIds(plan, block);
   if (ids.size === 0) return [];
-  return plan.tasks.filter((t) => !block.has(t) && t.deps.some((d) => ids.has(d.id)));
+  return plan.tasks.filter((t) => !block.has(t) && t.deps.some((d) => ids.has(d.id.toLowerCase())));
 }
 
 /**
@@ -159,11 +172,7 @@ export function dependentsOf(plan: Plan, task: Task): Task[] {
 export function deleteTaskWithLinks(plan: Plan, task: Task): FileEdit[] {
   const file = plan.file(task.file);
   if (!file) return [];
-  const ids = new Set(
-    taskAndDescendants(task)
-      .map((t) => t.id)
-      .filter((id): id is string => !!id)
-  );
+  const ids = goneIds(plan, new Set(taskAndDescendants(task)));
   const byFile = new Map<string, TextEdit[]>([[task.file, [deleteTask(file.lines, task)]]]);
   for (const t of dependentsOf(plan, task)) {
     const f = plan.file(t.file);
@@ -172,7 +181,7 @@ export function deleteTaskWithLinks(plan: Plan, task: Task): FileEdit[] {
     const kept = attr.value
       .split(",")
       .map((p) => p.trim())
-      .filter((p) => p !== "" && !ids.has(p.replace(/\+.*$/, "")));
+      .filter((p) => p !== "" && !ids.has(p.replace(/\+.*$/, "").toLowerCase()));
     const edits = editTaskLine(f.lines, t, (e) =>
       e.setAttr("dep", kept.length ? kept.join(",") : undefined)
     );
@@ -186,9 +195,7 @@ export function milestoneDependents(
   plan: Plan,
   m: Milestone
 ): { tasks: Task[]; milestones: Milestone[] } {
-  const gone = new Set(
-    plan.tasks.filter((t) => t.milestoneId === m.id && t.id).map((t) => t.id!.toLowerCase())
-  );
+  const gone = goneIds(plan, new Set(plan.tasks.filter((t) => t.milestoneId === m.id)));
   return {
     tasks: plan.tasks.filter(
       (t) => t.milestoneId !== m.id && t.deps.some((d) => gone.has(d.id.toLowerCase()))
@@ -200,13 +207,13 @@ export function milestoneDependents(
 }
 
 /**
- * Deleting a milestone: removes the dependencies on it (other milestones' `depends`) and on its
- * tasks (`@dep` elsewhere), so nothing is left pointing at it. The caller deletes its file.
+ * Deleting a milestone: removes the dependencies on its tasks (`@dep` elsewhere), and in other
+ * milestones' `depends` puts what it waited for in its place (M3 → M2 → M1 without M2: M3 waits
+ * for M1, instead of starting with it), so nothing is left pointing at it and the order stays.
+ * The caller deletes its file.
  */
 export function deleteMilestoneLinks(plan: Plan, m: Milestone): FileEdit[] {
-  const gone = new Set(
-    plan.tasks.filter((t) => t.milestoneId === m.id && t.id).map((t) => t.id!.toLowerCase())
-  );
+  const gone = goneIds(plan, new Set(plan.tasks.filter((t) => t.milestoneId === m.id)));
   const dependents = milestoneDependents(plan, m);
   const edits: FileEdit[] = [];
   for (const t of dependents.tasks) {
@@ -225,12 +232,24 @@ export function deleteMilestoneLinks(plan: Plan, m: Milestone): FileEdit[] {
     if (!f) continue;
     edits.push({
       path: f.path,
-      edits: changeMilestone(f.lines, other, {
-        depends: other.depends.filter((d) => d.toLowerCase() !== m.id.toLowerCase()),
-      }),
+      edits: changeMilestone(f.lines, other, { depends: dependsWithout(other, m) }),
     });
   }
   return edits;
+}
+
+/** `other`'s `depends` with `m` replaced by what `m` depends on (no duplicates, not itself). */
+export function dependsWithout(other: Milestone, m: Milestone): string[] {
+  const out: string[] = [];
+  const add = (id: string) => {
+    const key = id.toLowerCase();
+    if (key !== other.id.toLowerCase() && key !== m.id.toLowerCase())
+      if (!out.some((x) => x.toLowerCase() === key)) out.push(id);
+  };
+  for (const d of other.depends)
+    if (d.toLowerCase() === m.id.toLowerCase()) m.depends.forEach(add);
+    else add(d);
+  return out;
 }
 
 // ---------------------------------------------------------------------------------------------

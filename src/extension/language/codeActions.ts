@@ -4,7 +4,10 @@ import * as vscode from "vscode";
 import { isOpen, type Task } from "../../core/model";
 import { type TextEdit } from "../../core/text";
 import { impliedDeps, suggestPeriodYear, suggestYear } from "../../core/consistency";
+import { joinDepIds, moveIdToEnd, moveLineUp, renameAttrKey } from "../../core/lineFixes";
+import { propertyBlockFor } from "../../core/parser/files";
 import { nearMissCheckbox } from "../../core/parser/taskLine";
+import { meantAttr } from "../../core/resolve";
 import { formatHours } from "../../core/duration";
 import { budgetSplit, isEffectivelyDone, openSubtasks } from "../../core/rollup";
 import {
@@ -55,7 +58,67 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
           );
         continue;
       }
-      if (file.kind === "team" && diagnostic.code === "date-outside-project") {
+      if (
+        diagnostic.code === "misspelled-attr" ||
+        diagnostic.code === "dep-space" ||
+        diagnostic.code === "id-not-last"
+      ) {
+        const text = document.lineAt(lineNo).text;
+        const { start, end } = diagnostic.range;
+        const sameLine = start.line === end.line;
+        const key = /^@([^:\s]+)/.exec(document.getText(diagnostic.range))?.[1];
+        const meant = key && meantAttr(key);
+        const fix =
+          diagnostic.code === "misspelled-attr"
+            ? meant && sameLine
+              ? {
+                  title: `Change to @${meant}`,
+                  text: renameAttrKey(text, start.character, end.character, meant),
+                }
+              : undefined
+            : diagnostic.code === "dep-space"
+              ? { title: "Join the ids: @dep without spaces", text: joinDepIds(text) }
+              : {
+                  title: "Move the id to the end of the line",
+                  text: sameLine ? moveIdToEnd(text, start.character, end.character) : undefined,
+                };
+        const edit = fix?.text !== undefined && minimalLineEdit(lineNo, text, fix.text);
+        if (fix && edit) actions.push(this.fix(fix.title, document, [edit], diagnostic, true));
+        continue;
+      }
+      if (diagnostic.code === "property-not-read") {
+        // Moved up to the end of the block of the heading above it, where it is read.
+        const to = propertyBlockFor(file, lineNo);
+        if (to !== undefined && to < lineNo)
+          actions.push(
+            this.fix(
+              "Move it up to the other properties",
+              document,
+              moveLineUp(file.lines, lineNo, to),
+              diagnostic,
+              true
+            )
+          );
+        continue;
+      }
+      if (diagnostic.code === "progress-fraction") {
+        const value = Number(document.getText(diagnostic.range));
+        if (value > 0 && value < 1)
+          actions.push(
+            this.fix(
+              `Change to ${Math.round(value * 100)}%`,
+              document,
+              [{ range: diagnostic.range, newText: `${Math.round(value * 100)}%` }],
+              diagnostic,
+              true
+            )
+          );
+        continue;
+      }
+      if (
+        (file.kind === "team" || file.kind === "project") &&
+        (diagnostic.code === "date-outside-project" || diagnostic.code === "long-holiday")
+      ) {
         // A date or period in a team.md property: its dates after the project end a year
         // earlier, when that fits. The diagnostic covers exactly the date or period.
         const { start, end } = diagnostic.range;

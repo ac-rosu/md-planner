@@ -23,6 +23,8 @@ export abstract class WebviewPanelHost<HostMessage, WebviewMessage extends { typ
   /** Messages are queued until the webview reports "ready". */
   private ready = false;
   private queue: HostMessage[] = [];
+  /** The webview message being handled; the next one waits for it (`receive` never rejects). */
+  private handling: Promise<void> = Promise.resolve();
 
   protected constructor(
     protected readonly ctx: PanelContext,
@@ -41,7 +43,11 @@ export abstract class WebviewPanelHost<HostMessage, WebviewMessage extends { typ
     this.panel.webview.html = this.html(title);
     this.disposables.push(
       this.panel.onDidDispose(() => this.dispose()),
-      this.panel.webview.onDidReceiveMessage((m: WebviewMessage) => void this.receive(m)),
+      // One message at a time: two quick gestures (a drag right after another) must each work out
+      // their edit on the text the one before left, not both on the same old text.
+      this.panel.webview.onDidReceiveMessage((m: WebviewMessage) => {
+        this.handling = this.handling.then(() => this.receive(m));
+      }),
       ctx.history.onDidChange(() => this.postHistory())
     );
   }

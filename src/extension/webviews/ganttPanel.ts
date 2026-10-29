@@ -5,7 +5,15 @@ import { formatHours, parseDuration } from "../../core/duration";
 import { wouldCreateCycle } from "../../core/graph";
 import { isOpen, type Task } from "../../core/model";
 import { isLeaf } from "../../core/rollup";
-import { describeMove, describeResize, resizeTo, sharedIdReason } from "../../core/drag";
+import {
+  describeMove,
+  describeResize,
+  describeScheduleChange,
+  resizeTo,
+  scheduleAfter,
+  sharedIdReason,
+} from "../../core/drag";
+import { titleMarkup } from "../../core/parser/taskLine";
 import { findTaskByKey, schedulePlan } from "../../core/scheduler";
 import { buildGanttModel, type BaselineLookup } from "../../core/views/gantt";
 import {
@@ -297,8 +305,22 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
       if (change.owner !== undefined) e.setAttr("owner", change.owner ?? undefined);
       if (change.estimate !== undefined) e.setAttr("est", change.estimate);
     });
+    // A new owner or estimate can move other work: the notice says what (see describeScheduleChange).
+    const state = this.ctx.state;
+    const before = state.schedule;
+    const after = edits.length
+      ? scheduleAfter(state.plan, state.scheduleOptions(), [{ path: t.file, edits }])
+      : before;
     const ok = await this.ctx.history.apply([{ path: t.file, edits }], `Edit ${t.id ?? t.title}`);
-    if (ok && edits.length) this.changed(`Saved ${t.id ?? t.title}.`);
+    // A title is written as typed: say when part of it became a tag or an attribute.
+    const markup = change.title !== undefined ? titleMarkup(change.title) : [];
+    const note = markup.length
+      ? ` Not part of the title: ${markup.join(" ")} (read as a tag, attribute or id); put such text in brackets to keep it, e.g. (#42).`
+      : "";
+    if (ok && edits.length)
+      this.changed(
+        `Saved ${t.id ?? t.title}.${note} ${describeScheduleChange(before, after)}`.trim()
+      );
     return ok;
   }
 

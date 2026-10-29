@@ -4,6 +4,41 @@
 
 Safer editing, from the pilot users' feedback.
 
+- Giving a milestone a target no longer reshuffles the plan. Without any target, the schedule
+  already does first the work that others wait for (it went by file order, and a colleague could
+  sit idle until a target came along), while keeping the milestone order. A plan where every
+  milestone has a target is scheduled as before.
+- Saving the milestone or task form says what moves in the schedule when anything does: "Saved
+  M2. M1 now ends Thu 2026-10-08 (was Tue 2026-10-06). Moves T1 (+2 d), T2 (+2 d), T3 (−2 d) and
+  1 more.", with **Open Gantt**; so does the Gantt's inline edit of an owner or estimate. MCP
+  `update_milestone` returns the same as `schedule`.
+- Forms guard against slips: a milestone's Depends on no longer offers milestones that wait for
+  it, a new task's dependencies leave out its parent and work that waits for it, and a save that
+  would add an error (a dependency loop) asks first. More actions (add subtask, move, open) ask
+  before dropping unsaved changes, and adding work under a done task or to a cancelled milestone
+  asks before the form.
+- Tags like `v1.2` or `R&D` are written as `#v1-2` and `#R-D`: they broke the line before, and
+  removing them later broke the estimate next to them. A title with `#42` or `@est:4h` gets a
+  note that they become a tag or an attribute (write `(#42)` to keep it in the title).
+- Deleting a task no longer removes dependencies that a copy with the same id still satisfies.
+  Deleting a milestone keeps the order: the milestones after it wait for what it waited for.
+- New warnings with quick fixes for text that was read otherwise without a word: `- [x ]` and
+  pasted `•` bullets (the task disappeared), `@dep:T2, T1` (T1 was title text), `@Owner` or
+  `@depends` (kept as custom fields), an id that is not last on the line, two milestones with one
+  id, and a milestone whose forecast leaves out tasks that cannot be scheduled. A workweek such as
+  `mon–fri` with a typographic dash is read as meant; `mon to fri` is an error instead of Monday
+  only.
+- More warnings for things that were quietly ignored or misread: a property line after a blank
+  line or the description (`off:` in a person's block: the time off was ignored; the quick fix
+  moves it up), a second `capacity:` or `target:`, `@dep:T1 +2d` (the lag was title text),
+  `@progress:0.5` (0.5 %), a capacity over 24 hours a day, a person with the id `unassigned`,
+  tasks in project.md or team.md, project holidays over a month long or after the project end
+  (often a wrong year), a `@done` after today, and a subtask due after its parent.
+- A note given to a new task cannot turn into a subtask (`- [ ] …` is written escaped) or hide the
+  rest of the file (an open code fence is closed).
+- The Gantt and Kanban handle gestures one after the other, so two quick drags both apply to the
+  plan as it is.
+
 - Clicking a checkbox in the editor no longer changes the status (it changed tasks by accident).
   Hover the checkbox to pick a status, or press Ctrl/Cmd+Alt+X; like typing, the change is not
   saved until you save, and Ctrl/Cmd+Z undoes it. Turn `planner.editor.toggleOnClick` on to get the

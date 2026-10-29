@@ -229,6 +229,90 @@ describe("scheduler basics", () => {
     expect(dates("T1")).toEqual(["2026-10-06", "2026-10-07"]);
   });
 
+  it("does the work that others wait for first also without any deadline", () => {
+    // Ann's API is what Cy waits for; the docs above it in the file wait for nobody.
+    const { dates } = run([
+      "- [ ] docs @est:8h @owner:ann ^T1",
+      "- [ ] api @est:8h @owner:ann ^T2",
+      "- [ ] ui @est:16h @owner:cy @dep:T2 ^T3",
+    ]);
+    expect(dates("T2")).toEqual(["2026-10-05", "2026-10-05"]);
+    expect(dates("T1")).toEqual(["2026-10-06", "2026-10-06"]);
+    expect(dates("T3")).toEqual(["2026-10-06", "2026-10-09"]);
+  });
+
+  it("keeps the milestone order for work without deadlines", () => {
+    // More work waits behind M2's first task, but M1 comes first.
+    const { dates } = run(
+      ["- [ ] m1 head @est:8h @owner:ann ^T1", "- [ ] m1 next @est:8h @owner:bob @dep:T1 ^T2"],
+      {},
+      {
+        "milestones/M2.md": md(
+          "# M2",
+          "",
+          "id: M2",
+          "",
+          "- [ ] m2 head @est:8h @owner:ann ^T3",
+          "- [ ] m2 a @est:16h @owner:bob @dep:T3 ^T4",
+          "- [ ] m2 b @est:16h @owner:bob @dep:T4 ^T5"
+        ),
+      }
+    );
+    expect(dates("T1")).toEqual(["2026-10-05", "2026-10-05"]);
+    expect(dates("T3")).toEqual(["2026-10-06", "2026-10-06"]);
+  });
+
+  it("does not reshuffle the work when the first milestone gets a target", () => {
+    const m1 = (...target: string[]) =>
+      md(
+        "# M1",
+        "",
+        "id: M1",
+        ...target,
+        "",
+        "- [ ] docs @est:8h @owner:ann ^T1",
+        "- [ ] api @est:8h @owner:ann ^T2",
+        "- [ ] ui @est:16h @owner:cy @dep:T2 ^T3"
+      );
+    const m2 = md(
+      "# M2",
+      "",
+      "id: M2",
+      "",
+      "- [ ] spec @est:8h @owner:ann ^T4",
+      "- [ ] build @est:16h @owner:cy @dep:T4 ^T5"
+    );
+    const without = run([], {}, { "milestones/M1.md": m1(), "milestones/M2.md": m2 });
+    const withTarget = run(
+      [],
+      {},
+      { "milestones/M1.md": m1("target: 2026-11-30"), "milestones/M2.md": m2 }
+    );
+    for (const id of ["T1", "T2", "T3", "T4", "T5"])
+      expect(withTarget.dates(id), id).toEqual(without.dates(id));
+  });
+
+  it("does first, among equal deadlines, the work a milestone without one waits for", () => {
+    const { dates } = run(
+      [],
+      {},
+      {
+        "milestones/M1.md": md(
+          "# M1",
+          "",
+          "id: M1",
+          "target: 2026-10-30",
+          "",
+          "- [ ] a @est:8h @owner:ann ^T1",
+          "- [ ] b @est:8h @owner:ann ^T2"
+        ),
+        "milestones/M2.md": md("# M2", "", "id: M2", "", "- [ ] c @est:16h @owner:cy @dep:T2 ^T3"),
+      }
+    );
+    expect(dates("T2")).toEqual(["2026-10-05", "2026-10-05"]);
+    expect(dates("T1")).toEqual(["2026-10-06", "2026-10-06"]);
+  });
+
   it("does not move a task ahead of the person's other work because it got longer", () => {
     // Same deadline: file order decides, whatever the estimates (making a bar longer in the Gantt
     // must not move its start).
@@ -446,7 +530,10 @@ describe("scheduler basics", () => {
       }
     );
     expect(get("T1").unscheduled).toBe("horizon");
-    expect(scheduleDiagnostics(plan, s).map((i) => i.code)).toEqual(["unschedulable"]);
+    const issues = scheduleDiagnostics(plan, s);
+    expect(issues.map((i) => i.code)).toEqual(["unschedulable", "incomplete-forecast"]);
+    // The milestone does not look on time: its forecast would leave the task out.
+    expect(issues[1].message).toBe("M1 cannot finish: 1 task cannot be scheduled (T1).");
   });
 
   it("demand mode ignores capacity and shows overload", () => {

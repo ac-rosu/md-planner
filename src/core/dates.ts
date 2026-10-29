@@ -83,21 +83,30 @@ export function localToday(now: Date = new Date()): string {
 
 export const WEEKDAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 
+const WEEKDAY_FULL = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+
+/** The weekday index (0 = Monday) of a name of at least three letters: `thu`, `thurs`, `thursday`. */
+function weekdayIndex(name: string): number {
+  return name.length >= 3 ? WEEKDAY_FULL.findIndex((d) => d.startsWith(name)) : -1;
+}
+
 /**
  * Parses a workweek such as `mon-fri`, `sun-thu`, `mon,tue,thu` or `mon-thu, sat` into the set of
- * ISO weekdays (1–7). Returns undefined when any part is not a weekday name.
+ * ISO weekdays (1–7); `–`, `—` and `..` count as `-`. Returns undefined when any part is not a
+ * weekday name (`mon to fri` is not Monday alone).
  */
 export function parseWorkweek(text: string): Set<number> | undefined {
   const days = new Set<number>();
   const parts = text
     .toLowerCase()
+    .replace(/[–—]|\.\./g, "-")
     .split(",")
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
   if (parts.length === 0) return undefined;
   for (const part of parts) {
     const range = part.split("-").map((p) => p.trim());
-    const indexes = range.map((name) => WEEKDAY_NAMES.indexOf(name.slice(0, 3) as never));
+    const indexes = range.map(weekdayIndex);
     if (indexes.some((i) => i < 0) || range.length > 2) return undefined;
     if (range.length === 1) {
       days.add(indexes[0] + 1);

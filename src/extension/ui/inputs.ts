@@ -29,6 +29,8 @@ export async function askText(o: {
   placeHolder?: string;
   required?: boolean;
   validate?: (value: string) => string | undefined;
+  /** A note that does not stop Enter (what the text will turn into, say). */
+  warn?: (value: string) => string | undefined;
 }): Promise<string | undefined> {
   const text = await vscode.window.showInputBox({
     title: o.title,
@@ -36,8 +38,16 @@ export async function askText(o: {
     value: o.value,
     placeHolder: o.placeHolder,
     ignoreFocusOut: true,
-    validateInput: (v) =>
-      o.required && !v.trim() ? "Required" : v.trim() ? o.validate?.(v.trim()) : undefined,
+    validateInput: (v) => {
+      if (o.required && !v.trim()) return "Required";
+      if (!v.trim()) return undefined;
+      const error = o.validate?.(v.trim());
+      if (error) return error;
+      const warning = o.warn?.(v.trim());
+      return warning
+        ? { message: warning, severity: vscode.InputBoxValidationSeverity.Warning }
+        : undefined;
+    },
   });
   return text === undefined ? undefined : text.trim();
 }
@@ -226,12 +236,30 @@ export async function askMilestones(
   selected: string[],
   exclude?: string
 ): Promise<string[] | undefined> {
+  // Milestones that already wait for this one (directly or through others) would make a loop
+  // that leaves all their work unscheduled; ones already chosen stay, so nothing is dropped.
+  const waiting = new Set<string>();
+  if (exclude) {
+    const key = (id: string) => id.toLowerCase();
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const m of plan.milestones)
+        if (
+          !waiting.has(key(m.id)) &&
+          m.depends.some((d) => key(d) === key(exclude) || waiting.has(key(d)))
+        ) {
+          waiting.add(key(m.id));
+          grew = true;
+        }
+    }
+  }
+  const chosen = (id: string) => selected.some((s) => s.toLowerCase() === id.toLowerCase());
   const items = plan.milestones
-    .filter((m) => m.id !== exclude)
+    .filter((m) => m.id !== exclude && (!waiting.has(m.id.toLowerCase()) || chosen(m.id)))
     .map((m) => ({
       label: m.title,
       description: m.target ? `target ${m.target}` : undefined,
-      picked: selected.some((s) => s.toLowerCase() === m.id.toLowerCase()),
+      picked: chosen(m.id),
       id: m.id,
     }));
   const picks = await vscode.window.showQuickPick(items, {
@@ -251,7 +279,7 @@ export async function askValues(
   title: string,
   known: string[],
   selected: string[],
-  o: { prefix?: string; noun: string }
+  o: { prefix?: string; noun: string; clean?: (typed: string) => string }
 ): Promise<string[] | undefined> {
   const prefix = o.prefix ?? "";
   type Item = vscode.QuickPickItem & { value: string };
@@ -265,10 +293,9 @@ export async function askValues(
   qp.items = base;
   qp.selectedItems = base.filter((i) => selected.includes(i.value));
   qp.onDidChangeValue((text) => {
-    const v = text
-      .trim()
-      .replace(new RegExp(`^${prefix}`), "")
-      .replace(/\s+/g, "-");
+    const typed = text.trim().replace(new RegExp(`^${prefix}`), "");
+    // Shown as it will be written, so a tag like "v1.2" is "v1-2" before it is ticked.
+    const v = o.clean ? o.clean(typed) : typed.replace(/\s+/g, "-");
     const keep = qp.selectedItems;
     const extra: Item[] =
       v && !all.includes(v)

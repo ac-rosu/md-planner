@@ -381,6 +381,19 @@ function resolveTeam(file: TeamFile, project: Project, issues: Issue[]): Person[
       });
     }
     seen.set(id.toLowerCase(), p.headingLine);
+    // The pool of tasks without an owner: a person with that id would share its hours.
+    if (id.toLowerCase() === "unassigned")
+      issues.push({
+        file: file.path,
+        range: idEntry?.valueRange ?? {
+          start: { line: p.headingLine, character: 0 },
+          end: { line: p.headingLine, character: file.lines.line(p.headingLine).length },
+        },
+        severity: "error",
+        code: "reserved-person-id",
+        message:
+          '"unassigned" is the pool of tasks without an owner, not a person: give this person another id (id: …).',
+      });
 
     let workweek: Set<number> | undefined;
     const ww = getProp(props, "workweek");
@@ -408,6 +421,20 @@ function resolveTeam(file: TeamFile, project: Project, issues: Issue[]): Person[
         );
       }
     }
+    // More than a day has hours: a typo (200h/week, 30h/day), scheduled as written otherwise.
+    const tooMuch = (entry: PropertyEntry, hours: number, per: "week" | "day") => {
+      const daily = per === "day" ? hours : hours / Math.max(1, daysPerWeek);
+      if (daily > 24)
+        issue(
+          issues,
+          file.path,
+          entry,
+          "capacity-too-high",
+          `${hours}h a ${per} is ${Math.round(daily)}h a working day, more than a day has. Is it a typo?`,
+          "warning"
+        );
+    };
+    if (cap && cap.value && parseCapacity(cap.value)) tooMuch(cap, capacityHours, capacityPer);
     const capacityChanges: CapacityChange[] = [];
     for (const e of getProps(props, "capacityFrom")) {
       const m = /^(\S+)\s+(.+)$/.exec(e.value);
@@ -423,6 +450,7 @@ function resolveTeam(file: TeamFile, project: Project, issues: Issue[]): Person[
         );
       } else {
         capacityChanges.push({ from, hours: spec.hours, per: spec.per });
+        tooMuch(e, spec.hours, spec.per);
       }
     }
     capacityChanges.sort((a, b) => a.from - b.from);
@@ -654,6 +682,16 @@ function applyAttr(t: Task, a: Attr, hpd: number, issues: Issue[]): void {
       else bad("invalid-value", "@owner needs a person id.");
       return;
     case "dep": {
+      // `@dep:T2, T1`: the space ends the value, so T1 would be read as title text.
+      if (/,\s*$/.test(v))
+        issues.push({
+          file: t.file,
+          range: a.range,
+          severity: "warning",
+          code: "dep-space",
+          message:
+            "@dep ends with a comma: what follows the space is title text, not a dependency. Write the ids without spaces: @dep:T2,T1.",
+        });
       t.deps = parseDeps(v, hpd);
       for (const d of t.deps)
         if (!d.valid) bad("invalid-value", `Invalid dependency "${d.raw}" (e.g. T101 or T101+2d).`);
@@ -678,6 +716,15 @@ function applyAttr(t: Task, a: Attr, hpd: number, issues: Issue[]): void {
       const p = parsePercent(v);
       if (p === undefined) bad("invalid-value", `Invalid progress "${v}" (0%–100%).`);
       else t.progress = p;
+      // `@progress:0.5` means half to whoever writes it, and 0.5 % to the planner.
+      if (p !== undefined && p > 0 && p < 0.01 && !v.includes("%"))
+        issues.push({
+          file: t.file,
+          range: a.valueRange,
+          severity: "warning",
+          code: "progress-fraction",
+          message: `@progress:${v} is read as ${v} %. For ${Math.round(Number(v) * 100)} %, write @progress:${Math.round(Number(v) * 100)}%.`,
+        });
       return;
     }
     case "sev": {
@@ -704,7 +751,39 @@ function applyAttr(t: Task, a: Attr, hpd: number, issues: Issue[]): void {
     case "punch":
       t[a.key] = v;
       return;
-    default:
+    default: {
       t.custom[a.key] = v;
+      const meant = meantAttr(a.key);
+      if (meant)
+        issues.push({
+          file: t.file,
+          range: a.range,
+          severity: "warning",
+          code: "misspelled-attr",
+          message: `@${a.key} is not @${meant}: it is kept as a custom field and does nothing. Did you mean @${meant}?`,
+          data: { key: a.key, meant },
+        });
+    }
   }
+}
+
+/** Attribute names people type for a known one (other spellings stay custom fields). */
+const ATTR_ALIASES: Record<string, string> = {
+  depends: "dep",
+  deps: "dep",
+  dependency: "dep",
+  dependencies: "dep",
+  estimate: "est",
+  actual: "act",
+  assignee: "owner",
+  deadline: "due",
+  priority: "prio",
+  severity: "sev",
+};
+
+/** The known attribute a custom `@key` was most likely meant as: `@Owner`, `@depends`. */
+export function meantAttr(key: string): string | undefined {
+  const lower = key.toLowerCase();
+  if (lower !== key && KNOWN_KEYS.has(lower)) return lower;
+  return ATTR_ALIASES[lower];
 }
