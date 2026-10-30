@@ -17,6 +17,30 @@ import {
 } from "./rollup";
 
 /** The deadline that applies to a task: its own `@due`, else its milestone's target. */
+/**
+ * Likely dates a task was finished on, for entering finished work afterwards: its milestone's
+ * target once it has passed, and the day its dependencies finished (the latest `@done` among
+ * them). Dates after today are left out; the caller adds today and the days behind it.
+ */
+export function doneDateSuggestions(
+  plan: Plan,
+  t: Task,
+  today: string
+): Array<{ label: string; date: string }> {
+  const out: Array<{ label: string; date: string }> = [];
+  const m = plan.milestoneById(t.milestoneId);
+  if (m?.target && m.target <= today) out.push({ label: `the ${m.id} target`, date: m.target });
+  const deps = t.deps
+    .map((d) => plan.taskById(d.id)?.done)
+    .filter((d): d is string => d !== undefined && d <= today);
+  if (deps.length) {
+    const last = deps.reduce((a, b) => (b > a ? b : a));
+    if (!out.some((o) => o.date === last))
+      out.push({ label: "when its dependencies finished", date: last });
+  }
+  return out;
+}
+
 export function deadlineOf(plan: Plan, t: Task): string | undefined {
   if (t.due) return t.due;
   for (let p = t.parent; p; p = p.parent) if (p.due) return p.due;

@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 import { UNASSIGNED } from "../../core/calendar";
 import { describeScheduleChange, scheduleAfter } from "../../core/drag";
 import { newTaskWouldCycle, wouldCreateCycle } from "../../core/graph";
+import { formatHours, parseDuration, parsePercent } from "../../core/duration";
 import { cleanTag, titleMarkup } from "../../core/parser/taskLine";
 import {
   isOpen,
@@ -14,6 +15,7 @@ import {
   type Status,
   type Task,
 } from "../../core/model";
+import { doneDateSuggestions } from "../../core/queries";
 import { type Plan } from "../../core/resolve";
 import { addPunchItem } from "../../core/testRun";
 import {
@@ -54,6 +56,7 @@ import {
   askDate,
   askDuration,
   askMilestones,
+  askPastDate,
   askPerson,
   askPriority,
   askProgress,
@@ -110,6 +113,8 @@ interface TaskForm {
   tags: string[];
   blocked: string;
   note: string;
+  /** `@done` (done) or `@started` (in progress, review) to write; "" = today, or as it is. */
+  statusDate: string;
 }
 
 export function registerEditCommands(state: PlannerState): vscode.Disposable[] {
@@ -335,6 +340,13 @@ function taskFields(
   const block = self ? new Set(taskAndDescendants(self)) : new Set<Task>();
   const graph = state.schedule.graph;
   const inherited = self?.parent ? ownerName(plan, inheritedOwner(self.parent)) : undefined;
+  // Likely days a task was finished on, for "Done on": its milestone's target once it passed, and
+  // when its dependencies finished.
+  const doneSuggestions = () => {
+    if (self) return doneDateSuggestions(plan, self, today);
+    const m = creating ? plan.milestoneById(creating.milestone) : undefined;
+    return m?.target && m.target <= today ? [{ label: `the ${m.id} target`, date: m.target }] : [];
+  };
   const fields: Array<FormField<TaskForm>> = [
     {
       icon: "edit",
@@ -359,6 +371,8 @@ function taskFields(
       edit: async (s) => {
         const v = await askStatus("Status", s.status);
         if (!v) return;
+        // A date belongs to the status it was given for.
+        if (v !== s.status) s.statusDate = "";
         s.status = v;
         if (v === "blocked" && self?.kind !== "step") {
           const reason = await askText({
@@ -368,6 +382,30 @@ function taskFields(
           });
           if (reason !== undefined) s.blocked = reason;
         }
+      },
+    },
+    {
+      icon: "calendar",
+      label: "Done on",
+      value: (s) => s.statusDate || "today",
+      visible: (s) => s.status === "done",
+      detail: "For work entered afterwards: the day it was finished",
+      changed: changed("statusDate"),
+      edit: async (s) => {
+        const v = await askPastDate("Done on", today, doneSuggestions(), s.statusDate || undefined);
+        if (v !== undefined) s.statusDate = v;
+      },
+    },
+    {
+      icon: "calendar",
+      label: "Started on",
+      value: (s) => s.statusDate || (self?.started ?? "today"),
+      visible: (s) => s.status === "doing" || s.status === "review",
+      detail: "For work entered afterwards: the day work began",
+      changed: changed("statusDate"),
+      edit: async (s) => {
+        const v = await askPastDate("Started on", today, [], s.statusDate || undefined);
+        if (v !== undefined) s.statusDate = v;
       },
     },
     {
@@ -416,7 +454,7 @@ function taskFields(
       icon: "history",
       label: "Actual hours",
       value: (s) => s.act,
-      visible: () => self !== undefined,
+      visible: (s) => self !== undefined || s.status !== "todo",
       changed: changed("act"),
       edit: async (s) => {
         const v = await askDuration("Actual hours spent", s.act, hpd);
@@ -472,10 +510,29 @@ function taskFields(
       },
     },
     {
+      icon: "hourglass",
+      label: "Remaining",
+      value: (s) => remainingLabel(s, hpd),
+      visible: (s) => s.status === "doing" || s.status === "review" || s.status === "blocked",
+      detail: "Work still to do; written as @progress of the estimate",
+      edit: async (s) => {
+        const est = parseDuration(s.est, hpd);
+        if (!est) {
+          void vscode.window.showWarningMessage("Planner: set the estimate first.");
+          return;
+        }
+        const v = await askDuration("Remaining work", "", hpd);
+        const left = v ? parseDuration(v, hpd) : undefined;
+        if (left === undefined) return;
+        const pct = Math.max(0, Math.min(100, Math.round((1 - left / est) * 1000) / 10));
+        s.progress = `${pct}%`;
+      },
+    },
+    {
       icon: "pie-chart",
       label: "Progress",
       value: (s) => s.progress,
-      visible: () => self !== undefined,
+      visible: (s) => self !== undefined || s.status !== "todo",
       changed: changed("progress"),
       edit: async (s) => {
         const v = await askProgress("Progress", s.progress);
@@ -522,12 +579,14 @@ function ownerName(plan: Plan, id: string | undefined): string | undefined {
 }
 
 function newTaskFields(s: TaskForm, today: string): NewTaskFields {
-  const dates = Object.fromEntries(statusDateAttrs(s.status, today));
+  const dates = Object.fromEntries(statusDateAttrs(s.status, s.statusDate || today));
   return {
     title: s.title,
     status: s.status,
     attrs: {
       est: s.est,
+      act: s.act || undefined,
+      progress: s.progress || undefined,
       owner: s.owner,
       dep: s.deps.join(","),
       start: s.start,
@@ -556,6 +615,7 @@ function formFromValues(v: TaskValues | undefined, target: AddTaskTarget | undef
     tags: v?.tags ?? [],
     blocked: "",
     note: v?.note ?? "",
+    statusDate: "",
   };
 }
 
@@ -701,7 +761,7 @@ async function createTasks(
       const fields = taskFields(state, undefined, undefined, {
         milestone: milestone.id,
         parent,
-      }).filter((f) => f.label !== "Status" || target?.status);
+      });
       const action = await showForm({
         title: `Add task – ${where}`,
         state: form,
@@ -759,7 +819,22 @@ function formFromTask(t: Task): TaskForm {
     tags: t.tags.map((x) => x.tag),
     blocked: t.blocked ?? "",
     note: "",
+    statusDate:
+      t.status === "done"
+        ? (t.done ?? "")
+        : t.status === "doing" || t.status === "review"
+          ? (t.started ?? "")
+          : "",
   };
+}
+
+/** The work still to do on a form's task: estimate minus actual hours, or by its progress. */
+function remainingLabel(s: TaskForm, hpd: number): string | undefined {
+  const est = parseDuration(s.est, hpd);
+  if (!est) return undefined;
+  const progress = s.progress ? parsePercent(s.progress) : undefined;
+  const act = (s.act && parseDuration(s.act, hpd)) || 0;
+  return formatHours(progress !== undefined ? est * (1 - progress) : Math.max(0, est - act));
 }
 
 /** The TaskChange between the original form and the edited one. */
@@ -780,6 +855,8 @@ function diffTask(a: TaskForm, b: TaskForm): TaskChange {
   attr("due", a.due, b.due);
   attr("prio", a.prio, b.prio === "med" ? "" : b.prio);
   attr("progress", a.progress, b.progress);
+  if (b.statusDate && (a.statusDate !== b.statusDate || a.status !== b.status))
+    change.statusDate = b.statusDate;
   change.removeTags = a.tags.filter((t) => !b.tags.includes(t));
   change.addTags = b.tags.filter((t) => !a.tags.includes(t));
   return change;
@@ -840,7 +917,12 @@ export async function editTaskCommand(
   if (!current || !file) return false;
   const edits = [
     ...changeTask(file.lines, current, edit, state.today),
-    ...(status ? statusSideEdits(file.lines, current, status, state.today, effects) : []),
+    ...(status
+      ? statusSideEdits(file.lines, current, status, state.today, {
+          ...effects,
+          ...(edit.statusDate ? { date: edit.statusDate } : {}),
+        })
+      : []),
   ];
   if (edits.length === 0) return false;
   return applyAndReport(

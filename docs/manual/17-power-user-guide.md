@@ -246,6 +246,8 @@ Open the Command Palette and type `Planner:`:
 | Set status…                                                       | Picks a status for the task under the cursor.                            | Plan file             |
 | To do / In progress / Review / test / Blocked… / Done / Cancelled | Sets that status directly.                                               | Plan file             |
 | Cycle status                                                      | Next status (Cmd+Option+X).                                              | Plan file             |
+| Mark done on…                                                     | Done on a day you choose (work finished earlier), or a new done date.    | Plan file             |
+| Mark open tasks done…                                             | Every open task of a milestone or section done on one day.               | Plan open             |
 | Assign owner…                                                     | Writes `@owner`.                                                         | Plan file, views      |
 | Set estimate…                                                     | Writes `@est`.                                                           | Plan file, views      |
 | Assign IDs                                                        | Adds missing ids to the active plan file (or all files).                 | Plan open             |

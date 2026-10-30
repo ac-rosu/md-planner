@@ -12,7 +12,8 @@ rules as the VS Code extension.
   change only what they must, and refuse a change that would break the plan, saying why.
 - Never work out or write dates the scheduler computes (when tasks start and finish, milestone
   forecasts): ask get_schedule, list_tasks or get_dashboard. Write a date only where the user gives
-  one: @start, @due, a milestone target, time off.
+  one: @start, @due, a milestone target, time off, and the real day past work was done or began
+  ('done' / 'started' when entering work that happened before; otherwise they are today).
 - Never invent task ids: the tools assign them. Link tasks created in one call with refs.
 - A parent's @est is a budget that its subtasks without an estimate share. Change statuses with
   update_task or update_tasks: they write @started/@done and move parents along.

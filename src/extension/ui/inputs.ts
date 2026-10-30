@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import {
   type DateSuggestion,
   dateSuggestions,
+  pastDateSuggestions,
   formatDate,
   isValidDate,
   parseDate,
@@ -120,6 +121,44 @@ export async function askDate(
     value: current,
     placeHolder: "YYYY-MM-DD",
     validate: (v) => (isValidDate(v) ? undefined : "Use YYYY-MM-DD, for example 2026-11-20"),
+  });
+}
+
+/**
+ * The date work was done or started on, for entering it afterwards: today first, then `extra`
+ * (the milestone target, when its dependencies finished) and the days just behind today, or any
+ * date up to today.
+ */
+export async function askPastDate(
+  title: string,
+  today: string,
+  extra: Array<{ label: string; date: string }> = [],
+  current?: string
+): Promise<string | undefined> {
+  const seen = new Set<string>();
+  const choices: Array<Choice<string>> = [];
+  const add = (label: string, date: string) => {
+    if (seen.has(date) || date > today) return;
+    seen.add(date);
+    choices.push({ label: date, description: label, value: date });
+  };
+  add("today", today);
+  for (const e of extra) add(e.label, e.date);
+  for (const s of pastDateSuggestions(today)) add(s.label, s.date);
+  choices.push({ label: "$(edit) Other date…", value: "\u0000custom" });
+  const pick = await askChoice(title, choices, current, current ? `Now: ${current}` : undefined);
+  if (!pick) return undefined;
+  if (pick.value !== "\u0000custom") return pick.value;
+  return askText({
+    title,
+    value: current,
+    placeHolder: "YYYY-MM-DD",
+    validate: (v) =>
+      !isValidDate(v)
+        ? "Use YYYY-MM-DD, for example 2026-06-12"
+        : v > today
+          ? `That is after today (${today}): work cannot be done in the future.`
+          : undefined,
   });
 }
 

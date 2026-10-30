@@ -130,6 +130,12 @@ The agent turns this into one **build_plan** call. The server then:
 A `dryRun` first checks a large plan without writing. MCP clients that support prompts also offer
 **plan_from_text**, which gives the agent these instructions together with the plan format.
 
+For a project that is already under way, say what is finished and when ("discovery was done on 10
+July; the inventory started on 1 July and is half done"). The agent gives each task its real
+`done` and `started` day (in `build_plan`, `create_tasks`, `update_task` and `update_tasks`), so
+the burn-up and the status report show the work when it happened; without them the tools write
+today. A day after today, or a start after the finish, is refused.
+
 ### Tools
 
 **Start and format**

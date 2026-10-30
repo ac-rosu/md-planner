@@ -28,7 +28,11 @@ it says.
    Ask `get_schedule`, `list_tasks`, `get_task` or `get_dashboard`; without the tools, the
    command-line tool (see "Editing the files yourself"): `schedule --plan plan --json`. Write a date only where the user
    gives one: a fixed start (`@start`, "not before"), a deadline (`@due`), a milestone target, time
-   off, project dates.
+   off, project dates, and the real day past work was finished or began.
+   Entering a project that is already under way, give finished work its real day: `done` (and
+   `started`) in `create_tasks`, `build_plan`, `update_task` or `update_tasks`. Without them the
+   tools write today, and the burn-up, the status report and the late flags then show months of
+   work as done this week.
 2. **Ids are references.** `^T123` is what `@dep:T123` points at. Never invent or reuse an id: new
    tasks get theirs from the tools. Link tasks created in one call with refs (`create_tasks`,
    `build_plan`). Never copy a task line with its id.

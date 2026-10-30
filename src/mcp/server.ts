@@ -82,6 +82,14 @@ const taskSpec: z.ZodType<TaskSpec> = z.lazy(() =>
     due: date.optional().describe("Deadline"),
     priority: priority.optional(),
     progress: z.string().optional().describe("e.g. 40%"),
+    done: date
+      .optional()
+      .describe(
+        "Status done: the day it was really finished (past work entered now); default today"
+      ),
+    started: date
+      .optional()
+      .describe("The day work really began (past or ongoing work entered now); default today"),
     blocked: z.string().optional().describe("Reason, with status blocked"),
     attributes: z
       .record(z.string(), z.string())
@@ -143,6 +151,16 @@ const taskUpdate = {
   due: z.string().optional(),
   priority: priority.optional(),
   progress: z.string().optional(),
+  done: z
+    .string()
+    .optional()
+    .describe(
+      "With status done (or on a done task): the day it was really finished, YYYY-MM-DD, not after today; default today"
+    ),
+  started: z
+    .string()
+    .optional()
+    .describe("The day work really began, YYYY-MM-DD, not after today; default today"),
   addTags: strings.optional(),
   removeTags: strings.optional(),
   dependsOn: strings
@@ -444,7 +462,7 @@ export function createServer(tools: PlannerTools): McpServer {
   );
   tool(
     "update_task",
-    "Change a task or punch item: status (writes @started/@done; parents follow their subtasks unless planner.parentStatus is off; finishing a task with open subtasks needs 'subtasks'), title, estimate, actual, owner, fixed start, due, priority, progress, blocked reason, tags, dependencies (replace, add, remove), any attribute, notes. '' removes a value.",
+    "Change a task or punch item: status (writes @started/@done, today unless 'done'/'started' give the real day for past work; parents follow their subtasks unless planner.parentStatus is off; finishing a task with open subtasks needs 'subtasks'), title, estimate, actual, owner, fixed start, due, priority, progress, blocked reason, tags, dependencies (replace, add, remove), any attribute, notes. '' removes a value.",
     taskUpdate,
     (a) => updateTasks(tools, { updates: [a as never] })
   );

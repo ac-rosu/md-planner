@@ -75,6 +75,11 @@ export interface TaskChange {
   attrs?: Record<string, string | undefined>;
   addTags?: string[];
   removeTags?: string[];
+  /**
+   * The day the status was reached, given by the user: `@done` for done, `@started` for in
+   * progress or review (work entered afterwards). Replaces the date that is there.
+   */
+  statusDate?: string;
 }
 
 /** Applies a form's changes to a task line as one minimal edit. */
@@ -86,10 +91,16 @@ export function changeTask(
 ): TextEdit[] {
   return editTaskLine(lines, task, (e) => {
     if (change.title !== undefined) e.setTitle(change.title.replace(/\s+/g, " ").trim());
+    const date = change.statusDate || undefined;
     if (change.status !== undefined && change.status !== task.status)
-      applyStatus(e, task, change.status, today, { blockedReason: change.blockedReason });
+      applyStatus(e, task, change.status, today, { blockedReason: change.blockedReason, date });
     else if (change.blockedReason !== undefined && task.status === "blocked")
       e.setAttr("blocked", change.blockedReason || undefined);
+    // Only the date changes (a done task's day corrected).
+    if (date && (change.status === undefined || change.status === task.status)) {
+      if (task.status === "done") e.setAttr("done", date);
+      if (task.status === "doing" || task.status === "review") e.setAttr("started", date);
+    }
     for (const [key, value] of Object.entries(change.attrs ?? {}))
       e.setAttr(key, value === "" ? undefined : value);
     for (const tag of change.removeTags ?? []) e.removeTag(tag.replace(/^#/, ""));

@@ -18,6 +18,8 @@ export const COMMAND_COVERAGE: Record<string, Coverage> = {
   "planner.status.done": { tools: ["update_task"] },
   "planner.status.cancelled": { tools: ["update_task"] },
   "planner.cycleStatus": { tools: ["update_task"] },
+  "planner.doneOn": { tools: ["update_task"] },
+  "planner.markOpenDone": { tools: ["update_tasks"] },
   "planner.assignOwner": { tools: ["update_task"] },
   "planner.addEstimate": { tools: ["update_task"] },
   "planner.assignIds": { tools: ["assign_ids"] },

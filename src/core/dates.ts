@@ -224,6 +224,26 @@ export function daysOffSuggestions(
   return out;
 }
 
+/**
+ * Dates that work was done on, for entering it afterwards (`@done`, `@started`): today and the
+ * days just behind it. Never a date after today.
+ */
+export function pastDateSuggestions(today: string): DateSuggestion[] {
+  const t = parseDate(today);
+  if (t === undefined) return [];
+  const wd = isoWeekday(t);
+  // The Friday before today (a week back on a Friday), and the last day of the month before.
+  const lastFriday = t - (wd > 5 ? wd - 5 : wd + 2);
+  const d = new Date(t * MS_PER_DAY);
+  const endOfLastMonth = dayOf(d.getUTCFullYear(), d.getUTCMonth(), 0);
+  return [
+    { label: "today", date: formatDate(t) },
+    { label: "yesterday", date: formatDate(t - 1) },
+    { label: "last Friday", date: formatDate(lastFriday) },
+    { label: "end of last month", date: formatDate(endOfLastMonth) },
+  ];
+}
+
 export function dateSuggestions(today: string): DateSuggestion[] {
   const t = parseDate(today);
   if (t === undefined) return [];

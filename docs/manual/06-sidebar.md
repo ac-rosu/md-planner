@@ -66,25 +66,27 @@ Right-click a task:
 
 ![The task context menu with the Set status submenu](images/sidebar-context-menu.png)
 
-| Item             | What it does                                                                            |
-| ---------------- | --------------------------------------------------------------------------------------- |
-| Edit task…       | The form with every field ([Edit a task](03-add-and-edit.md#edit-a-task)).              |
-| Add subtask…     | A new task indented under this one.                                                     |
-| Set status ▸     | To do, In progress, Review / test, Blocked… (asks for a reason), Done, Cancelled.       |
-| Assign owner…    | Picks a person from `team.md`, or _No owner_ to remove `@owner`.                        |
-| Set estimate…    | Writes `@est` (`4h`, `1.5d`, `1w` …).                                                   |
-| Start timer      | Starts timing this task ([Time tracking](11-time-tracking.md)).                         |
-| Log time…        | Adds hours to `@act`.                                                                   |
-| Planner AI ▸     | Break down task, Estimate, Suggest owners. Hidden when `planner.ai.provider` is `none`. |
-| Move task to…    | Moves the task (with subtasks and notes) to another milestone or section; its id stays. |
-| Reorganize ▸     | Move task up / down, Indent task (subtask of the task above), Outdent task.             |
-| Open Gantt       | Opens the Gantt with this task selected and scrolled into view.                         |
-| Open Kanban      | Opens the board with this card focused.                                                 |
-| Delete task…     | Deletes the task, its subtasks and notes, and the dependencies on it, after asking.     |
-| Reveal in editor | Opens the task's line.                                                                  |
+| Item             | What it does                                                                                                   |
+| ---------------- | -------------------------------------------------------------------------------------------------------------- |
+| Edit task…       | The form with every field ([Edit a task](03-add-and-edit.md#edit-a-task)).                                     |
+| Add subtask…     | A new task indented under this one.                                                                            |
+| Set status ▸     | To do, In progress, Review / test, Blocked… (asks for a reason), Done, Mark done on… (another day), Cancelled. |
+| Assign owner…    | Picks a person from `team.md`, or _No owner_ to remove `@owner`.                                               |
+| Set estimate…    | Writes `@est` (`4h`, `1.5d`, `1w` …).                                                                          |
+| Start timer      | Starts timing this task ([Time tracking](11-time-tracking.md)).                                                |
+| Log time…        | Adds hours to `@act`.                                                                                          |
+| Planner AI ▸     | Break down task, Estimate, Suggest owners. Hidden when `planner.ai.provider` is `none`.                        |
+| Move task to…    | Moves the task (with subtasks and notes) to another milestone or section; its id stays.                        |
+| Reorganize ▸     | Move task up / down, Indent task (subtask of the task above), Outdent task.                                    |
+| Open Gantt       | Opens the Gantt with this task selected and scrolled into view.                                                |
+| Open Kanban      | Opens the board with this card focused.                                                                        |
+| Delete task…     | Deletes the task, its subtasks and notes, and the dependencies on it, after asking.                            |
+| Reveal in editor | Opens the task's line.                                                                                         |
 
-Right-click a **milestone** for Add task…, Add section…, Edit milestone…, Open milestone file and
-Delete milestone…; right-click a **section** for Add task….
+Right-click a **milestone** for Add task…, Add section…, Edit milestone…, Mark open tasks done…,
+Open milestone file and Delete milestone…; right-click a **section** for Add task… and Mark open
+tasks done… (for a phase that finished before it was entered, see
+[A project already under way](01-getting-started.md#a-project-already-under-way)).
 
 **Drag and drop** a task to reorganize the plan: onto a section or a milestone moves it there (a
 milestone with sections asks which one); onto another task asks whether it goes before it, after

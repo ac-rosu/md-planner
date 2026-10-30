@@ -4,12 +4,14 @@ import { budgetSummary } from "../../core/budget";
 import * as vscode from "vscode";
 import {
   dateSuggestions,
+  pastDateSuggestions,
   daysOffSuggestions,
   formatDate,
   parseDate,
   weekStart,
 } from "../../core/dates";
-import { TEST_TYPES } from "../../core/model";
+import { type Task, TEST_TYPES } from "../../core/model";
+import { doneDateSuggestions } from "../../core/queries";
 import { estimateHours } from "../../core/rollup";
 import { MILESTONE_STATUSES } from "../../core/resolve";
 import { matchCheckbox } from "../../core/parser/taskLine";
@@ -103,7 +105,8 @@ export class PlanCompletionProvider implements vscode.CompletionItemProvider {
         key,
         partial,
         new vscode.Range(position.line, valueStart, position.line, position.character),
-        lineText
+        lineText,
+        file?.items.find((t) => t.line === position.line)
       );
     }
     // @key
@@ -153,7 +156,8 @@ export class PlanCompletionProvider implements vscode.CompletionItemProvider {
     key: string,
     partial: string,
     range: vscode.Range,
-    lineText: string
+    lineText: string,
+    lineTask?: Task
   ): vscode.CompletionItem[] {
     const plan = this.service.plan;
     const simple = (
@@ -203,10 +207,28 @@ export class PlanCompletionProvider implements vscode.CompletionItemProvider {
             return item;
           });
       }
+      case "started":
+      case "done": {
+        // What already happened: today and the days behind it, never a future day; for @done
+        // also the milestone target once it passed and when the dependencies finished.
+        const today = this.service.today();
+        const dates = [
+          ...(key === "done" && lineTask ? doneDateSuggestions(plan, lineTask, today) : []),
+          ...pastDateSuggestions(today),
+        ].filter((d, i, all) => all.findIndex((x) => x.date === d.date) === i);
+        return dates.map((s, i) => {
+          const item = new vscode.CompletionItem(
+            { label: s.date, description: s.label },
+            vscode.CompletionItemKind.Value
+          );
+          item.range = range;
+          item.filterText = `${s.date} ${s.label}`;
+          item.sortText = String(i).padStart(2, "0");
+          return item;
+        });
+      }
       case "start":
       case "due":
-      case "started":
-      case "done":
         return dateSuggestions(this.service.today()).map((s, i) => {
           const item = new vscode.CompletionItem(
             { label: s.date, description: s.label },

@@ -30,6 +30,9 @@ export interface TaskSpec {
   priority?: Priority;
   /** Share done, e.g. 40%. */
   progress?: string;
+  /** The day it was really finished / work began (past work entered now); default today. */
+  done?: string;
+  started?: string;
   /** Reason, for status blocked. */
   blocked?: string;
   /** Any other @key:value attribute (eq, test, src, custom fields); "" is ignored. */
@@ -180,6 +183,14 @@ export function buildTasks(
     }
     const status = s.status ?? "todo";
     if (!STATUSES.includes(status)) errors.push(`${name}: invalid status "${s.status}".`);
+    // Real dates of past work: valid, not after today, a start not after the finish.
+    if (s.done !== undefined) attrs.done = s.done;
+    if (s.started !== undefined) attrs.started = s.started;
+    for (const key of STATUS_DATES)
+      if (attrs[key] !== undefined && isValidDate(attrs[key]!) && attrs[key]! > today)
+        errors.push(`${name}: the ${key} date ${attrs[key]} is after today (${today}).`);
+    if (attrs.started && attrs.done && attrs.started > attrs.done)
+      errors.push(`${name}: started ${attrs.started} is after done ${attrs.done}.`);
     // A start or finish date given (a task done last week) is kept; only a missing one is today.
     for (const key of STATUS_DATES) {
       const value = attrs[key];

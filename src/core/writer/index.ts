@@ -39,6 +39,12 @@ export function editTaskLine(
 export interface StatusOptions {
   /** Reason written as `@blocked:"…"` when the new status is blocked. */
   blockedReason?: string;
+  /**
+   * The date the change happened on, given by the user (work entered afterwards): `@done` (done)
+   * or `@started` (in progress, review) is set to it, also replacing one that is there. Without
+   * it, the date is `today` and an existing one is kept.
+   */
+  date?: string;
 }
 
 /**
@@ -60,6 +66,38 @@ export function setStatus(
   ];
 }
 
+/**
+ * Marks the open tasks among `tasks` and their subtasks done on `date` (work entered afterwards,
+ * "Mark open tasks done…"): one edit per task line, so parents and subtasks never get two.
+ * A task started after `date` is done on its `@started`, so it never ends before it began.
+ * Done and cancelled tasks are left as they are.
+ */
+export function markOpenDone(
+  lines: TextLines,
+  tasks: Task[],
+  date: string,
+  today: string
+): { edits: TextEdit[]; marked: Task[]; startedLater: Task[] } {
+  const edits: TextEdit[] = [];
+  const marked: Task[] = [];
+  const startedLater: Task[] = [];
+  const seen = new Set<Task>();
+  const visit = (t: Task) => {
+    if (seen.has(t) || t.status === "cancelled") return;
+    seen.add(t);
+    if (isOpen(t.status)) {
+      const day = t.started && t.started > date ? t.started : date;
+      if (day !== date) startedLater.push(t);
+      edits.push(...editTaskLine(lines, t, (e) => applyStatus(e, t, "done", today, { date: day })));
+      marked.push(t);
+    }
+    // Under a done task too: its open subtasks are what is left to tick.
+    t.children.forEach(visit);
+  };
+  tasks.forEach(visit);
+  return { edits, marked, startedLater };
+}
+
 /** The status change of setStatus() on a line editor, so it can be combined with other edits. */
 export function applyStatus(
   e: TaskLineEditor,
@@ -70,11 +108,12 @@ export function applyStatus(
 ): void {
   e.setStatusChar(STATUS_CHAR[status]);
   if (task.kind === "step") return;
-  if ((status === "doing" || status === "review") && !e.hasAttr("started"))
-    e.setAttr("started", today);
+  const given = options.date;
+  if ((status === "doing" || status === "review") && (given || !e.hasAttr("started")))
+    e.setAttr("started", given ?? today);
   if (status === "todo" && e.hasAttr("started") && !hasLoggedWork(task))
     e.setAttr("started", undefined);
-  if (status === "done" && !e.hasAttr("done")) e.setAttr("done", today);
+  if (status === "done" && (given || !e.hasAttr("done"))) e.setAttr("done", given ?? today);
   if (status !== "done" && e.hasAttr("done") && status !== "cancelled")
     e.setAttr("done", undefined);
   if (status === "blocked" && options.blockedReason !== undefined)
@@ -93,6 +132,8 @@ export interface StatusEffects {
    * parent is done when its last subtask is, and a done parent reopens when a subtask reopens.
    */
   rollUp?: boolean;
+  /** The date the change happened on (see StatusOptions.date): also for subtasks and parents. */
+  date?: string;
 }
 
 /**
@@ -108,11 +149,16 @@ export function statusSideEdits(
   effects: StatusEffects
 ): TextEdit[] {
   if (task.kind === "step") return [];
+  // A date given for the change is the day of everything it brings along.
+  const day = effects.date ?? today;
   const next = new Map<Task, Status>([[task, status]]);
   // The status dates of the tasks that change, as applyStatus leaves them.
-  const dates = new Map<Task, StatusDates>([[task, datesAfter(task, status, today)]]);
+  const own = datesAfter(task, status, day);
+  if (effects.date && status === "done") own.done = effects.date;
+  if (effects.date && (status === "doing" || status === "review")) own.started = effects.date;
+  const dates = new Map<Task, StatusDates>([[task, own]]);
   const edits: TextEdit[] = [];
-  const change = (t: Task, to: Status, date = today) => {
+  const change = (t: Task, to: Status, date = day) => {
     next.set(t, to);
     dates.set(t, datesAfter(t, to, date));
     edits.push(...setStatus(lines, t, to, date));
@@ -141,7 +187,7 @@ export function statusSideEdits(
     // far as their dates tell (and not done before its own @started); else today.
     const done = kids.map((c) => dated(c).done).filter((d) => d !== undefined);
     const started = kids.map((c) => dated(c).started).filter((d) => d !== undefined);
-    let date = today;
+    let date = day;
     if (to === "done" && done.length === kids.length) {
       const last = done.reduce((a, b) => (b > a ? b : a));
       if (!p.started || p.started <= last) date = last;

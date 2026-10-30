@@ -131,6 +131,27 @@ Later the extension adds three folders by itself:
 | `reports/`   | Exported reports and data files                      | No (ignored)   |
 | `baselines/` | Saved schedule snapshots, one JSON file per baseline | Yes            |
 
+## A project already under way
+
+You can start using the planner in the middle of a project. Set the project's **Start date** to
+when it really began, then enter the work so far with the dates it happened, so the burn-up, the
+status report and the late flags tell the truth (otherwise finished work counts as done today):
+
+1. **A whole phase that is finished**: right-click its milestone (or a section) in the Milestones
+   view → **Mark open tasks done…**, and choose the day, for example the milestone's target. Every
+   open task in it is done on that day; cancelled tasks stay as they are.
+2. **A single task that is finished**: right-click it → **Set status** → **Mark done on…** (also
+   in the editor, on the Kanban board and on the Gantt), or choose _Done_ in the task form and set
+   **Done on**.
+3. **Work in progress**: choose _In progress since…_ in the status list, or in the task form set
+   **Started on** and **Remaining** (what is left of the estimate).
+4. **Tasks typed by hand** as `- [x] …`: the editor marks each one without `@done`; its quick fix
+   offers the milestone target, the day its dependencies finished, another date, or the same day
+   for all of them in the file.
+
+An AI agent can do the same with the MCP server: tell it what is done and when ([MCP
+server](15-mcp-and-cli.md#let-an-agent-build-the-plan-from-text)).
+
 ## A plan in another folder
 
 The plan folder is `plan/` at the root of the workspace. To use another folder, set

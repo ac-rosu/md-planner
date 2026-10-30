@@ -309,6 +309,18 @@
         "category": "Planner"
       },
       {
+        "command": "planner.doneOn",
+        "title": "Mark done on…",
+        "category": "Planner",
+        "icon": "$(calendar)"
+      },
+      {
+        "command": "planner.markOpenDone",
+        "title": "Mark open tasks done…",
+        "category": "Planner",
+        "icon": "$(check-all)"
+      },
+      {
         "command": "planner.cycleStatus",
         "title": "Cycle status",
         "category": "Planner",
@@ -724,8 +736,12 @@
           "group": "1@4"
         },
         {
-          "command": "planner.status.cancelled",
+          "command": "planner.doneOn",
           "group": "1@5"
+        },
+        {
+          "command": "planner.status.cancelled",
+          "group": "1@6"
         }
       ],
       "view/title": [
@@ -920,6 +936,11 @@
           "command": "planner.addSection",
           "when": "view == planner.milestones && viewItem == milestone",
           "group": "0_add@2"
+        },
+        {
+          "command": "planner.markOpenDone",
+          "when": "view == planner.milestones && viewItem =~ /^(milestone|section)$/",
+          "group": "1_edit@5"
         },
         {
           "command": "planner.editMilestone",
@@ -1169,6 +1190,14 @@
         {
           "command": "planner.status.cancelled",
           "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.doneOn",
+          "when": "planner.isPlanFile"
+        },
+        {
+          "command": "planner.markOpenDone",
+          "when": "planner.hasPlan"
         },
         {
           "command": "planner.setStatus",
@@ -1524,6 +1553,11 @@
           "command": "planner.addSection",
           "when": "webviewId == 'planner.gantt' && webviewSection == 'milestone'",
           "group": "0_add@2"
+        },
+        {
+          "command": "planner.markOpenDone",
+          "when": "webviewId == 'planner.gantt' && webviewSection =~ /^(milestone|section)$/",
+          "group": "1_edit@5"
         },
         {
           "command": "planner.editMilestone",

@@ -4,6 +4,15 @@
 
 Safer editing, from the pilot users' feedback.
 
+- A project already under way can be entered with the days work really happened, so the burn-up,
+  the status report and the late flags are right: **Mark done on…** (in the Set status menu of
+  the tree, the editor, the Kanban board and the Gantt) and _Done on…_ / _In progress since…_ in
+  the status list; **Mark open tasks done…** on a milestone or section for a finished phase;
+  **Done on**, **Started on** and **Remaining** in the task form, whose Add form now has Status;
+  quick fixes for a done task without a date (the milestone target, when its dependencies
+  finished, another date, all of the file at once); past dates in `@done:` and `@started:`
+  completion; `done` and `started` for AI agents. Ticking a task still means today.
+
 - Projects entered after the fact: done tasks with only logged hours count in progress and the
   burn-up; a done task without `@started` spreads its hours over the days before `@done` instead
   of one day; finished milestones are no longer listed as risks; in-progress work is not "starting

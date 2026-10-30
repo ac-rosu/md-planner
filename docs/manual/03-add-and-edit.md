@@ -18,10 +18,11 @@ Most actions can be started from several places. Use whichever is closest to whe
 | Add a subtask                  | Right-click a task → **Add subtask…**                                                                    | Right-click the task line → **Add subtask…**                         | Right-click a card or bar → Add subtask…                                          |
 | Edit every field of a task     | ✎ on the task row                                                                                        | **Edit** above the task; right-click → **Edit task…**                | Double-click a card or press F2; Gantt edit dialog → **All fields…**; right-click |
 | Change the owner               | 👤 on the task row                                                                                       | The owner (**Sam** or **Assign owner**) above the task               | Click the owner on a card; Gantt edit dialog                                      |
-| Change the status              | ↻ on the task row (next status); right-click → **Set status**                                            | Hover the checkbox; Cmd+Option+X; right-click → Set status           | Drag the card to another column                                                   |
+| Change the status              | ↻ on the task row (next status); right-click → **Set status** (also **Mark done on…**)                   | Hover the checkbox; Cmd+Option+X; right-click → Set status           | Drag the card to another column                                                   |
 | Move a task                    | Right-click → **Move task to…**; drag it onto a task, section or milestone                               | Right-click → **Move task to…**                                      | Right-click → Move task to…                                                       |
 | Reorder, make a subtask        | Right-click → **Reorganize ▸**; Option+↑ / ↓ / → / ←                                                     | Option+↑ / Option+↓ on the task line; right-click → **Reorganize ▸** | –                                                                                 |
 | Delete a task                  | Right-click → **Delete task…**                                                                           | Right-click → **Delete task…**                                       | Right-click → Delete task…                                                        |
+| Mark a finished phase done     | Right-click a milestone or section → **Mark open tasks done…**                                           | –                                                                    | Gantt: right-click a milestone or section row                                     |
 | Add a section                  | Right-click a milestone → **Add section…**                                                               | **Add section** above the milestone heading                          | Gantt: right-click a milestone → Add section…                                     |
 | Add a milestone                | The milestone button in the Milestones toolbar                                                           | –                                                                    | –                                                                                 |
 | Edit a milestone               | ✎ on the milestone row                                                                                   | **Edit milestone** above the milestone heading                       | Gantt: right-click a milestone → Edit milestone…                                  |
@@ -153,6 +154,9 @@ Gantt's edit dialog all open the same form. Its fields:
 | -------------- | ----------------------------------------------------------------------------------- |
 | Title          | The text of the line.                                                               |
 | Status         | The checkbox, plus `@started` / `@done` dates.                                      |
+| Done on        | `@done` (while the status is Done): today, or the day it really finished.           |
+| Started on     | `@started` (in progress or review): the day work really began.                      |
+| Remaining      | The work still to do (in progress), written as `@progress` of the estimate.         |
 | Blocked reason | `@blocked:"…"` (shown while the status is Blocked).                                 |
 | Owner          | `@owner` (shows the inherited owner when the task has none).                        |
 | Estimate       | `@est`.                                                                             |
@@ -166,6 +170,13 @@ Gantt's edit dialog all open the same form. Its fields:
 
 Only the characters that change are touched: comments, unknown attributes and notes stay as they
 are. Notes and free text are edited in the file: **More → Open in editor**.
+
+The **Add task** form has the same Status field, so finished or half-done work is entered in one
+go: choose _Done_ and its **Done on** day, or _In progress_ with **Started on**, **Actual hours**
+and **Remaining**. **Done on** and **Started on** offer today, the milestone target once it has
+passed, the day the task's dependencies finished, yesterday, last Friday and the end of last month,
+or any earlier date; never a day after today. See
+[A project already under way](01-getting-started.md#a-project-already-under-way).
 
 ### Subtasks, move and delete
 

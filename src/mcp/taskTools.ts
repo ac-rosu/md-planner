@@ -141,6 +141,9 @@ export interface TaskUpdate {
   due?: string;
   priority?: Priority;
   progress?: string;
+  /** The day it was really finished (status done) / work began; default today. */
+  done?: string;
+  started?: string;
   addTags?: string[];
   removeTags?: string[];
   /** Replaces the dependencies (ids, optional lag T101+2d); [] removes them. */
@@ -172,6 +175,19 @@ export function stageTaskUpdate(
     if (!cond) errors.push(`${u.id}: ${msg}`);
   };
   if (u.status !== undefined) check(STATUSES.includes(u.status), `invalid status "${u.status}".`);
+  for (const [key, value] of [
+    ["done", u.done],
+    ["started", u.started],
+  ] as const)
+    if (value !== undefined) {
+      check(isValidDate(value), `invalid ${key} date "${value}" (YYYY-MM-DD).`);
+      check(!isValidDate(value) || value <= today, `the ${key} date ${value} is after today.`);
+    }
+  if (u.done !== undefined)
+    check(
+      (u.status ?? t.status) === "done",
+      `a done date needs status done (the task is ${u.status ?? t.status}).`
+    );
   if (u.estimate)
     check(parseDuration(u.estimate, hpd) !== undefined, `invalid estimate "${u.estimate}".`);
   if (u.actual) check(parseDuration(u.actual, hpd) !== undefined, `invalid actual "${u.actual}".`);
@@ -239,9 +255,19 @@ export function stageTaskUpdate(
   const file = plan.file(t.file)!;
   const edits = editTaskLine(file.lines, t, (e) => {
     if (u.title !== undefined) e.setTitle(u.title.replace(/\s+/g, " ").trim());
+    // The real day of past work, for the status it belongs to.
+    const target = u.status ?? t.status;
+    const date = target === "done" ? u.done : u.started;
     if (u.status !== undefined && u.status !== t.status)
-      applyStatus(e, t, u.status, today, { blockedReason: u.blocked || undefined });
+      applyStatus(e, t, u.status, today, { blockedReason: u.blocked || undefined, date });
     else if (u.blocked !== undefined) e.setAttr("blocked", opt(u.blocked));
+    if (u.done !== undefined && (u.status === undefined || u.status === t.status))
+      e.setAttr("done", u.done);
+    if (
+      u.started !== undefined &&
+      (u.status === undefined || u.status === t.status || target === "done")
+    )
+      e.setAttr("started", u.started);
     if (u.estimate !== undefined) e.setAttr("est", opt(u.estimate));
     if (u.actual !== undefined) e.setAttr("act", opt(u.actual));
     if (u.owner !== undefined) e.setAttr("owner", owner);
@@ -259,6 +285,9 @@ export function stageTaskUpdate(
       ...statusSideEdits(file.lines, t, statusChange, today, {
         subtasks: u.subtasks,
         rollUp: options.rollUp,
+        ...((statusChange === "done" ? u.done : u.started)
+          ? { date: statusChange === "done" ? u.done : u.started }
+          : {}),
       })
     );
   if (u.notes !== undefined) edits.push(...setNotes(file.lines, t, [u.notes].flat()));

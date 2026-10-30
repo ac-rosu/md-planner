@@ -26,7 +26,12 @@ import {
   setProperty,
   setStatus,
 } from "../../core/writer";
-import { isFloatingMilestone, isOpenTask, previousMilestone } from "../../core/queries";
+import {
+  doneDateSuggestions,
+  isFloatingMilestone,
+  isOpenTask,
+  previousMilestone,
+} from "../../core/queries";
 import { newTaskFrom } from "../../core/writer/entities";
 import { siblingsOf } from "../../core/writer/structure";
 import { findById, itemAtLine } from "../commands/args";
@@ -329,6 +334,41 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
               true
             )
           );
+          // Work entered afterwards: the day it really finished, as far as the plan tells.
+          const likely = task.kind === "task" ? doneDateSuggestions(plan, task, today) : [];
+          for (const d of likely)
+            actions.push(
+              this.fix(
+                `Add @done:${d.date} (${d.label})`,
+                document,
+                setAttr(file.lines, task, "done", d.date),
+                diagnostic
+              )
+            );
+          if (task.kind === "task")
+            actions.push(
+              this.command(
+                "Add @done… (choose the date)",
+                "planner.doneOn",
+                [taskArg(plan, task)],
+                diagnostic
+              )
+            );
+          // Every done task of the file without a date, at once, on one of those days.
+          const undated = file.items.filter(
+            (t) =>
+              t.kind === task.kind && t.status === "done" && !t.attrs.some((a) => a.key === "done")
+          );
+          if (undated.length > 1)
+            for (const d of [{ label: "today", date: today }, ...likely])
+              actions.push(
+                this.fix(
+                  `Add @done:${d.date} to all ${undated.length} done items without a date in this file (${d.label})`,
+                  document,
+                  undated.flatMap((t) => setAttr(file.lines, t, "done", d.date)),
+                  diagnostic
+                )
+              );
           break;
         }
         case "date-outside-project": {
