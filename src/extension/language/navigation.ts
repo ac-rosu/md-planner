@@ -13,7 +13,7 @@ import {
 } from "../../core/navigation";
 import { milestoneStats, openTasksOf } from "../../core/queries";
 import { estimateHours, remainingHours } from "../../core/rollup";
-import { allIds, renameTaskId } from "../../core/writer";
+import { renameIdProblem, renameTaskId, sharedIdProblem } from "../../core/writer";
 import { itemAtLine, type TaskArg } from "../commands/args";
 import { type PlanService } from "../planService";
 import { type PlannerState } from "../state";
@@ -225,6 +225,9 @@ export class PlanRenameProvider implements vscode.RenameProvider {
     const ref = refAt(this.service, document, position);
     if (!ref || ref.kind !== "task") throw new Error("Only task ids (^T…) can be renamed.");
     if (!this.service.plan.taskById(ref.id)) throw new Error(`Unknown task id ${ref.id}.`);
+    // A copied line keeps the id: renaming would change every copy and every dependency.
+    const shared = sharedIdProblem(this.service.plan, ref.id);
+    if (shared) throw new Error(shared);
     return { range: toRange(ref.range), placeholder: ref.id };
   }
 
@@ -238,7 +241,8 @@ export class PlanRenameProvider implements vscode.RenameProvider {
     const plan = this.service.plan;
     const id = newName.trim().replace(/^\^/, "");
     if (!isValidTaskId(id)) throw new Error(`"${newName}" is not a valid id (e.g. T142).`);
-    if (id !== ref.id && allIds(plan).has(id)) throw new Error(`The id ${id} is already in use.`);
+    const problem = renameIdProblem(plan, ref.id, id);
+    if (problem) throw new Error(problem);
     const changes = renameTaskId(plan, ref.id, id);
     // The rename edits every file that names the id, also ones not open: the same rules as any
     // planner edit (no file that is not UTF-8; a conflicted one only when the user says so).

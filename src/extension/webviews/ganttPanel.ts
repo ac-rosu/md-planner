@@ -7,8 +7,11 @@ import { isOpen, type Task } from "../../core/model";
 import { isLeaf } from "../../core/rollup";
 import {
   describeMove,
+  describeParentEstimates,
   describeResize,
   describeScheduleChange,
+  type ParentEstimate,
+  parentEstimates,
   resizeTo,
   scheduleAfter,
   sharedIdReason,
@@ -25,7 +28,7 @@ import {
   setAttr,
 } from "../../core/writer";
 import {
-  DEFAULT_GANTT_OPTIONS,
+  ganttOptionsFrom,
   type GanttToHost,
   type GanttViewOptions,
   type HostToGantt,
@@ -66,10 +69,8 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
     private readonly baselines: BaselineSource | undefined
   ) {
     super(ctx, "planner.gantt", `Gantt – ${ctx.state.plan.project.name}`, "gantt");
-    this.options = {
-      ...DEFAULT_GANTT_OPTIONS,
-      ...ctx.memento.get<Partial<GanttViewOptions>>(OPTIONS_KEY),
-    };
+    // Checked when read back: a stored value the chart cannot use would break it on every open.
+    this.options = ganttOptionsFrom(ctx.memento.get(OPTIONS_KEY));
     this.disposables.push(ctx.state.onDidUpdate(() => this.sendModel()));
     if (baselines) this.disposables.push(baselines.onDidChange(() => this.sendModel()));
     this.sendModel();
@@ -104,10 +105,11 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
         this.sendModel();
         return;
       case "options": {
+        const options = ganttOptionsFrom(m.options);
         // Zooming is up to the webview: only other options change the model.
-        const zoomOnly = sameExceptZoom(this.options, m.options);
-        this.options = m.options;
-        await this.ctx.memento.update(OPTIONS_KEY, m.options);
+        const zoomOnly = sameExceptZoom(this.options, options);
+        this.options = options;
+        await this.ctx.memento.update(OPTIONS_KEY, options);
         if (!zoomOnly) this.sendModel();
         return;
       }
@@ -193,12 +195,14 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
       whatIf: { task: t, start: snapped },
     });
     const message = describeMove(state.plan, s, after, t, day, snapped);
-    const ok = await this.ctx.history.apply(
-      [{ path: t.file, edits }],
-      `Move ${t.id ?? t.title} to ${date}`
-    );
-    if (ok) this.changed(message);
-    return ok;
+    return this.write([{ path: t.file, edits }], `Move ${t.id ?? t.title} to ${date}`, message);
+  }
+
+  /** Writes a gesture's edits (undoable) and reports them with an Undo button for this edit. */
+  private async write(edits: FileEdit[], label: string, message: string): Promise<boolean> {
+    const { applied, id } = await this.ctx.history.record(edits, label);
+    if (applied && id !== undefined) this.changed(message, id);
+    return applied;
   }
 
   /**
@@ -222,13 +226,11 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
       return false;
     }
     const message = describeResize(state.plan, s, t, r);
-    const parents = r.parents.map((p) => `${p.task.id ?? p.task.title} to ${formatHours(p.est)}`);
-    const ok = await this.ctx.history.apply(
+    return this.write(
       r.edits,
-      `Set ${t.id ?? t.title} estimate to ${formatHours(r.est)}${parents.length ? ` (${parents.join(", ")})` : ""}`
+      `Set ${t.id ?? t.title} estimate to ${formatHours(r.est)}${parentsLabel(r.parents)}`,
+      message
     );
-    if (ok) this.changed(message);
-    return ok;
   }
 
   /** Drag from one bar to another: the target gets `@dep` on the source (ids added if missing). */
@@ -259,12 +261,11 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
       return false;
     }
     edits.push({ path: succ.file, edits: depEdits });
-    const ok = await this.ctx.history.apply(
+    return this.write(
       mergeEdits(edits),
-      `Add dependency ${succ.id ?? succ.title} → ${predId}`
+      `Add dependency ${succ.id ?? succ.title} → ${predId}`,
+      `${succ.id ?? succ.title} now waits for ${predId}.`
     );
-    if (ok) this.changed(`${succ.id ?? succ.title} now waits for ${predId}.`);
-    return ok;
   }
 
   /**
@@ -280,54 +281,105 @@ export class GanttPanel extends WebviewPanelHost<HostToGantt, GanttToHost> {
       this.notice("info", `${succ.id ?? succ.title} does not depend on ${pred.id}.`);
       return false;
     }
-    const ok = await this.ctx.history.apply(
+    return this.write(
       [{ path: succ.file, edits }],
-      `Remove dependency ${succ.id ?? succ.title} → ${pred.id}`
+      `Remove dependency ${succ.id ?? succ.title} → ${pred.id}`,
+      `${succ.id ?? succ.title} no longer waits for ${pred.id}.`
     );
-    if (ok) this.changed(`${succ.id ?? succ.title} no longer waits for ${pred.id}.`);
-    return ok;
   }
 
-  /** Inline edit of title, owner and estimate in one minimal edit. */
+  /**
+   * Inline edit of title, owner and estimate in one minimal edit: only the fields changed in the
+   * dialog. A new estimate of a subtask that shares its parent's estimate changes the parent by as
+   * much, as dragging the end of its bar does (parentEstimates), so the other subtasks keep their
+   * hours.
+   */
   async edit(
     key: string,
-    change: { title?: string; owner?: string | null; estimate?: string }
+    change: { original?: string; title?: string; owner?: string | null; estimate?: string }
   ): Promise<boolean> {
     const t = this.editable(key);
+    this.assertSameTask(key, t, change);
     const hpd = this.ctx.state.plan.project.hoursPerDay;
-    if (change.estimate !== undefined && parseDuration(change.estimate, hpd) === undefined) {
+    const hours = change.estimate !== undefined ? parseDuration(change.estimate, hpd) : undefined;
+    if (change.estimate !== undefined && hours === undefined) {
       throw new Error(`Invalid estimate "${change.estimate}" (e.g. 12h, 2d, 1w).`);
     }
     if (change.title !== undefined && change.title.trim() === "")
       throw new Error("The title cannot be empty.");
-    const edits = editTaskLine(this.lines(t), t, (e) => {
-      if (change.title !== undefined) e.setTitle(change.title.replace(/\s+/g, " ").trim());
-      if (change.owner !== undefined) e.setAttr("owner", change.owner ?? undefined);
-      if (change.estimate !== undefined) e.setAttr("est", change.estimate);
-    });
+    const parents = hours !== undefined ? parentEstimates(t, hours) : [];
+    const edits = mergeEdits([
+      {
+        path: t.file,
+        edits: editTaskLine(this.lines(t), t, (e) => {
+          if (change.title !== undefined) e.setTitle(change.title.replace(/\s+/g, " ").trim());
+          if (change.owner !== undefined) e.setAttr("owner", change.owner ?? undefined);
+          if (change.estimate !== undefined) e.setAttr("est", change.estimate);
+        }),
+      },
+      ...parents.map((p) => ({
+        path: p.task.file,
+        edits: setAttr(this.lines(p.task), p.task, "est", formatHours(p.est)),
+      })),
+    ]).filter((e) => e.edits.length > 0);
+    if (edits.length === 0) return true;
     // A new owner or estimate can move other work: the notice says what (see describeScheduleChange).
     const state = this.ctx.state;
     const before = state.schedule;
-    const after = edits.length
-      ? scheduleAfter(state.plan, state.scheduleOptions(), [{ path: t.file, edits }])
-      : before;
-    const ok = await this.ctx.history.apply([{ path: t.file, edits }], `Edit ${t.id ?? t.title}`);
+    const after = scheduleAfter(state.plan, state.scheduleOptions(), edits);
+    const budget = describeParentEstimates(t, parents);
+    const { applied, id } = await this.ctx.history.record(
+      edits,
+      `Edit ${t.id ?? t.title}${parentsLabel(parents)}`
+    );
     // A title is written as typed: say when part of it became a tag or an attribute.
     const markup = change.title !== undefined ? titleMarkup(change.title) : [];
     const note = markup.length
       ? ` Not part of the title: ${markup.join(" ")} (read as a tag, attribute or id); put such text in brackets to keep it, e.g. (#42).`
       : "";
-    if (ok && edits.length)
-      this.changed(
-        `${state.service.savedMessage(t.id ?? t.title, [t.file])}.${note} ${describeScheduleChange(before, after)}`.trim()
+    if (applied && id !== undefined) {
+      const saved = state.service.savedMessage(
+        t.id ?? t.title,
+        edits.map((e) => e.path)
       );
-    return ok;
+      this.changed(
+        `${saved}.${note}${budget ? ` ${budget}` : ""} ${describeScheduleChange(before, after)}`.trim(),
+        id
+      );
+    }
+    return applied;
+  }
+
+  /**
+   * Refuses an edit from a dialog opened on another task than the one the key finds now. A task
+   * without id is known by its line (`file#line`): with lines added or removed above it since
+   * the dialog opened, that line holds another task, which must not get this one's values. And a
+   * title changed meanwhile (in the editor, by an agent) is not overwritten by the one the dialog
+   * still showed.
+   */
+  private assertSameTask(key: string, t: Task, change: { original?: string; title?: string }) {
+    if (change.original === undefined || (t.title || "(untitled)") === change.original) return;
+    const again = "Nothing was written; open the dialog again to edit it.";
+    if (key.lastIndexOf("#") > 0)
+      throw new Error(
+        `Line ${t.line + 1} of ${t.file} holds another task since the dialog opened ("${t.title}", was "${change.original}"). ${again}`
+      );
+    if (change.title !== undefined)
+      throw new Error(
+        `The title of ${t.id ?? key} changed since the dialog opened (now "${t.title}"). ${again}`
+      );
   }
 
   override dispose(): void {
     if (GanttPanel.current === this) GanttPanel.current = undefined;
     super.dispose();
   }
+}
+
+/** " (T1 to 46h)": the parents whose estimate changes with an edit, for its label in the history. */
+function parentsLabel(parents: ParentEstimate[]): string {
+  const list = parents.map((p) => `${p.task.id ?? p.task.title} to ${formatHours(p.est)}`);
+  return list.length ? ` (${list.join(", ")})` : "";
 }
 
 /** Combines edits of the same file into one FileEdit. */

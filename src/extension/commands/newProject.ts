@@ -3,11 +3,13 @@
 import { userInfo } from "node:os";
 import * as vscode from "vscode";
 import { addAgentSkillCommand } from "../agentSkill";
-import { configureMcpCommand } from "../mcp";
+import { configureMcpCommand, workspaceFolderFor } from "../mcp";
 import { isValidDate } from "../../core/dates";
+import { PlanIndex } from "../../core/index";
+import { isAbsolutePath } from "../../core/settingValues";
 import { defaultEndDate, instantiateTemplate } from "../../core/templates";
 import { type PlanService } from "../planService";
-import { config, decode, encode, exists } from "../util";
+import { config, decode, encode, isInside, planFolderSetting, planFolderUri } from "../util";
 
 export interface NewProjectOptions {
   name?: string;
@@ -16,8 +18,16 @@ export interface NewProjectOptions {
   end?: string;
   template?: string;
   lead?: string;
-  /** Workspace folder to create the plan in (defaults to the first one). */
+  /**
+   * Workspace folder to create the plan in. Defaults to the one with the plan folder; with several
+   * folders and no plan folder in any, the user picks one.
+   */
   folder?: vscode.Uri;
+  /**
+   * The answer to "add the template's files to the plan files that are already there?", given
+   * beforehand (tests).
+   */
+  addToExisting?: boolean;
 }
 
 interface TemplateSource {
@@ -51,22 +61,31 @@ export async function listTemplates(context: vscode.ExtensionContext): Promise<T
         uri: vscode.Uri.joinPath(builtIn, name),
       });
   }
-  const custom = config().get<string>("templatesFolder", "");
+  const setting = config().get<unknown>("templatesFolder", "");
+  const custom = typeof setting === "string" ? setting.trim() : "";
   if (custom) {
     const base = vscode.workspace.workspaceFolders?.[0]?.uri;
     const root =
-      custom.startsWith("/") || /^[A-Za-z]:[\\/]/.test(custom) || !base
-        ? vscode.Uri.file(custom)
-        : vscode.Uri.joinPath(base, ...custom.split(/[\\/]/));
-    if (await exists(root)) {
-      for (const [name, type] of await vscode.workspace.fs.readDirectory(root)) {
-        if (type & vscode.FileType.Directory)
-          out.push({
-            name,
-            description: `custom (${custom})`,
-            uri: vscode.Uri.joinPath(root, name),
-          });
-      }
+      isAbsolutePath(custom) || !base ? vscode.Uri.file(custom) : planFolderUri(base, custom);
+    // Only a folder holds templates (one sub-folder each); hidden ones (.git) are not templates.
+    let entries: Array<[string, vscode.FileType]> | undefined;
+    try {
+      if ((await vscode.workspace.fs.stat(root)).type & vscode.FileType.Directory)
+        entries = await vscode.workspace.fs.readDirectory(root);
+    } catch {
+      entries = undefined;
+    }
+    if (!entries)
+      void vscode.window.showWarningMessage(
+        `Planner: planner.templatesFolder (${custom}) is not a folder; only the built-in templates are offered.`
+      );
+    for (const [name, type] of entries ?? []) {
+      if (type & vscode.FileType.Directory && !name.startsWith("."))
+        out.push({
+          name,
+          description: `custom (${custom})`,
+          uri: vscode.Uri.joinPath(root, name),
+        });
     }
   }
   // Built-ins first in a fixed order, then custom templates alphabetically.
@@ -79,15 +98,77 @@ export async function listTemplates(context: vscode.ExtensionContext): Promise<T
   });
 }
 
+/**
+ * The files of a template: its Markdown files and its .gitignore. Nothing else goes into the plan
+ * (an editor's .DS_Store, a .git folder, a logo, which would not survive as text), as with the MCP
+ * server's templates.
+ */
 async function readTemplate(uri: vscode.Uri, prefix = ""): Promise<Record<string, string>> {
   const files: Record<string, string> = {};
   for (const [name, type] of await vscode.workspace.fs.readDirectory(uri)) {
     const child = vscode.Uri.joinPath(uri, name);
-    if (type & vscode.FileType.Directory)
-      Object.assign(files, await readTemplate(child, `${prefix}${name}/`));
-    else files[`${prefix}${name}`] = decode(await vscode.workspace.fs.readFile(child));
+    if (type & vscode.FileType.Directory) {
+      if (!name.startsWith("."))
+        Object.assign(files, await readTemplate(child, `${prefix}${name}/`));
+    } else if (/\.md$/i.test(name) || name === ".gitignore")
+      files[`${prefix}${name}`] = decode(await vscode.workspace.fs.readFile(child));
   }
   return files;
+}
+
+/** The files below a folder, as paths relative to it, hidden folders left out. */
+async function filesBelow(uri: vscode.Uri, prefix = ""): Promise<string[]> {
+  let entries: Array<[string, vscode.FileType]>;
+  try {
+    entries = await vscode.workspace.fs.readDirectory(uri);
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const [name, type] of entries) {
+    if (!(type & vscode.FileType.Directory)) out.push(`${prefix}${name}`);
+    else if (!name.startsWith("."))
+      out.push(...(await filesBelow(vscode.Uri.joinPath(uri, name), `${prefix}${name}/`)));
+  }
+  return out;
+}
+
+/** A few names of a list, and how many more there are. */
+function someOf(names: string[], max = 6): string {
+  return names.length > max
+    ? `${names.slice(0, max).join(", ")} and ${names.length - max} more`
+    : names.join(", ");
+}
+
+/**
+ * Where the new plan goes: the workspace folder (for .mcp.json and the skill) and the plan folder
+ * in it (`planner.planFolder`, which may be absolute). By default the workspace folder that has
+ * the plan folder; with several and none has one, the user picks. Undefined when cancelled, or
+ * (after saying so) without a workspace folder.
+ */
+async function planTarget(
+  service: PlanService,
+  folder: vscode.Uri | undefined
+): Promise<{ folder: vscode.Uri; root: vscode.Uri } | undefined> {
+  if (folder) return { folder, root: planFolderUri(folder) };
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  if (folders.length === 0) {
+    void vscode.window.showErrorMessage("Planner: open a folder first.");
+    return undefined;
+  }
+  if (service.root) {
+    const own = workspaceFolderFor(service.root);
+    return own && { folder: own, root: service.root };
+  }
+  const setting = planFolderSetting();
+  if (folders.length === 1 || isAbsolutePath(setting)) {
+    const root = planFolderUri(folders[0].uri, setting);
+    return { folder: workspaceFolderFor(root) ?? folders[0].uri, root };
+  }
+  const pick = await vscode.window.showWorkspaceFolderPick({
+    placeHolder: `Workspace folder for the new plan (${setting}/)`,
+  });
+  return pick && { folder: pick.uri, root: planFolderUri(pick.uri, setting) };
 }
 
 export async function newProject(
@@ -95,13 +176,13 @@ export async function newProject(
   service: PlanService,
   options: NewProjectOptions
 ): Promise<vscode.Uri | undefined> {
-  const folder = options.folder ?? vscode.workspace.workspaceFolders?.[0]?.uri;
-  if (!folder) {
-    void vscode.window.showErrorMessage("Planner: open a folder first.");
-    return undefined;
-  }
-  const planFolder = config().get<string>("planFolder", "plan") || "plan";
-  const root = vscode.Uri.joinPath(folder, ...planFolder.split(/[\\/]/));
+  const target = await planTarget(service, options.folder);
+  if (!target) return undefined;
+  const { folder, root } = target;
+  // How the plan folder is named in messages: from its workspace folder, else in full.
+  const planFolder = isInside(root, folder)
+    ? root.path.slice(folder.path.replace(/\/+$/, "").length + 1) || "."
+    : root.fsPath;
   // Also Project.md: the plan is read whatever the case of its file names.
   const existing = await vscode.workspace.fs.readDirectory(root).then(
     (entries) => entries.find(([n]) => n.toLowerCase() === "project.md")?.[0],
@@ -170,6 +251,28 @@ export async function newProject(
     today,
     lead: lead || undefined,
   });
+  // Plan files already there (a plan whose project.md is missing): the template's files would go
+  // in next to them, with milestones and ids of their own. Only when the user says so.
+  const there = await filesBelow(root);
+  const planFiles = there.filter((p) => PlanIndex.isPlanPath(p)).sort();
+  if (planFiles.length > 0) {
+    const taken = new Set(there.map((p) => p.toLowerCase()));
+    const added = Object.keys(files)
+      .filter((p) => !taken.has(p.toLowerCase()))
+      .sort();
+    const add = "Add Files";
+    const go =
+      options.addToExisting ??
+      (await vscode.window.showWarningMessage(
+        `${planFolder}/ already has plan files (${someOf(planFiles)}). Add the files of the "${template.name}" template to them?`,
+        {
+          modal: true,
+          detail: `Added: ${someOf(added, 12)}. Files that are there stay as they are. The template's milestones and task ids may repeat yours; to start afresh, use an empty folder (planner.planFolder) instead.`,
+        },
+        add
+      )) === add;
+    if (!go) return undefined;
+  }
   const edit = new vscode.WorkspaceEdit();
   for (const [path, text] of Object.entries(files).sort(([a], [b]) => a.localeCompare(b))) {
     edit.createFile(vscode.Uri.joinPath(root, ...path.split("/")), {

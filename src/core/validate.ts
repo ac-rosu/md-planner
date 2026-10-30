@@ -154,9 +154,8 @@ function keepsFamilyCycle(graph: DepGraph, t: Task, target: Task): boolean {
  * but a cycle through the other dependencies of that task is still reported on it.
  */
 function checkCycles(plan: Plan, graph: DepGraph, issues: Issue[]): void {
-  const label = (cycle: Task[]) => cycle.map((t) => t.id ?? t.title).join(" → ");
   for (const cycle of graph.cycles) {
-    const message = `Circular dependency: ${label(cycle)}. These tasks are not scheduled.`;
+    const message = `Circular dependency: ${cycleLabel(cycle)}. These tasks are not scheduled.`;
     const inCycle = new Set(cycle);
     // Every leaf of a milestone's group has the same requirement: report each declarer once.
     const reported = new Set<Task | string>();
@@ -191,6 +190,20 @@ function checkCycles(plan: Plan, graph: DepGraph, issues: Issue[]): void {
       }
     }
   }
+}
+
+/** How many tasks the message of a long cycle names (up to two more are all named). */
+const CYCLE_SHOWN = 6;
+
+/**
+ * "T1 → T2 → T3", or for a long cycle its first six tasks and "→ … and 19994 more": the message
+ * goes on every dependency of the cycle, so naming thousands of tasks in each takes gigabytes.
+ */
+function cycleLabel(cycle: Task[]): string {
+  const name = (t: Task) => t.id ?? t.title;
+  if (cycle.length <= CYCLE_SHOWN + 2) return cycle.map(name).join(" → ");
+  const shown = cycle.slice(0, CYCLE_SHOWN).map(name).join(" → ");
+  return `${shown} → … and ${cycle.length - CYCLE_SHOWN} more`;
 }
 
 function leavesIn(node: DepNode): Task[] {
@@ -388,10 +401,18 @@ function headingRange(plan: Plan, file: string, line: number): Range {
   return range(Math.max(0, line), 0, text.length);
 }
 
+/** Messages longer than this are told apart by their start and length (see dedupe). */
+const DEDUPE_MESSAGE = 200;
+
 function dedupe(issues: Issue[]): Issue[] {
   const seen = new Set<string>();
   return issues.filter((i) => {
-    const key = `${i.file}:${i.range.start.line}:${i.range.start.character}:${i.code}:${i.message}`;
+    // A key per issue: a long message is not copied into each one whole.
+    const message =
+      i.message.length > DEDUPE_MESSAGE
+        ? `${i.message.slice(0, DEDUPE_MESSAGE)}…${i.message.length}`
+        : i.message;
+    const key = `${i.file}:${i.range.start.line}:${i.range.start.character}:${i.code}:${message}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

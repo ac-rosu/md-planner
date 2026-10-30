@@ -36,6 +36,7 @@ import {
   progressOf,
   remainingHours,
   startedOn,
+  workHours,
 } from "./rollup";
 
 export type ScheduleMode = "capacity" | "demand";
@@ -750,7 +751,8 @@ function dependencyOrder(
 
 /**
  * Done tasks are fixed at @started → @done; their actual (or estimated) hours fill the days the
- * person worked in between (their working days, extra working days, not their time off).
+ * person worked in between (their working days, extra working days, not their time off). Without
+ * @started they fill the person's days up to @done (see `workedBefore`).
  */
 function fixDone(
   ts: TaskSchedule,
@@ -769,22 +771,54 @@ function fixDone(
   if (t.status !== "done" || ts.start === undefined || ts.finish === undefined) return;
   const hours = t.act ?? estimateHours(t) ?? 0;
   if (hours <= 0) return;
+  const book = (day: DayNumber, h: number) => {
+    allocations.push({ key: ts.key, task: t, resource: ts.resource, day, hours: h });
+    addLoad(ts.resource, day, h);
+  };
+  if (started === undefined && done !== undefined) {
+    // Only the day it was done is known: the work fills the person's days before it, a full day
+    // each, as it would have been done (not a week's work on that one day).
+    const worked = workedBefore(calendar, ts.resource, done, hours);
+    for (const [day, h] of worked) book(day, h);
+    return;
+  }
   const days: DayNumber[] = [];
   for (let d = ts.start; d <= ts.finish; d++)
     if (calendar.capacity(ts.resource, d) > 0) days.push(d);
   if (days.length === 0)
     for (let d = ts.start; d <= ts.finish; d++) if (calendar.isWorkingDay(d)) days.push(d);
   if (days.length === 0) days.push(ts.finish);
-  for (const d of days) {
-    allocations.push({
-      key: ts.key,
-      task: t,
-      resource: ts.resource,
-      day: d,
-      hours: hours / days.length,
-    });
-    addLoad(ts.resource, d, hours / days.length);
+  for (const d of days) book(d, hours / days.length);
+}
+
+/** How far back from `@done` the hours of a done task without `@started` are placed (ten years). */
+const DONE_LOOKBACK_DAYS = 3653;
+
+/**
+ * The days a done task without `@started` was worked on: back from the day it was done, each day
+ * with the person's capacity (overtime, extra working days and time off count), in day order.
+ * Hours that find no capacity within ten years go on the day it was done.
+ */
+function workedBefore(
+  calendar: Calendar,
+  resource: string,
+  done: DayNumber,
+  hours: number
+): Array<[DayNumber, number]> {
+  const days: Array<[DayNumber, number]> = [];
+  let left = hours;
+  for (let d = done; left > EPS && d > done - DONE_LOOKBACK_DAYS; d--) {
+    const capacity = calendar.capacity(resource, d);
+    if (capacity <= EPS) continue;
+    const h = Math.min(capacity, left);
+    days.push([d, h]);
+    left -= h;
   }
+  if (left > EPS) {
+    if (days.length > 0 && days[0][0] === done) days[0][1] += left;
+    else days.unshift([done, left]);
+  }
+  return days.reverse();
 }
 
 /**
@@ -823,9 +857,10 @@ function rollUp(plan: Plan, s: Schedule): void {
       if (ts.finish !== undefined && (finish === undefined || ts.finish > finish))
         finish = ts.finish;
       const est = estimateHours(l) ?? 0;
+      const weight = workHours(l) ?? 0;
       hours += est;
-      total += est;
-      done += est * progressOf(l);
+      total += weight;
+      done += weight * progressOf(l);
     }
     const counted = leaves.filter((l) => s.tasks.has(l));
     const progress =

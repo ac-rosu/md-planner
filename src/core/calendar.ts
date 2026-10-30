@@ -206,6 +206,12 @@ export class Calendar {
     return this.dailyHours(r, day);
   }
 
+  /** True when the person has overtime or extra working days: hours above their normal ones. */
+  hasExtraHours(personId: string): boolean {
+    const r = this.resources.get(personId.toLowerCase());
+    return r !== undefined && (r.overtime.length > 0 || r.workdays.length > 0);
+  }
+
   /** Capacity above the normal hours: overtime and extra working days. */
   overtimeCapacity(personId: string, day: DayNumber): number {
     return Math.max(0, this.capacity(personId, day) - this.normalCapacity(personId, day));
@@ -239,7 +245,10 @@ export class Calendar {
       const extra = r.workdays.find((w) => day >= w.from && day <= w.to);
       return extra ? (extra.hours ?? this.dailyHours(r, day)) : 0;
     }
+    // Overtime adds to the normal hours of a day: none from the day someone has no hours (gone,
+    // capacityFrom … 0h/week).
     let hours = this.dailyHours(r, day);
+    if (hours <= 0) return 0;
     for (const o of r.overtime)
       if (day >= o.from && day <= o.to)
         hours += o.per === "day" ? o.hours : o.hours / Math.max(1, r.workweek.size);

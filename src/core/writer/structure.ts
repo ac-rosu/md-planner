@@ -8,6 +8,7 @@ import { isEffectivelyDone } from "../rollup";
 import { comparePositions, pos, type Position } from "../text";
 import {
   type BlockMove,
+  endsInOpenFence,
   type FileEdit,
   type InsertLocation,
   moveBlocks,
@@ -147,6 +148,11 @@ export function outlineMoveAll(
         break;
     }
     if (!location) continue;
+    const fenced = openFenceReason(file, run, location);
+    if (fenced) {
+      reasons.push(fenced);
+      continue;
+    }
     moves.push({ tasks: run, location });
     // Up, down and outdent never put a task under a task it was not under before.
     const warning =
@@ -184,10 +190,32 @@ export function placeTask(
   if (!source || !dest) return { reason: "The file is not loaded." };
   if (!source.items.includes(task) || !dest.items.includes(target))
     return { reason: "The plan changed in the meantime; try again." };
-  const r = moveTaskTo(source, task, dest, { kind: placement, task: target });
+  const location: InsertLocation = { kind: placement, task: target };
+  const fenced =
+    openFenceReason(source, [task], { kind: "end" }) ?? openFenceReason(dest, [], location);
+  if (fenced) return { reason: fenced };
+  const r = moveTaskTo(source, task, dest, location);
   const parent = placement === "child" ? target : target.parent;
   const warning = leavesSchedule(plan, [task], parent, target.milestoneId);
   return { edits: r.edits, moved: [r.moved], ...(warning ? { warning } : {}) };
+}
+
+/**
+ * Why a move would carry or land past the rest of the file, or undefined: a code fence in the notes
+ * of a moved task (or of one of its subtasks) that is never closed makes its block run to the end
+ * of the file, and so does one in the block of the task it goes after or under (it would land at
+ * the end of the file). The unclosed-fence warning points at the fence.
+ */
+export function openFenceReason(
+  file: ParsedFile,
+  tasks: Task[],
+  location: InsertLocation
+): string | undefined {
+  const around = location.kind === "after" || location.kind === "child" ? [location.task] : [];
+  const open = [...tasks, ...around].find((t) => endsInOpenFence(file.lines, t));
+  if (!open) return undefined;
+  const name = open.id ?? `"${open.title}"`;
+  return `A code block (\`\`\`) in the notes under ${name} is never closed, so everything below it to the end of the file counts as part of ${name}. Close the code block first, then move the task.`;
 }
 
 /**

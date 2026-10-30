@@ -7,17 +7,19 @@ export function Notice({
   notice,
   onUndo,
 }: {
-  notice?: { level: "info" | "error"; message: string; at: number; undo?: boolean };
-  /** Shown as an Undo button on notices that report an edit. */
-  onUndo?: () => void;
+  /** `undo`: the edit the notice reports (its id in the history). */
+  notice?: { level: "info" | "error"; message: string; at: number; undo?: number };
+  /** Shown as an Undo button on notices that report an edit; undoes that edit. */
+  onUndo?: (entry: number) => void;
 }) {
   const [visible, setVisible] = useState(false);
-  const undo = notice?.undo && onUndo;
+  const entry = notice?.undo;
+  const undo = entry !== undefined && onUndo;
   useEffect(() => {
     if (!notice) return;
     setVisible(true);
     // Edits stay long enough to be noticed and undone.
-    const ms = notice.level === "error" ? 6000 : notice.undo ? 10000 : 3000;
+    const ms = notice.level === "error" ? 6000 : notice.undo !== undefined ? 10000 : 3000;
     const timer = setTimeout(() => setVisible(false), ms);
     return () => clearTimeout(timer);
   }, [notice?.at]);
@@ -30,7 +32,7 @@ export function Notice({
           class="btn notice-action"
           onClick={() => {
             setVisible(false);
-            onUndo!();
+            if (entry !== undefined) undo(entry);
           }}
         >
           Undo
@@ -42,7 +44,7 @@ export function Notice({
 
 export function noticeFrom(
   m: CommonHostMessage
-): { level: "info" | "error"; message: string; at: number; undo?: boolean } | undefined {
+): { level: "info" | "error"; message: string; at: number; undo?: number } | undefined {
   return m.type === "notice"
     ? { level: m.level, message: m.message, at: Date.now(), undo: m.undo }
     : undefined;

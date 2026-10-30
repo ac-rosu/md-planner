@@ -45,8 +45,8 @@ export function weeklyLoad(
   const id = resource.toLowerCase();
   const cal = schedule.calendar;
   const weeks: WeekLoad[] = [];
-  const index = new Map<DayNumber, WeekLoad>();
-  for (let w = weekStart(from); w <= to; w += 7) {
+  const first = weekStart(from);
+  for (let w = first; w <= to; w += 7) {
     let capacity = 0;
     let normal = 0;
     let offDays = 0;
@@ -67,42 +67,83 @@ export function weeklyLoad(
       tasks: new Map(),
     };
     weeks.push(wl);
-    index.set(w, wl);
   }
-  for (const a of schedule.allocations) {
-    if (a.resource !== id || a.day < from || a.day > to) continue;
-    const wl = index.get(weekStart(a.day));
+  for (const a of allocationsOf(schedule, id)) {
+    if (a.day < from || a.day > to) continue;
+    const wl = weeks[(weekStart(a.day) - first) / 7];
     if (!wl) continue;
     wl.hours += a.hours;
     wl.tasks.set(a.key, (wl.tasks.get(a.key) ?? 0) + a.hours);
   }
-  for (const a of overtimeAllocations(schedule)) {
-    if (a.resource !== id || a.day < from || a.day > to) continue;
-    const wl = index.get(weekStart(a.day));
+  for (const a of overtimeOf(schedule, id)) {
+    if (a.day < from || a.day > to) continue;
+    const wl = weeks[(weekStart(a.day) - first) / 7];
     if (wl) wl.overtime += a.hours;
   }
   return weeks;
 }
 
+const byResourceCache = new WeakMap<Schedule, Map<string, Allocation[]>>();
+
+/**
+ * The allocations of one resource, in the order they were booked. Grouped once per schedule: the
+ * team load asks for every person, and a long plan has millions of allocations.
+ */
+function allocationsOf(schedule: Schedule, resource: string): Allocation[] {
+  return groupByResource(byResourceCache, schedule, () => schedule.allocations).get(resource) ?? [];
+}
+
+function groupByResource(
+  cache: WeakMap<Schedule, Map<string, Allocation[]>>,
+  schedule: Schedule,
+  allocations: () => Allocation[]
+): Map<string, Allocation[]> {
+  let groups = cache.get(schedule);
+  if (!groups) {
+    groups = new Map();
+    for (const a of allocations()) {
+      const list = groups.get(a.resource);
+      if (list) list.push(a);
+      else groups.set(a.resource, [a]);
+    }
+    cache.set(schedule, groups);
+  }
+  return groups;
+}
+
 const overtimeCache = new WeakMap<Schedule, Allocation[]>();
+const overtimeByResourceCache = new WeakMap<Schedule, Map<string, Allocation[]>>();
+
+function overtimeOf(schedule: Schedule, resource: string): Allocation[] {
+  return (
+    groupByResource(overtimeByResourceCache, schedule, () => overtimeAllocations(schedule)).get(
+      resource
+    ) ?? []
+  );
+}
 
 /**
  * The overtime part of each allocation: the hours booked on a day above the person's normal
  * capacity, at most the overtime and extra working day hours planned for that day. Tasks get a
  * day's hours in priority order, so the last hours booked on a day are its overtime (and every
- * hour on an extra working day).
+ * hour on an extra working day). Only people with overtime or extra working days in team.md can
+ * have any: the others' allocations are not looked at.
  */
 export function overtimeAllocations(schedule: Schedule): Allocation[] {
   const cached = overtimeCache.get(schedule);
   if (cached) return cached;
   const cal = schedule.calendar;
-  const booked = new Map<string, number>();
+  // Hours booked so far per resource and day; null for a resource without extra hours.
+  const booked = new Map<string, Map<DayNumber, number> | null>();
   const out: Allocation[] = [];
   for (const a of schedule.allocations) {
-    const k = `${a.resource}:${a.day}`;
-    const before = booked.get(k) ?? 0;
+    let days = booked.get(a.resource);
+    if (days === undefined)
+      booked.set(a.resource, (days = cal.hasExtraHours(a.resource) ? new Map() : null));
+    if (!days) continue;
+    const before = days.get(a.day) ?? 0;
     const after = before + a.hours;
-    booked.set(k, after);
+    days.set(a.day, after);
     const normal = cal.normalCapacity(a.resource, a.day);
     const extra = cal.overtimeCapacity(a.resource, a.day);
     if (extra <= 0) continue;

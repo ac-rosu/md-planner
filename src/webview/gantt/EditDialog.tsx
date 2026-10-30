@@ -1,13 +1,9 @@
 // Inline edit of a task's title, owner and estimate (double-click a bar or press F2).
 import { useEffect, useRef, useState } from "preact/hooks";
+import { formatHours } from "../../core/duration";
 import { type GanttModel, type GanttRow } from "../../core/views/gantt";
 import { useReturnFocus } from "../shared/ui";
-
-export interface EditResult {
-  title?: string;
-  owner?: string | null;
-  estimate?: string;
-}
+import { changedFields, editValues, type EditResult } from "./editFields";
 
 const DURATION = /^\d+(\.\d+)?\s*[hdw]$/i;
 
@@ -26,21 +22,19 @@ export function EditDialog({
   onAllFields: () => void;
 }) {
   useReturnFocus();
-  const [title, setTitle] = useState(row.title);
-  const [owner, setOwner] = useState(row.owner?.toLowerCase() ?? "");
-  const [estimate, setEstimate] = useState(row.est ?? "");
+  // The values it opened with. Only the fields changed from these are saved: the task can change
+  // meanwhile (in the editor, by an agent), and a field left alone must not write an old value back.
+  const [opened] = useState(() => editValues(row));
+  const [title, setTitle] = useState(opened.title);
+  const [owner, setOwner] = useState(opened.owner);
+  const [estimate, setEstimate] = useState(opened.estimate);
   const first = useRef<HTMLInputElement>(null);
   useEffect(() => first.current?.select(), []);
   const estimateValid = estimate.trim() === "" || DURATION.test(estimate.trim());
   const ownerIds = model.people.map((p) => p.id.toLowerCase());
   const save = () => {
     if (!estimateValid || !title.trim()) return;
-    const result: EditResult = {};
-    if (title.trim() !== row.title) result.title = title.trim();
-    if (owner !== (row.owner?.toLowerCase() ?? "")) result.owner = owner === "" ? null : owner;
-    if (estimate.trim() !== (row.est ?? "") && estimate.trim() !== "")
-      result.estimate = estimate.trim().replace(/\s+/g, "");
-    onSave(result);
+    onSave(changedFields(opened, { title, owner, estimate }));
   };
   return (
     <div
@@ -95,12 +89,23 @@ export function EditDialog({
             id="f-est"
             type="text"
             value={estimate}
-            placeholder="e.g. 12h, 2d, 1w"
+            placeholder={
+              row.budget !== undefined
+                ? `${formatHours(row.budget)} (share of ${row.budgetOf ?? "the parent"}'s estimate)`
+                : "e.g. 12h, 2d, 1w"
+            }
             aria-invalid={!estimateValid}
+            aria-describedby={row.budget !== undefined ? "f-est-share" : undefined}
             onInput={(e) => setEstimate(e.currentTarget.value)}
           />
         </div>
         {!estimateValid && <div class="muted">Use a number with h, d or w.</div>}
+        {row.budget !== undefined && (
+          <div class="muted" id="f-est-share">
+            Its hours are a share of {row.budgetOf ?? "its parent"}'s estimate; an estimate of its
+            own changes that estimate with it, so the other subtasks keep their hours.
+          </div>
+        )}
         <div class="actions">
           <button
             type="button"

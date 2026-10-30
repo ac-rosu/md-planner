@@ -119,3 +119,11 @@ describe("MCP tools refuse ambiguous or absurd values", () => {
     );
   });
 });
+
+describe("MCP rename_task_id", () => {
+  it("refuses a case variant of another id, as F2 does", async () => {
+    const r = await call("rename_task_id", { id: "T011", newId: "t012" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("ids do not differ by case only");
+  });
+});

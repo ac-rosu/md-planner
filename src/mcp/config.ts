@@ -32,7 +32,14 @@ export function hasServerEntry(text: string | undefined): boolean {
   }
 }
 
-/** Adds or replaces the md-planner entry in an .mcp.json text, keeping everything else. */
+const isObject = (x: unknown): x is Record<string, unknown> =>
+  !!x && typeof x === "object" && !Array.isArray(x);
+
+/**
+ * Adds or updates the md-planner entry in an .mcp.json text, keeping everything else. An existing
+ * entry keeps what the user added to it (other environment variables, `disabled` …): only its
+ * type, command, arguments and ELECTRON_RUN_AS_NODE are set.
+ */
 export function mergeMcpJson(existing: string | undefined, entry: McpServerEntry): string {
   let data: { mcpServers?: Record<string, unknown>; [key: string]: unknown } = {};
   if (existing && existing.trim()) {
@@ -41,9 +48,21 @@ export function mergeMcpJson(existing: string | undefined, entry: McpServerEntry
     } catch {
       throw new Error(".mcp.json is not valid JSON; fix or remove it first.");
     }
-    if (!data || typeof data !== "object" || Array.isArray(data))
-      throw new Error(".mcp.json must contain a JSON object.");
+    if (!isObject(data)) throw new Error(".mcp.json must contain a JSON object.");
   }
-  data.mcpServers = { ...(data.mcpServers ?? {}), [MCP_SERVER_NAME]: { type: "stdio", ...entry } };
+  if (data.mcpServers != null && !isObject(data.mcpServers))
+    throw new Error('"mcpServers" in .mcp.json must be a JSON object; fix it first.');
+  const before = data.mcpServers?.[MCP_SERVER_NAME];
+  const old = isObject(before) ? before : {};
+  data.mcpServers = {
+    ...(data.mcpServers ?? {}),
+    [MCP_SERVER_NAME]: {
+      ...old,
+      type: "stdio",
+      command: entry.command,
+      args: entry.args,
+      env: { ...(isObject(old.env) ? old.env : {}), ...entry.env },
+    },
+  };
   return JSON.stringify(data, null, 2) + "\n";
 }

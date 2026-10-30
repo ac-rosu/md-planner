@@ -249,4 +249,28 @@ describe("Kanban", () => {
     );
     assert.equal(api.punch.getTreeItem(roots[0]).description, "1 open");
   });
+
+  it("checks a filter and options before keeping them, and when the board opens again", async () => {
+    const api = await getApi();
+    const panel = await openKanban();
+    // A message that went wrong: an owner that is not a list.
+    await panel.receive({ type: "filter", filter: { owner: "sam", tag: ["backend"] } as never });
+    assert.deepEqual(panel.filter, { tag: ["backend"] });
+    assert.ok((await cardsOf(panel)).length > 0);
+    // Stored by an older version, or by such a message: the board opens all the same.
+    await api.panels.memento.update("kanban.filter", { tasks: { owner: "sam", status: "doing" } });
+    await api.panels.memento.update("kanban.options", { board: "bugs", swimlane: "owner" });
+    panel.dispose();
+    await vscode.commands.executeCommand("planner.openKanban");
+    const again = await waitFor(() => api.kanban(), "kanban panel");
+    assert.deepEqual(again.viewOptions, {
+      board: "tasks",
+      swimlane: "owner",
+      showCancelled: false,
+      cardMode: "tasks",
+    });
+    assert.deepEqual(again.filter, {});
+    assert.ok((await cardsOf(again)).length > 0);
+    await again.receive({ type: "filter", filter: {} });
+  });
 });

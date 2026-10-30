@@ -9,11 +9,21 @@ import {
   type GanttZoom,
   type HostToGantt,
 } from "../shared/protocol";
-import { Notice, Tooltip, UndoRedo } from "../shared/ui";
+import { Notice, noticeFrom, Tooltip, UndoRedo } from "../shared/ui";
 import { getState, isoDate, onMessage, post, setState } from "../shared/vscode";
 import { Chart, type DragResult, ROW_H } from "./Chart";
-import { EditDialog, type EditResult } from "./EditDialog";
-import { describeFocus, linkFocus, stepWorkingDays, visibleRows, vscodeContext } from "./rows";
+import { EditDialog } from "./EditDialog";
+import { type EditResult } from "./editFields";
+import {
+  describeFocus,
+  editTarget,
+  type EditTarget,
+  linkFocus,
+  moveBase,
+  stepWorkingDays,
+  visibleRows,
+  vscodeContext,
+} from "./rows";
 import { dayToX, fitPx, headerTicks, makeScale, type Scale, ZOOM_PX, ZoomGesture } from "./scale";
 
 const LEFT_W = 320;
@@ -42,10 +52,10 @@ export function App() {
   );
   const [selected, setSelected] = useState<string | undefined>();
   const [selectedLink, setSelectedLink] = useState<GanttLink | undefined>();
-  const [editing, setEditing] = useState<string | undefined>();
+  const [editing, setEditing] = useState<EditTarget | undefined>();
   const [history, setHistory] = useState({ canUndo: false, canRedo: false });
   const [notice, setNotice] = useState<
-    { level: "info" | "error"; message: string; at: number; undo?: boolean } | undefined
+    { level: "info" | "error"; message: string; at: number; undo?: number } | undefined
   >();
   const scroller = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -80,7 +90,7 @@ export function App() {
           setHistory({ canUndo: m.canUndo, canRedo: m.canRedo });
           break;
         case "notice":
-          setNotice({ level: m.level, message: m.message, at: Date.now(), undo: m.undo });
+          setNotice(noticeFrom(m));
           break;
       }
     });
@@ -89,6 +99,16 @@ export function App() {
   }, []);
 
   useEffect(() => setState<Persisted>({ collapsed: [...collapsed] }), [collapsed]);
+
+  // An edit dialog whose task changed meanwhile (in the editor, by an agent) closes, and says so.
+  useEffect(() => {
+    if (!model || !editing) return;
+    const target = editTarget(model.rows, editing);
+    if ("closed" in target) {
+      setEditing(undefined);
+      setNotice({ level: "info", message: target.closed, at: Date.now() });
+    }
+  }, [model]);
 
   const rows = useMemo(() => (model ? visibleRows(model.rows, collapsed) : []), [model, collapsed]);
   const focus = useMemo(() => {
@@ -216,9 +236,15 @@ export function App() {
     else send({ type: "link", from: r.from, to: r.to });
   };
 
-  const onEditSave = (key: string, result: EditResult) => {
+  const startEdit = (row: GanttRow | undefined) => {
+    if (row?.editable) setEditing({ key: row.key, title: row.title });
+  };
+
+  // With the title it opened with: the host refuses the edit when the task is no longer that one.
+  const onEditSave = (target: EditTarget, result: EditResult) => {
     setEditing(undefined);
-    if (Object.keys(result).length) send({ type: "edit", key, ...result });
+    if (Object.keys(result).length)
+      send({ type: "edit", key: target.key, original: target.title, ...result });
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -252,16 +278,14 @@ export function App() {
     } else if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight") && row.editable) {
       e.preventDefault();
       const dir = e.key === "ArrowLeft" ? -1 : 1;
+      // A task in progress moves from where its remaining work starts (see moveBase).
+      const base = moveBase(row);
       if (e.shiftKey && row.finish !== undefined) {
         const finish = stepWorkingDays(model, row.finish, dir);
         if (row.start === undefined || finish >= row.start)
           send({ type: "resize", key: row.key, finish: isoDate(finish) });
-      } else if (!e.shiftKey && row.start !== undefined) {
-        send({
-          type: "move",
-          key: row.key,
-          start: isoDate(stepWorkingDays(model, row.start, dir)),
-        });
+      } else if (!e.shiftKey && base !== undefined) {
+        send({ type: "move", key: row.key, start: isoDate(stepWorkingDays(model, base, dir)) });
       }
     } else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && row.hasChildren) {
       e.preventDefault();
@@ -273,7 +297,7 @@ export function App() {
       else if (row.hasChildren) toggle(row.key);
     } else if (e.key === "F2" && row.editable) {
       e.preventDefault();
-      setEditing(row.key);
+      startEdit(row);
     } else if (e.key === " " && row.hasChildren) {
       e.preventDefault();
       toggle(row.key);
@@ -304,7 +328,8 @@ export function App() {
   if (!model) return <div class="empty">Loading the schedule…</div>;
   const focusText = describeFocus(model, focus, selected, selectedLink);
   const ticks = headerTicks(scale);
-  const editRow = editing ? model.rows.find((r) => r.key === editing) : undefined;
+  const target = editing && editTarget(model.rows, editing);
+  const editRow = target && "row" in target ? target.row : undefined;
   const zoomLabel: Record<GanttZoom, string> = {
     day: "Day",
     week: "Week",
@@ -482,7 +507,7 @@ export function App() {
                   onToggle={() => toggle(r.key)}
                   onSelect={() => select(r.key, false)}
                   onOpen={() => r.task && send({ type: "reveal", key: r.task })}
-                  onEdit={() => r.editable && setEditing(r.key)}
+                  onEdit={() => startEdit(r)}
                   focusable={r.key === (selected ?? rows[0]?.key)}
                 />
               ))}
@@ -497,10 +522,7 @@ export function App() {
               focus={focus}
               tooltip={tooltip}
               onSelect={select}
-              onEdit={(key) => {
-                const row = model.rows.find((r) => r.key === key);
-                if (row?.editable) setEditing(key);
-              }}
+              onEdit={(key) => startEdit(model.rows.find((r) => r.key === key))}
               onDrag={onDrag}
               onSelectLink={(l) => {
                 // A click on a line selects it; a click on empty space clears both selections.
@@ -523,11 +545,13 @@ export function App() {
           </>
         )}
       </div>
-      {editRow && (
+      {editing && editRow && (
+        // Keyed by the task: a dialog opened on another task starts from that task's values.
         <EditDialog
+          key={editing.key}
           row={editRow}
           model={model}
-          onSave={(r) => onEditSave(editRow.key, r)}
+          onSave={(r) => onEditSave(editing, r)}
           onCancel={() => setEditing(undefined)}
           onAllFields={() => {
             setEditing(undefined);
@@ -535,7 +559,8 @@ export function App() {
           }}
         />
       )}
-      <Notice notice={notice} onUndo={() => send({ type: "undo" })} />
+      {/* The Undo button undoes the edit the notice reports, and no other. */}
+      <Notice notice={notice} onUndo={(entry) => send({ type: "undo", entry })} />
     </>
   );
 }

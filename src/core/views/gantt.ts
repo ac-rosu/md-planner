@@ -9,6 +9,7 @@ import { isOpen, type Milestone, STATUS_LABEL, type Status, type Task } from "..
 import { type Plan } from "../resolve";
 import {
   estimateHours,
+  workHours,
   initials,
   isLeaf,
   leavesOf,
@@ -16,7 +17,7 @@ import {
   progressOf,
   remainingHours,
 } from "../rollup";
-import { type Schedule, taskKey } from "../scheduler";
+import { type Schedule, taskKey, type TaskSchedule } from "../scheduler";
 import { milestoneColor, NEUTRAL, personColor, statusColor } from "./colors";
 
 export type GanttGrouping = "milestone" | "section" | "owner" | "tag";
@@ -37,6 +38,12 @@ export interface GanttRow {
   id?: string;
   start?: DayNumber;
   finish?: DayNumber;
+  /**
+   * Open task rows whose remaining work starts after the bar does: a task in progress, whose bar
+   * starts at @started. The first day of the work still to do (today or later), from which moving
+   * the bar is measured: its fixed start applies to that work.
+   */
+  workStart?: DayNumber;
   progress: number;
   status?: Status;
   owner?: string;
@@ -51,6 +58,12 @@ export interface GanttRow {
   remaining?: number;
   /** Raw `@est` value for the edit form. */
   est?: string;
+  /**
+   * A subtask without its own `@est`: its hours, a share of the estimate of the parent named in
+   * `budgetOf` (id or title), which an estimate of its own changes with it (see parentEstimates).
+   */
+  budget?: number;
+  budgetOf?: string;
   /** Milestone target (milestone rows) or task deadline. */
   target?: DayNumber;
   deadline?: DayNumber;
@@ -133,6 +146,20 @@ export function buildGanttModel(plan: Plan, schedule: Schedule, options: GanttOp
 
   const fmt = (d: DayNumber | undefined) => (d === undefined ? "—" : isoOf(d));
 
+  // The first day each task has work on (the bar of a task in progress starts at @started).
+  const firstWork = new Map<string, DayNumber>();
+  for (const a of schedule.allocations) {
+    const d = firstWork.get(a.key);
+    if (d === undefined || a.day < d) firstWork.set(a.key, a.day);
+  }
+  /** Where the remaining work of an open leaf starts, when that is not where its bar starts. */
+  const workStartOf = (key: string, ts: TaskSchedule | undefined): DayNumber | undefined => {
+    if (!ts || ts.done || ts.start === undefined) return undefined;
+    // Without hours left, it is done on the day it finishes.
+    const first = firstWork.get(key) ?? ts.finish;
+    return first !== undefined && first > ts.start ? first : undefined;
+  };
+
   const taskRow = (t: Task, level: number, parent: string | undefined): GanttRow => {
     const key = taskKey(t);
     const leaf = isLeaf(t);
@@ -187,6 +214,7 @@ export function buildGanttModel(plan: Plan, schedule: Schedule, options: GanttOp
       id: t.id,
       start,
       finish,
+      workStart: leaf ? workStartOf(key, ts) : undefined,
       progress: progressOf(t),
       status: t.status,
       owner,
@@ -200,6 +228,8 @@ export function buildGanttModel(plan: Plan, schedule: Schedule, options: GanttOp
       hours: est,
       remaining: remainingHours(t),
       est: t.attrs.find((a) => a.key === "est")?.value,
+      budget: t.budget,
+      budgetOf: t.budget !== undefined ? budgetOwner(t) : undefined,
       deadline: ts?.deadline,
       baselineStart: b?.start,
       baselineFinish: b?.finish,
@@ -400,7 +430,8 @@ export function buildGanttModel(plan: Plan, schedule: Schedule, options: GanttOp
       if (ts?.start !== undefined && (start === undefined || ts.start < start)) start = ts.start;
       if (ts?.finish !== undefined && (finish === undefined || ts.finish > finish))
         finish = ts.finish;
-      const est = estimateHours(l) ?? 0;
+      // As the planner's own progress: a done task with only logged hours weighs by those.
+      const est = workHours(l) ?? 0;
       total += est;
       done += est * progressOf(l);
     }
@@ -481,6 +512,12 @@ export function buildGanttModel(plan: Plan, schedule: Schedule, options: GanttOp
     projectName: plan.project.name,
     baseline: baseline?.name,
   };
+}
+
+/** The parent whose estimate a subtask without one shares (assignBudgets): the nearest estimated. */
+function budgetOwner(t: Task): string | undefined {
+  for (let p = t.parent; p; p = p.parent) if (p.est !== undefined) return p.id ?? p.title;
+  return undefined;
 }
 
 function inheritedTag(t: Task): string | undefined {

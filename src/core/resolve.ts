@@ -1,6 +1,13 @@
 // Builds the semantic Plan from parsed files: interprets property values and task attributes with
 // the project settings (hours per day, workweek) and links everything by id.
-import { type DayNumber, isoWeekday, parseDate, parseDateRange, parseWorkweek } from "./dates";
+import {
+  type DayNumber,
+  formatDate,
+  isoWeekday,
+  parseDate,
+  parseDateRange,
+  parseWorkweek,
+} from "./dates";
 import {
   parseCapacity,
   parseDeps,
@@ -441,6 +448,8 @@ function resolveTeam(file: TeamFile, project: Project, issues: Issue[]): Person[
     };
     if (cap && cap.value && parseCapacity(cap.value)) tooMuch(cap, capacityHours, capacityPer);
     const capacityChanges: CapacityChange[] = [];
+    // The capacityFrom lines of each day: the last one counts (the sort below keeps their order).
+    const changesOn = new Map<DayNumber, Array<{ entry: PropertyEntry; spec: string }>>();
     for (const e of getProps(props, "capacityFrom")) {
       const m = /^(\S+)\s+(.+)$/.exec(e.value);
       const from = m ? parseDate(m[1]) : undefined;
@@ -456,9 +465,28 @@ function resolveTeam(file: TeamFile, project: Project, issues: Issue[]): Person[
       } else {
         capacityChanges.push({ from, hours: spec.hours, per: spec.per });
         tooMuch(e, spec.hours, spec.per);
+        changesOn.set(from, [...(changesOn.get(from) ?? []), { entry: e, spec: m![2].trim() }]);
       }
     }
     capacityChanges.sort((a, b) => a.from - b.from);
+    for (const [from, lines] of changesOn) {
+      const last = lines[lines.length - 1];
+      for (const { entry } of lines.slice(0, -1))
+        issue(
+          issues,
+          file.path,
+          entry,
+          "duplicate-capacity-from",
+          `Another capacityFrom for ${formatDate(from)} follows (${last.spec}): only the last one counts, so this one is ignored.`,
+          "warning"
+        );
+    }
+    // Normal hours of a working day in force on a day (0: none, for whatever the workweek).
+    const normalHours = (d: DayNumber) => {
+      let hours = capacityHours;
+      for (const c of capacityChanges) if (c.from <= d) hours = c.hours;
+      return hours;
+    };
     const off = dateRanges(file.path, getProps(props, "off"), issues);
     const week = workweek ?? project.workweek;
     const regular = (d: DayNumber) => week.has(isoWeekday(d)) && !inRanges(project.holidays, d);
@@ -476,7 +504,16 @@ function resolveTeam(file: TeamFile, project: Project, issues: Issue[]): Person[
         continue;
       }
       let working = 0;
-      for (let d = o.from; d <= o.to; d++) if (regular(d)) working++;
+      // Working days without normal hours (capacity 0h): overtime adds nothing on those.
+      let none = 0;
+      let firstNone: DayNumber | undefined;
+      for (let d = o.from; d <= o.to; d++) {
+        if (!regular(d)) continue;
+        working++;
+        if (normalHours(d) > 0) continue;
+        none++;
+        firstNone ??= d;
+      }
       if (working === 0)
         issue(
           issues,
@@ -484,6 +521,17 @@ function resolveTeam(file: TeamFile, project: Project, issues: Issue[]): Person[
           e,
           "overtime-no-working-days",
           `${p.name} has no working days in this period; use workday: for weekends and holidays.`,
+          "warning"
+        );
+      else if (none > 0)
+        issue(
+          issues,
+          file.path,
+          e,
+          "overtime-without-hours",
+          none === working
+            ? `${p.name} has no working hours in this period (capacity 0h): overtime only adds to the normal hours of a day, so it adds none.`
+            : `${p.name} has no working hours from ${formatDate(firstNone!)} (capacity 0h): overtime only adds to the normal hours of a day, so it adds none on ${none} of the ${working} working days.`,
           "warning"
         );
       overtime.push(o);

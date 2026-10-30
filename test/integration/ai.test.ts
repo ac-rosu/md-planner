@@ -117,6 +117,52 @@ describe("AI proposals", () => {
     assert.equal(api.proposals.open.length, 0);
   });
 
+  it("gives open proposals their own ids and refuses one whose ids were taken meanwhile", async () => {
+    const api = await getApi();
+    const step = (ref: string, title: string, dependsOn: string[]) => ({
+      ref,
+      title,
+      estimate: "1d",
+      tags: [],
+      owner: "",
+      dependsOn,
+      notes: "",
+    });
+    api.ai.useProvider(
+      new CannedProvider(() => ({
+        rationale: "two steps",
+        subtasks: [step("N1", "First", []), step("N2", "Second", ["N1"])],
+      }))
+    );
+    const M1 = "milestones/M1-discovery-design.md";
+    const M3 = "milestones/M3-frontend.md";
+    const first = vscode.commands.executeCommand<boolean>("planner.ai.breakDown", "T107");
+    const a = await waitFor(() => api.proposals.open[0], "first proposal");
+    const second = vscode.commands.executeCommand<boolean>("planner.ai.breakDown", "T012");
+    const b = await waitFor(() => api.proposals.open[1], "second proposal");
+    assert.match(
+      api.proposals.proposalText(a, M2)!,
+      /First @est:1d \^T408\n.*Second @est:1d @dep:T408 \^T409\n/
+    );
+    assert.match(
+      api.proposals.proposalText(b, M1)!,
+      /First @est:1d \^T410\n.*Second @est:1d @dep:T410 \^T411\n/
+    );
+    // A task typed in another file takes T410 before the second proposal is accepted.
+    const doc = await vscode.workspace.openTextDocument(planUri(M3));
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(planUri(M3), doc.lineAt(doc.lineCount - 1).range.end, "\n- [ ] Typed ^T410\n");
+    await vscode.workspace.applyEdit(edit);
+    await waitFor(() => api.service.plan.taskById("T410"), "typed task");
+    const m1 = docText(M1);
+    assert.equal(await api.proposals.accept(b), false);
+    assert.equal(await second, false);
+    assert.equal(docText(M1), m1);
+    assert.ok(await api.proposals.accept(a));
+    assert.equal(await first, true);
+    assert.match(docText(M2), /First @est:1d \^T408\n/);
+  });
+
   it("breaks a task down into subtasks after Accept, undoable in one step", async () => {
     const api = await getApi();
     api.ai.useProvider(

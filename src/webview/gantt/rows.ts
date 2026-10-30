@@ -268,11 +268,13 @@ export function describeFocus(
  * Where a bar dragged by `days` calendar days would go, in working days of the project calendar:
  * a moved bar starts on the next working day and keeps its number of working days; a resized bar
  * ends on the last working day on or before the pointer. The schedule decides the final dates
- * (other work of the person can stretch the bar); the notice after the drag gives them.
+ * (other work of the person can stretch the bar); the notice after the drag gives them. A task in
+ * progress (`workStart`: where its remaining work starts) keeps its start, @started: only the
+ * remaining work moves.
  */
 export function dragPreview(
   model: Pick<GanttModel, "workweek" | "holidays">,
-  row: { start: number; finish: number },
+  row: { start: number; finish: number; workStart?: number },
   kind: "move" | "resize",
   days: number
 ): { start: number; finish: number } {
@@ -288,10 +290,50 @@ export function dragPreview(
   };
   if (kind === "resize")
     return { start: row.start, finish: Math.max(row.start, previous(row.finish + days)) };
+  const from = row.workStart ?? row.start;
   let length = 0;
-  for (let d = row.start; d < row.finish; d++) if (working(d)) length++;
-  const start = next(row.start + days);
-  return { start, finish: length > 0 ? stepWorkingDays(model, start, length) : start };
+  for (let d = from; d < row.finish; d++) if (working(d)) length++;
+  const start = next(from + days);
+  const finish = length > 0 ? stepWorkingDays(model, start, length) : start;
+  return { start: row.workStart !== undefined ? Math.min(row.start, start) : start, finish };
+}
+
+/**
+ * The day a move of the bar is measured from: where its remaining work starts. That is its start,
+ * except for a task in progress: its bar starts at @started, in the past, and only the work still
+ * to do (today or later) can move. A move from @started would write a fixed start in the past.
+ */
+export function moveBase(row: { start?: number; workStart?: number }): number | undefined {
+  return row.workStart ?? row.start;
+}
+
+/** The task an open edit dialog is for: its row and the title it had when the dialog opened. */
+export interface EditTarget {
+  key: string;
+  title: string;
+}
+
+/**
+ * The row of an open edit dialog in a new model, or why the dialog closes: the row is gone (the
+ * task was removed, or got an id on save and with it another key), or its title changed. A task
+ * without id is known by its line (`file#line`): with lines added or removed above it, that line
+ * holds another task, which must not get this one's values. A title changed elsewhere (in the
+ * editor, by an agent) would be overwritten by the one the dialog shows.
+ */
+export function editTarget(
+  rows: GanttRow[],
+  target: EditTarget
+): { row: GanttRow } | { closed: string } {
+  const row = rows.find((r) => r.key === target.key);
+  if (row && row.title === target.title) return { row };
+  const what = !row
+    ? ""
+    : target.key.lastIndexOf("#") > 0
+      ? ` (its line now holds "${row.title}")`
+      : ` (its title is now "${row.title}")`;
+  return {
+    closed: `"${target.title}" changed while its edit dialog was open${what}, so the dialog was closed and nothing was written. Open it again to edit the task.`,
+  };
 }
 
 /** "Fri 2026-11-27": the weekday matters when a drag ends near a weekend. */

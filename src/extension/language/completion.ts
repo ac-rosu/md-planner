@@ -91,6 +91,9 @@ export class PlanCompletionProvider implements vscode.CompletionItemProvider {
             ? "step"
             : "task";
 
+    // Within a quoted value past its first word (`@blocked:"waiting for @`) an `@` or `#` is text.
+    const quoted = /(?:^|\s)@[A-Za-z][\w-]*:"((?:[^"\\]|\\.)*)$/.exec(before);
+    if (quoted && /\s/.test(quoted[1])) return undefined;
     // @key:value
     const attr = /(?:^|\s)@([A-Za-z][\w-]*):("?)([^\s"]*)$/.exec(before);
     if (attr) {

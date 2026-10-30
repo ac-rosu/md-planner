@@ -199,8 +199,9 @@ describe("overtime and extra working days", () => {
     // After the last working day, an extra working day still counts; then nothing follows.
     expect(cal.nextWorkdayOf("alex", d("2026-10-24")!, 3650)).toBe(d("2026-10-31"));
     expect(cal.nextWorkdayOf("alex", d("2026-11-01")!, Number.POSITIVE_INFINITY)).toBeUndefined();
-    // Overtime alone gives hours too.
-    expect(cal.nextWorkdayOf("sam", d("2026-10-20")!, 3650)).toBe(d("2026-10-26"));
+    // Overtime adds to the normal hours of a day: none once those end (it used to give hours).
+    expect(cal.nextWorkdayOf("sam", d("2026-10-19")!, 3650)).toBe(d("2026-10-19"));
+    expect(cal.nextWorkdayOf("sam", d("2026-10-20")!, 3650)).toBeUndefined();
     expect(cal.nextWorkdayOf("sam", d("2026-10-28")!, 3650)).toBeUndefined();
     expect(cal.nextWorkdayOf("nobody", d("2026-10-05")!, 30)).toBeUndefined();
   });

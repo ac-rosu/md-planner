@@ -37,8 +37,8 @@ Rules:
   asks whether to stop the timer now.
 
 Stop the timer by clicking it in the status bar or running **Planner: Stop timer**. The elapsed
-time is rounded **up** to `planner.time.roundingMinutes` (15 minutes by default) and added to the
-task's `@act`. Less than one minute is discarded with a message, and a task the timer moved to in
+time is rounded **up** to `planner.time.roundingMinutes` (15 minutes by default, at most 60) and
+added to the task's `@act`; when the rounded time is more than a working day, it asks first. Less than one minute is discarded with a message, and a task the timer moved to in
 progress goes back to to do, and its parents are put back as they were (a timer started by
 mistake leaves no trace).
 

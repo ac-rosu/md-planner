@@ -1,11 +1,39 @@
 // Time tracking helpers: rounding timer minutes and parsing manually logged time.
 import { formatHours } from "./duration";
 import { type Task } from "./model";
+import { settingNumber } from "./settingValues";
 
-/** Rounds elapsed minutes up to the next multiple of `rounding` (at least one increment). */
+export const DEFAULT_ROUNDING_MINUTES = 15;
+/** The most a timer's time is rounded up by: an hour. */
+export const MAX_ROUNDING_MINUTES = 60;
+
+/**
+ * `planner.time.roundingMinutes` as the timer uses it: 1 to 60 minutes. A value that is not a
+ * number of minutes (`"15m"` is read as 15) is the default, 15; a larger one is 60, so 900 typed
+ * for seconds does not log a quarter of an hour as 15 hours. `invalid` says what was not used.
+ */
+export function roundingMinutes(value: unknown): { minutes: number; invalid?: string } {
+  if (value === undefined || value === null) return { minutes: DEFAULT_ROUNDING_MINUTES };
+  const n = settingNumber(value, ["m", "min", "mins", "minute", "minutes"]);
+  const minutes =
+    n === undefined || n <= 0
+      ? DEFAULT_ROUNDING_MINUTES
+      : Math.min(MAX_ROUNDING_MINUTES, Math.max(1, n));
+  return minutes === n
+    ? { minutes }
+    : {
+        minutes,
+        invalid: `planner.time.roundingMinutes is ${JSON.stringify(value)}: the timer rounds up to ${minutes} minutes (1 to ${MAX_ROUNDING_MINUTES}).`,
+      };
+}
+
+/**
+ * Rounds elapsed minutes up to the next multiple of `rounding` (at least one increment); a
+ * rounding that is not a number is 15 minutes, and it is 1 to 60 (see roundingMinutes).
+ */
 export function roundMinutes(elapsedMinutes: number, rounding: number): number {
-  const step = Math.max(1, rounding);
-  if (elapsedMinutes <= 0) return 0;
+  const step = roundingMinutes(rounding).minutes;
+  if (!(elapsedMinutes > 0)) return 0;
   return Math.ceil(elapsedMinutes / step - 1e-9) * step;
 }
 

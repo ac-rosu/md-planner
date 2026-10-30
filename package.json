@@ -96,7 +96,7 @@
     "viewsWelcome": [
       {
         "view": "planner.milestones",
-        "contents": "No plan folder found in this workspace.\n[New project](command:planner.newProject)\nOr let an AI agent build the whole plan from a description: connect it to the planner's MCP server, then ask it to plan your project.\n[Configure MCP for Claude Code](command:planner.configureMcp)\n[Add the md-planner skill for AI agents](command:planner.addAgentSkill)\nA plan is a folder of Markdown files (`plan/` by default, setting `planner.planFolder`).\n[Open the user manual](command:planner.openManual)",
+        "contents": "No plan in this workspace (no project.md in the plan folder).\n[New project](command:planner.newProject)\nOr let an AI agent build the whole plan from a description: connect it to the planner's MCP server, then ask it to plan your project.\n[Configure MCP for Claude Code](command:planner.configureMcp)\n[Add the md-planner skill for AI agents](command:planner.addAgentSkill)\nA plan is a folder of Markdown files (`plan/` by default, setting `planner.planFolder`).\n[Open the user manual](command:planner.openManual)",
         "when": "!planner.hasPlan"
       },
       {
@@ -1718,7 +1718,8 @@
           "type": "number",
           "default": 15,
           "minimum": 1,
-          "markdownDescription": "Timer time is rounded up to this many minutes before it is added to `@act`."
+          "maximum": 60,
+          "markdownDescription": "Timer time is rounded up to this many minutes before it is added to `@act` (at most 60). When the rounded time is more than a working day, stopping the timer asks first."
         },
         "planner.todos.keywords": {
           "type": "array",

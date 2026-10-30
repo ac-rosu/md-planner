@@ -8,6 +8,7 @@ import {
   activeChildren,
   actualHours,
   estimateHours,
+  workHours,
   hasLoggedWork,
   initials,
   isLeaf,
@@ -389,7 +390,8 @@ function progressAll(plan: Plan): number {
   let done = 0;
   for (const t of plan.tasks) {
     if (!isLeaf(t) || t.status === "cancelled") continue;
-    const est = estimateHours(t) ?? 0;
+    // As the planner's own progress: a done task with only logged hours weighs by those.
+    const est = workHours(t) ?? 0;
     total += est;
     done += est * progressOf(t);
   }

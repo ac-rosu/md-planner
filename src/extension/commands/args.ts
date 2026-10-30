@@ -1,6 +1,7 @@
 // Resolves command arguments (tree nodes, ids, {file, line} or the editor cursor) to plan items.
 import * as vscode from "vscode";
 import { type ParsedFile, type Task } from "../../core/model";
+import { matchCheckbox } from "../../core/parser/taskLine";
 import { type Plan } from "../../core/resolve";
 import { findTaskByKey } from "../../core/scheduler";
 import { type PlanService, serviceOf } from "../planService";
@@ -63,8 +64,29 @@ export function resolveTask(service: PlanService, arg: TaskArg): ResolvedTask | 
   if (!editor) return undefined;
   const rel = service.relPath(editor.document.uri);
   if (rel === undefined) return undefined;
+  if (cursorOnCodeCheckbox(service)) {
+    // Not the task whose notes hold the code block.
+    void vscode.window.showWarningMessage(
+      "Planner: this line is in a code block (```), so it is not read as a task; nothing was changed."
+    );
+    return undefined;
+  }
   const t = itemAtLine(plan, rel, editor.selection.active.line);
   return t ? { task: t, fromEditor: true } : undefined;
+}
+
+/**
+ * True when the cursor of the active editor is on a line of a plan file that looks like a task
+ * line but is not read as one: it is in a code block (```), maybe in the notes of a task.
+ */
+export function cursorOnCodeCheckbox(service: PlanService): boolean {
+  const editor = vscode.window.activeTextEditor;
+  const rel = editor && service.relPath(editor.document.uri);
+  const file = rel === undefined ? undefined : service.plan.file(rel);
+  if (!editor || !file) return false;
+  const line = editor.selection.active.line;
+  if (line >= file.lines.lineCount || !matchCheckbox(file.lines.line(line))) return false;
+  return !file.items.some((t) => t.line === line);
 }
 
 export function findById(plan: Plan, id: string): Task | undefined {

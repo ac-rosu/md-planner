@@ -3,13 +3,16 @@ import { formatDate, isoWeekday, parseDate } from "../../../src/core/dates";
 import { schedulePlan } from "../../../src/core/scheduler";
 import { buildGanttModel } from "../../../src/core/views/gantt";
 import { type GanttRow } from "../../../src/core/views/gantt";
+import { changedFields, editValues } from "../../../src/webview/gantt/editFields";
 import {
   dayLabel,
   describeFocus,
   dragPreview,
+  editTarget,
   linkFocus,
   linkId,
   linkTargetAt,
+  moveBase,
   resizeHandleWidth,
   roundedPath,
   routeLinks,
@@ -32,7 +35,7 @@ import {
   ZoomGesture,
   zoomPx,
 } from "../../../src/webview/gantt/scale";
-import { loadSample, TODAY } from "../helpers";
+import { loadSample, md, planFrom, TODAY } from "../helpers";
 
 const plan = loadSample().plan;
 const schedule = schedulePlan(plan, { today: TODAY });
@@ -236,6 +239,50 @@ describe("gantt model", () => {
     expect(visible.some((r) => r.key === "T201")).toBe(true);
   });
 
+  it("gives a bar in progress the day its remaining work starts", () => {
+    // Started Tue 20 Oct, 16 of 40 h left; today is Thu 29 Oct.
+    const p = planFrom({
+      "project.md": md("# P", "", "start: 2026-10-05", "workweek: mon-fri", "hoursPerDay: 8"),
+      "team.md": md("# Team", "", "## Alex", "", "capacity: 40h/week"),
+      "milestones/M1.md": md(
+        "# M1",
+        "",
+        "id: M1",
+        "",
+        "- [/] Build @est:40h @act:24h @owner:alex @started:2026-10-20 ^T1",
+        "- [ ] Test @est:8h @owner:alex @dep:T1 ^T2"
+      ),
+    });
+    const m = buildGanttModel(p, schedulePlan(p, { today: "2026-10-29" }), {
+      grouping: "milestone",
+    });
+    expect(m.rows.find((r) => r.key === "T1")).toMatchObject({
+      start: d("2026-10-20"),
+      workStart: d("2026-10-29"),
+      finish: d("2026-10-30"),
+    });
+    // A task not started yet: its work starts where its bar does.
+    expect(m.rows.find((r) => r.key === "T2")?.workStart).toBeUndefined();
+  });
+
+  it("gives a subtask without an estimate its share of the parent's", () => {
+    const p = planFrom({
+      "milestones/M1.md": md(
+        "# M1",
+        "",
+        "id: M1",
+        "",
+        "- [ ] Feature @est:40h ^T1",
+        "  - [ ] Part A ^T2",
+        "  - [ ] Part B @est:4h ^T3",
+        "  - [ ] Part C ^T4"
+      ),
+    });
+    const m = buildGanttModel(p, schedulePlan(p, { today: TODAY }), { grouping: "milestone" });
+    expect(m.rows.find((r) => r.key === "T2")).toMatchObject({ budget: 18, budgetOf: "T1" });
+    expect(m.rows.find((r) => r.key === "T3")?.budget).toBeUndefined();
+  });
+
   it("adds baseline bars and slip", () => {
     const baseline = {
       name: "kickoff",
@@ -299,6 +346,18 @@ describe("gantt drag safety", () => {
     // Resizing onto a Saturday ends on the Friday before; never before the start.
     expect(dayLabel(dragPreview(cal, bar, "resize", 2).finish)).toBe("Fri 2026-10-09");
     expect(dragPreview(cal, bar, "resize", -5).finish).toBe(bar.start);
+  });
+
+  it("moves a bar in progress from where its remaining work starts, keeping @started", () => {
+    const cal = { workweek: [1, 2, 3, 4, 5], holidays: [] };
+    // Started Tue 20 Oct; the rest is Thu 29 and Fri 30 Oct.
+    const bar = { start: d("2026-10-20"), finish: d("2026-10-30"), workStart: d("2026-10-29") };
+    expect(moveBase(bar)).toBe(d("2026-10-29"));
+    expect(moveBase({ start: d("2026-10-07") })).toBe(d("2026-10-07"));
+    expect(moveBase({})).toBeUndefined();
+    // One day later: Friday and Monday; the bar still starts on Tuesday 20 Oct.
+    const moved = dragPreview(cal, bar, "move", 1);
+    expect([moved.start, moved.finish].map(dayLabel)).toEqual(["Tue 2026-10-20", "Mon 2026-11-02"]);
   });
 
   it("offers Remove fixed start on pinned bars only", () => {
@@ -406,5 +465,43 @@ describe("gantt dependency lines", () => {
       "TD waits for TC. Delete removes this dependency; Esc shows all arrows."
     );
     expect(describeFocus(model, linkFocus(links, "X", undefined), "X", undefined)).toBeUndefined();
+  });
+});
+
+describe("gantt edit dialog", () => {
+  const row = (key: string, title: string, more: Partial<GanttRow> = {}) =>
+    ({ key, kind: "task", title, owner: "Sam", est: "12h", ...more }) as GanttRow;
+
+  it("saves only the fields changed from the values it opened with", () => {
+    const opened = editValues(row("T5", "Payments"));
+    expect(opened).toEqual({ title: "Payments", owner: "sam", estimate: "12h" });
+    // The estimate was changed elsewhere meanwhile: a new owner does not write the old one back.
+    expect(changedFields(opened, { ...opened, owner: "alex" })).toEqual({ owner: "alex" });
+    expect(changedFields(opened, opened)).toEqual({});
+    expect(
+      changedFields(opened, { title: " Payment provider ", owner: "", estimate: "2 d" })
+    ).toEqual({ title: "Payment provider", owner: null, estimate: "2d" });
+    // An emptied estimate is left as it is.
+    expect(changedFields(opened, { ...opened, estimate: " " })).toEqual({});
+  });
+
+  it("stays on its task, and closes when the task changed while it was open", () => {
+    const rows = [row("T5", "Payments"), row("milestones/M2.md#12", "Refunds")];
+    expect(editTarget(rows, { key: "T5", title: "Payments" })).toEqual({ row: rows[0] });
+    expect(editTarget([row("T5", "Payment provider")], { key: "T5", title: "Payments" })).toEqual({
+      closed:
+        '"Payments" changed while its edit dialog was open (its title is now "Payment provider"), so the dialog was closed and nothing was written. Open it again to edit the task.',
+    });
+    // A line inserted above: line 12 holds another task now.
+    const shifted = [row("milestones/M2.md#12", "Invoices")];
+    expect(editTarget(shifted, { key: "milestones/M2.md#12", title: "Refunds" })).toEqual({
+      closed:
+        '"Refunds" changed while its edit dialog was open (its line now holds "Invoices"), so the dialog was closed and nothing was written. Open it again to edit the task.',
+    });
+    // Gone, or known by an id since it was saved.
+    expect(editTarget([], { key: "milestones/M2.md#12", title: "Refunds" })).toEqual({
+      closed:
+        '"Refunds" changed while its edit dialog was open, so the dialog was closed and nothing was written. Open it again to edit the task.',
+    });
   });
 });

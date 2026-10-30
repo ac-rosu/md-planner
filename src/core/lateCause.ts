@@ -27,8 +27,42 @@ export interface LateCause {
   day?: DayNumber;
   /** The busy resource (lower-case person id or `unassigned`). */
   resource?: string;
-  /** The milestones and tasks in between, starting next to the late task. */
+  /**
+   * The milestones and tasks in between, starting next to the late task: the first four at most
+   * (three are shown, a fourth says that more follow), so a long chain costs no more than a short one.
+   */
   via: string[];
+}
+
+/** How many of the milestones and tasks in between a cause keeps (see `LateCause.via`). */
+const VIA_KEPT = 4;
+
+/** Milestones and tasks on the way from a task to another, none twice in a row. */
+interface Via {
+  length: number;
+  /** The first ones, `VIA_KEPT` at most. */
+  head: string[];
+  last?: string;
+}
+
+const NO_VIA: Via = { length: 0, head: [] };
+
+/**
+ * The walk from a task back along what set its start (see `findLateCause`), worked out once per
+ * task from the walk of the task it waited for: a long chain of late tasks costs its length, not its
+ * square.
+ */
+interface Walk {
+  /** The task it waited for: the next one on the walk. */
+  next?: TaskSchedule;
+  /** Where the walk ends, if anywhere: the first task whose fixed start held it back. */
+  root?: TaskSchedule;
+  /** On the way to the root. */
+  toRoot: Via;
+  /** The longest wait for an owner's other work up to the root, the first of the longest. */
+  busy?: { ts: TaskSchedule; days: number };
+  /** On the way to the task that waited longest. */
+  toBusy: Via;
 }
 
 /** What kept a task from starting when it could (see `daysOf`). */
@@ -44,6 +78,8 @@ interface Days {
 interface LateCauses {
   causes: Map<Task, LateCause | undefined>;
   days: Map<TaskSchedule, Days>;
+  /** Per task: its walk back to the cause (see `walkOf`). */
+  walks: Map<TaskSchedule, Walk>;
   /** Per task: the fixed start it would move without (see `rootOf`). */
   roots: Map<TaskSchedule, TaskSchedule | null>;
   /** Per task: when it would have finished without the fixed start before it (`pushOf`). */
@@ -85,6 +121,7 @@ export function lateCause(schedule: Schedule, task: Task): LateCause | undefined
     memo = {
       causes: new Map(),
       days: new Map(),
+      walks: new Map(),
       roots: new Map(),
       moved: new Map(),
       finish: new Map(),
@@ -96,54 +133,121 @@ export function lateCause(schedule: Schedule, task: Task): LateCause | undefined
   return memo.causes.get(task);
 }
 
+/**
+ * Follows the chain from the late task back along what set each start (see `walkOf`). The walk
+ * ends at a fixed start that held its task back: still keeping the late task back at least one
+ * working day, and as many as the longest wait on the way, makes it the cause (what it keeps back
+ * is what it held its own task back at most). Otherwise the longest wait is.
+ */
 function findLateCause(schedule: Schedule, task: Task, memo: LateCauses): LateCause | undefined {
-  const via: string[] = [];
-  // The tasks from the late task back to the current one.
-  const chain: TaskSchedule[] = [];
-  const seen = new Set<Task>();
-  // The longest wait so far, with the length of the chain up to its task.
-  let busy: { task: Task; resource: string; days: number; via: number } | undefined;
-  for (let t = task; !seen.has(t);) {
-    seen.add(t);
-    const ts = schedule.tasks.get(t);
-    if (!ts || ts.done || ts.earliest === undefined || ts.start === undefined) break;
-    chain.push(ts);
-    const { wait, held } = daysOf(schedule, memo, ts);
-    if (wait > 0 && (!busy || wait > busy.days))
-      busy = { task: t, resource: ts.resource, days: wait, via: via.length };
-    let d = ts.driver;
-    if (d?.kind === "start") {
-      if (held > 0) {
-        // Still keeping the late task back at least one working day, and as many as the longest
-        // wait, makes the fixed start the cause (what it keeps back is `held` at most).
-        const needed = Math.max(1, busy?.days ?? 0);
-        if (held >= needed && pushOf(schedule, memo, chain) >= needed)
-          return { kind: "start", task: d.from, day: ts.earliest, via: trimRoot(via, d.from) };
-        break;
-      }
-      d = d.dep;
-    }
-    if (!d) break;
-    const step =
-      typeof d.declaredBy === "string" && d.on.milestoneId !== t.milestoneId
-        ? (d.on.milestoneId ?? d.on.id ?? d.on.title)
-        : (d.on.id ?? d.on.title);
-    if (via[via.length - 1] !== step) via.push(step);
-    t = d.on;
+  const ts = schedule.tasks.get(task);
+  if (!onWalk(ts)) return undefined;
+  const walk = walkOf(schedule, memo, ts);
+  const root = walk.root;
+  if (root?.driver?.kind === "start") {
+    const needed = Math.max(1, walk.busy?.days ?? 0);
+    if (daysOf(schedule, memo, root).held >= needed && pushOf(schedule, memo, ts, root) >= needed)
+      return {
+        kind: "start",
+        task: root.driver.from,
+        day: root.earliest,
+        via: viaTo(walk.toRoot, root.driver.from),
+      };
   }
+  const busy = walk.busy;
   return busy
     ? {
         kind: "busy",
-        task: busy.task,
-        resource: busy.resource,
-        via: trimRoot(via.slice(0, busy.via), busy.task),
+        task: busy.ts.task,
+        resource: busy.ts.resource,
+        via: viaTo(walk.toBusy, busy.ts.task),
       }
     : undefined;
 }
 
-/** The chain without its last link when that is the root task itself. */
-function trimRoot(via: string[], root: Task): string[] {
-  return via[via.length - 1] === (root.id ?? root.title) ? via.slice(0, -1) : via;
+/** A task the walk goes through: open and scheduled. */
+function onWalk(ts: TaskSchedule | undefined): ts is TaskSchedule {
+  return !!ts && !ts.done && ts.earliest !== undefined && ts.start !== undefined;
+}
+
+/**
+ * The walk from a task: to the task that set its start (through the dependency that would have
+ * set it anyway when its fixed start held it back no working day), until a fixed start held its
+ * task back, or nothing open set the start. Worked out from the end of the chain back to the task,
+ * once per task.
+ */
+function walkOf(schedule: Schedule, memo: LateCauses, first: TaskSchedule): Walk {
+  // The tasks from this one to the first whose walk is known, each with the step to the next.
+  const path: Array<{ ts: TaskSchedule; root: boolean; next?: TaskSchedule; step?: string }> = [];
+  const onPath = new Set<TaskSchedule>();
+  for (let ts: TaskSchedule | undefined = first; ts && !memo.walks.has(ts) && !onPath.has(ts);) {
+    onPath.add(ts);
+    const link = linkOf(schedule, memo, ts);
+    path.push({ ts, ...link });
+    ts = link.next;
+  }
+  for (let i = path.length - 1; i >= 0; i--) {
+    const { ts, root, next, step } = path[i];
+    const { wait } = daysOf(schedule, memo, ts);
+    const own = wait > 0 ? { ts, days: wait } : undefined;
+    const after = next && memo.walks.get(next);
+    let walk: Walk;
+    if (root) walk = { root: ts, toRoot: NO_VIA, busy: own, toBusy: NO_VIA };
+    else if (!after || step === undefined) walk = { toRoot: NO_VIA, busy: own, toBusy: NO_VIA };
+    else {
+      // The first of the longest waits from the late task on: this one on a tie.
+      const longest = own && (!after.busy || own.days >= after.busy.days);
+      walk = {
+        next,
+        root: after.root,
+        toRoot: after.root ? prepend(step, after.toRoot) : NO_VIA,
+        busy: longest ? own : after.busy,
+        toBusy: longest || !after.busy ? NO_VIA : prepend(step, after.toBusy),
+      };
+    }
+    memo.walks.set(ts, walk);
+  }
+  return memo.walks.get(first)!;
+}
+
+/**
+ * Where the walk goes from a task: nowhere when its fixed start held it back (the walk ends there),
+ * else to the task that set its start, if open, with the step shown for it: the milestone of a
+ * milestone's `depends:` into another milestone, the task otherwise.
+ */
+function linkOf(
+  schedule: Schedule,
+  memo: LateCauses,
+  ts: TaskSchedule
+): { root: boolean; next?: TaskSchedule; step?: string } {
+  let d = ts.driver;
+  if (d?.kind === "start") {
+    if (daysOf(schedule, memo, ts).held > 0) return { root: true };
+    d = d.dep;
+  }
+  if (!d) return { root: false };
+  const next = schedule.tasks.get(d.on);
+  const step =
+    typeof d.declaredBy === "string" && d.on.milestoneId !== ts.task.milestoneId
+      ? (d.on.milestoneId ?? d.on.id ?? d.on.title)
+      : (d.on.id ?? d.on.title);
+  return onWalk(next) ? { root: false, next, step } : { root: false };
+}
+
+/** The step, then the rest unless it starts with the same step. */
+function prepend(step: string, via: Via): Via {
+  if (via.length > 0 && via.head[0] === step) return via;
+  return {
+    length: via.length + 1,
+    head: [step, ...via.head.slice(0, VIA_KEPT - 1)],
+    last: via.length > 0 ? via.last : step,
+  };
+}
+
+/** The first steps on the way, without the last one when that is the root task itself. */
+function viaTo(via: Via, root: Task): string[] {
+  const length = via.last === (root.id ?? root.title) ? via.length - 1 : via.length;
+  return via.head.slice(0, Math.min(length, VIA_KEPT));
 }
 
 /**
@@ -197,17 +301,26 @@ function readyFrom(schedule: Schedule, ts: TaskSchedule, day: DayNumber, taken: 
 }
 
 /**
- * The working days the fixed start of the last task of the chain (the late task back to it) still
- * kept the late task from finishing earlier, at most what it kept its own task back: the day each
- * task on the chain would have finished without it, one after the other (see `finishOn`), against
- * the day it finishes. Worked out once per task.
+ * The working days the fixed start of `root`, where the walk from the late task ends, still kept
+ * the late task from finishing earlier, at most what it kept its own task back: the day each task
+ * on the chain would have finished without it, one after the other (see `finishOn`), against the
+ * day it finishes. Worked out once per task.
  */
-function pushOf(schedule: Schedule, memo: LateCauses, chain: TaskSchedule[]): number {
-  const root = chain[chain.length - 1];
-  // Worked out from the fixed start on, so only the tasks after the last one known are left.
-  let known = 0;
-  while (known < chain.length && !memo.moved.has(chain[known])) known++;
-  for (let i = known - 1; i >= 0; i--) {
+function pushOf(
+  schedule: Schedule,
+  memo: LateCauses,
+  late: TaskSchedule,
+  root: TaskSchedule
+): number {
+  // Worked out from the fixed start on, so only the tasks up to the first one known are left.
+  const chain: TaskSchedule[] = [];
+  for (
+    let ts: TaskSchedule | undefined = late;
+    ts && !memo.moved.has(ts);
+    ts = ts === root ? undefined : memo.walks.get(ts)?.next
+  )
+    chain.push(ts);
+  for (let i = chain.length - 1; i >= 0; i--) {
     const ts = chain[i];
     const finish = baseFinish(schedule, memo, ts, root);
     let start: Start | undefined;
@@ -223,7 +336,8 @@ function pushOf(schedule: Schedule, memo: LateCauses, chain: TaskSchedule[]): nu
         ahead: precedence && passedBy(schedule, memo, ts, precedence),
       };
     } else if (d?.kind !== "start") {
-      const { from, taken } = startWithout(schedule, memo, ts, chain[i + 1], root);
+      const before = memo.walks.get(ts)!.next!;
+      const { from, taken } = startWithout(schedule, memo, ts, before, root);
       start = { from, taken, precedence: ts.precedence, root };
     }
     // A task its own fixed start holds anyway does not move.
@@ -232,7 +346,7 @@ function pushOf(schedule: Schedule, memo: LateCauses, chain: TaskSchedule[]): nu
   }
   return Math.min(
     daysOf(schedule, memo, root).held,
-    between(schedule.calendar, memo.moved.get(chain[0])!.day, memo.finish.get(chain[0])!.day)
+    between(schedule.calendar, memo.moved.get(late)!.day, memo.finish.get(late)!.day)
   );
 }
 
@@ -554,6 +668,8 @@ interface UnscheduledCauses {
   plan: Plan;
   causes: Map<Task, string | undefined>;
   nearest: Map<DepNode, Nearest | null>;
+  /** The last day each task got hours; worked out when first needed (see `noCapacity`). */
+  lastWorked?: Map<Task, DayNumber>;
 }
 
 const unscheduledCauses = new WeakMap<Schedule, UnscheduledCauses>();
@@ -587,7 +703,7 @@ function findUnscheduledCause(
     case "blocked-by-cycle":
       return "it depends on tasks in a circular dependency";
     case "horizon":
-      return noCapacity(memo.plan, schedule, task);
+      return noCapacity(memo, schedule, task);
     case "waits-for-unscheduled": {
       const root = unscheduledRoot(schedule, task, memo.nearest);
       if (!root) return "it waits for a task that cannot be scheduled";
@@ -652,20 +768,44 @@ function unscheduledRoot(
   return nearest.get(node)?.root;
 }
 
-/** "Jordan has no working hours from 2026-12-24 on (capacityFrom: 2026-12-24 0h/week)". */
-function noCapacity(plan: Plan, schedule: Schedule, task: Task): string {
+/**
+ * "Jordan has no working hours from 2026-12-24 on (capacityFrom: 2026-12-24 0h/week)": looked at
+ * from the day after the task's last hours (someone who leaves halfway through it), or from the day
+ * it could start when it got none.
+ */
+function noCapacity(memo: UnscheduledCauses, schedule: Schedule, task: Task): string {
   const ts = schedule.tasks.get(task)!;
   const resource = ts.resource;
   if (resource === "unassigned") return "the unassigned pool has no capacity for it";
-  const person = plan.personById(resource);
+  const person = memo.plan.personById(resource);
   const who = person?.name ?? resource;
-  const from = ts.earliest ?? schedule.start;
+  const worked = lastWorked(memo, schedule).get(task);
+  const from = worked !== undefined ? worked + 1 : (ts.earliest ?? schedule.start);
   if (schedule.calendar.nextWorkdayOf(resource, from, 3650) !== undefined)
     return `${who} has no capacity for it`;
-  // No hours at all from the day it could start: say since when, and why if a capacity change did it.
-  const change = person?.capacityChanges
-    .filter((c) => c.hours === 0 && c.from <= from)
-    .sort((a, b) => b.from - a.from)[0];
+  // No hours at all from that day on: say since when, and why if a capacity change did it: the last
+  // one up to that day, or else the next one when only weekends and holidays come before it.
+  const zero = (person?.capacityChanges ?? []).filter((c) => c.hours === 0);
+  const next = zero.filter((c) => c.from > from).sort((a, b) => a.from - b.from)[0];
+  let change = zero.filter((c) => c.from <= from).sort((a, b) => b.from - a.from)[0];
+  if (!change && next) {
+    let d = from;
+    while (d < next.from && !schedule.calendar.isPersonWorkday(resource, d)) d++;
+    if (d === next.from) change = next;
+  }
   const since = formatDate(change?.from ?? from);
   return `${who} has no working hours from ${since} on${change ? ` (capacityFrom: ${since} 0h/${change.per})` : ""}`;
+}
+
+/** The last day each task got hours in the schedule. */
+function lastWorked(memo: UnscheduledCauses, schedule: Schedule): Map<Task, DayNumber> {
+  if (!memo.lastWorked) {
+    const last = new Map<Task, DayNumber>();
+    for (const a of schedule.allocations) {
+      const day = last.get(a.task);
+      if (day === undefined || a.day > day) last.set(a.task, a.day);
+    }
+    memo.lastWorked = last;
+  }
+  return memo.lastWorked;
 }

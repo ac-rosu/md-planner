@@ -1,6 +1,11 @@
 // Conversions between core types and the VS Code API.
 import * as vscode from "vscode";
 import { type Severity } from "../core/model";
+import {
+  isAbsolutePath,
+  pathSegments,
+  planFolderSetting as planFolderValue,
+} from "../core/settingValues";
 import { type Position, type Range } from "../core/text";
 
 export function toRange(r: Range): vscode.Range {
@@ -26,6 +31,39 @@ export function toSeverity(s: Severity): vscode.DiagnosticSeverity {
 
 export function config(scope?: vscode.ConfigurationScope): vscode.WorkspaceConfiguration {
   return vscode.workspace.getConfiguration("planner", scope);
+}
+
+/** `planner.planFolder` as written ("plan" when empty). */
+export function planFolderSetting(): string {
+  return planFolderValue(config().get<unknown>("planFolder", "plan"));
+}
+
+/**
+ * The plan folder for a workspace folder: an absolute `planner.planFolder` as it is, a relative one
+ * below the folder (`./plan`, `plan/` and `plan` are the same folder). The one place that resolves
+ * the setting: locating the plan, New project and Configure MCP all use it.
+ */
+export function planFolderUri(folder: vscode.Uri, setting = planFolderSetting()): vscode.Uri {
+  return isAbsolutePath(setting)
+    ? vscode.Uri.file(setting)
+    : vscode.Uri.joinPath(folder, ...pathSegments(setting));
+}
+
+/** The workspace folder a URI is in (whatever casing either uses); undefined outside all of them. */
+export function workspaceFolderOf(uri: vscode.Uri): vscode.WorkspaceFolder | undefined {
+  return (
+    vscode.workspace.getWorkspaceFolder(uri) ??
+    vscode.workspace.workspaceFolders?.find((f) => isInside(uri, f.uri))
+  );
+}
+
+/** True when `uri` is `folder` or inside it (whatever casing either uses where that is ignored). */
+export function isInside(uri: vscode.Uri, folder: vscode.Uri): boolean {
+  if (uri.scheme !== folder.scheme) return false;
+  const fold = (p: string) => (ignoresPathCase(uri) ? p.toLowerCase() : p);
+  const base = fold(folder.path).replace(/\/+$/, "");
+  const path = fold(uri.path);
+  return path === base || path.startsWith(`${base}/`);
 }
 
 /**

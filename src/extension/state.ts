@@ -9,6 +9,7 @@ import { type Plan } from "../core/resolve";
 import { isLeaf } from "../core/rollup";
 import { scheduleDiagnostics } from "../core/scheduleDiagnostics";
 import { scheduleJsonText } from "../core/scheduleJson";
+import { unassignedCapacitySetting } from "../core/settingValues";
 import {
   type Schedule,
   schedulePlan,
@@ -87,11 +88,18 @@ export class PlannerState implements vscode.Disposable {
 
   /** The options every schedule of the extension uses (a Gantt drag tries changes with them). */
   scheduleOptions(): ScheduleOptions {
-    return {
-      today: this.today,
-      unassignedCapacity: config().get<number>("scheduling.unassignedCapacity", 40),
-    };
+    const capacity = unassignedCapacitySetting(
+      config().get<unknown>("scheduling.unassignedCapacity")
+    );
+    if (capacity.invalid && capacity.invalid !== this.loggedSetting) {
+      this.loggedSetting = capacity.invalid;
+      this.service.log.warn(capacity.invalid);
+    }
+    return { today: this.today, unassignedCapacity: capacity.hours };
   }
+
+  /** The last setting problem logged (each is logged once, not at every recompute). */
+  private loggedSetting: string | undefined;
 
   private ensure(): { plan: Plan; today: string; schedule: Schedule; demand?: Schedule } {
     const plan = this.plan;

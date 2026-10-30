@@ -45,7 +45,8 @@ export function parseJsonReply(text: string): unknown {
 
 /**
  * Removes configured terms (customer names …) before a prompt leaves the machine. Patterns are
- * literal, case-insensitive terms, or `/regex/flags`.
+ * literal, case-insensitive terms, or `/regex/flags`. A regex that does not compile stops the
+ * request (an AiError): skipping it would send the very term it was meant to remove.
  */
 export function redact(text: string, patterns: readonly string[]): string {
   let out = text;
@@ -58,7 +59,9 @@ export function redact(text: string, patterns: readonly string[]): string {
         ? new RegExp(m[1], m[2].includes("g") ? m[2] : m[2] + "g")
         : new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
     } catch {
-      continue;
+      throw new AiError(
+        `The planner.ai.redact pattern "${p}" is not a valid regular expression, so nothing was sent. Correct it in the settings, or write the term without slashes to match it as plain text.`
+      );
     }
     out = out.replace(re, "[redacted]");
   }

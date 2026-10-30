@@ -65,7 +65,7 @@ export function scanLines(file: string, lines: TextLines, kind: ItemKind): ScanR
   const propLines = new Set<number>();
 
   let stack: Task[] = [];
-  let fence: { marker: string; owner?: Task } | undefined;
+  let fence: { marker: string; owner?: Task; line: number } | undefined;
   let level2: Heading | undefined;
 
   for (const line of conflictMarkerLines(lines)) {
@@ -154,6 +154,10 @@ export function scanLines(file: string, lines: TextLines, kind: ItemKind): ScanR
     }
 
     const width = indentWidth(text);
+    // The task whose block ends on the line above: a line right below it (Enter keeps the
+    // indentation of the line) that is not indented under it is not its note.
+    const above = stack[stack.length - 1];
+    const unindented = above !== undefined && above.endLine === i - 1 && width <= above.indent;
     while (stack.length > 0 && stack[stack.length - 1].indent >= width) stack.pop();
     const owner = stack[stack.length - 1];
     const fenceOpen = FENCE.exec(text);
@@ -162,10 +166,85 @@ export function scanLines(file: string, lines: TextLines, kind: ItemKind): ScanR
     } else {
       freeText.push({ line: i, text });
     }
-    if (fenceOpen) fence = { marker: fenceOpen[1], owner };
+    if (unindented && !near && !fenceOpen && !text.trimStart().startsWith("<!--"))
+      issues.push(notIndentedIssue(file, lines, i, above, owner));
+    if (fenceOpen) fence = { marker: fenceOpen[1], owner, line: i };
+  }
+
+  if (fence) {
+    const issue = unclosedFenceIssue(file, lines, fence.line, fence.marker);
+    if (issue) issues.push(issue);
   }
 
   return { lines, headings, props, items, roots, freeText, issues };
+}
+
+function nameOf(t: Task): string {
+  return t.id ?? `"${t.title}"`;
+}
+
+/**
+ * A hint on a line typed right below a task (or its last note) that is not indented under it:
+ * Enter keeps the indentation of the line, so under a top-level task the line is text outside the
+ * task, and under a subtask it is a note of the subtask's parent. Nothing changes in how it is read
+ * (that would change existing plans). `data.indent` is the indentation that makes it a note of the
+ * task: that of its notes, or the column of its title.
+ */
+function notIndentedIssue(
+  file: string,
+  lines: TextLines,
+  line: number,
+  task: Task,
+  owner: Task | undefined
+): Issue {
+  const text = lines.line(line);
+  const first = task.notes[0];
+  const noteIndent = first === undefined ? "" : leadingWhitespace(lines.line(first.line));
+  const indent =
+    indentWidth(noteIndent) > task.indent
+      ? noteIndent
+      : task.indentText + " ".repeat(Math.max(task.statusCol + 3 - task.indentText.length, 2));
+  const name = nameOf(task);
+  const read = owner ? `a note of ${nameOf(owner)}` : "text outside the task";
+  return {
+    file,
+    range: range(line, leadingWhitespace(text).length, text.length),
+    severity: "hint",
+    code: "note-not-indented",
+    message: `Not a note of ${name}: it is not indented under it, so it is read as ${read}. Indent it to make it a note of ${name}, or put a blank line above it.`,
+    data: { indent, task: name },
+  };
+}
+
+/**
+ * A warning on a code fence that is never closed when the lines it takes to the end of the file
+ * hold task lines or headings: they are read as code, so they are not in the plan.
+ */
+function unclosedFenceIssue(
+  file: string,
+  lines: TextLines,
+  line: number,
+  marker: string
+): Issue | undefined {
+  let tasks = 0;
+  let headings = 0;
+  for (let i = line + 1; i < lines.lineCount; i++) {
+    const text = lines.line(i);
+    if (matchCheckbox(text)) tasks++;
+    else if (HEADING.test(text)) headings++;
+  }
+  if (tasks === 0 && headings === 0) return undefined;
+  const count = (n: number, what: string) => (n === 0 ? [] : [`${n} ${what}${n === 1 ? "" : "s"}`]);
+  const hidden = [...count(tasks, "task line"), ...count(headings, "heading")].join(" and ");
+  const text = lines.line(line);
+  return {
+    file,
+    range: range(line, leadingWhitespace(text).length, text.length),
+    severity: "warning",
+    code: "unclosed-fence",
+    message: `This code block (${marker}) is never closed, so everything below it to the end of the file is read as code: the ${hidden} below it ${tasks + headings === 1 ? "is" : "are"} not read. Close it with a ${marker} line where the code ends.`,
+    data: { marker },
+  };
 }
 
 function addNote(task: Task, line: number, text: string): void {

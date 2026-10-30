@@ -78,6 +78,17 @@ export function estimateHours(task: Task): number | undefined {
   return any ? sum : undefined;
 }
 
+/**
+ * The hours a leaf weighs in progress and the burn-up: its estimate, or for a done task without
+ * one the hours logged on it (work entered after the fact, done with only `@act`), as the budget
+ * counts them. Undefined when there is neither.
+ */
+export function workHours(task: Task): number | undefined {
+  const est = estimateHours(task);
+  if (est !== undefined) return est;
+  return task.status === "done" && (task.act ?? 0) > 0 ? task.act : undefined;
+}
+
 export interface BudgetSplit {
   /** Hours of the estimated subtasks (at any depth, down to the first one with `@est`). */
   estimated: number;
@@ -142,7 +153,7 @@ export function remainingHours(task: Task): number {
   return Math.max(0, est - (task.act ?? 0));
 }
 
-/** Hours-weighted completion 0..1 of a task (done = 1). */
+/** Hours-weighted completion 0..1 of a task (done = 1; see `workHours`). */
 export function progressOf(task: Task): number {
   if (task.status === "done") return 1;
   if (task.status === "cancelled") return 0;
@@ -154,7 +165,7 @@ export function progressOf(task: Task): number {
   let total = 0;
   let done = 0;
   for (const leaf of leavesOf(task)) {
-    const est = estimateHours(leaf) ?? 0;
+    const est = workHours(leaf) ?? 0;
     total += est;
     done += est * progressOf(leaf);
   }
@@ -175,7 +186,7 @@ export function progressOfLeaves(leaves: Task[]): number {
     if (l.status === "cancelled") continue;
     count++;
     if (l.status === "done") doneCount++;
-    const est = estimateHours(l) ?? 0;
+    const est = workHours(l) ?? 0;
     total += est;
     done += est * progressOf(l);
   }

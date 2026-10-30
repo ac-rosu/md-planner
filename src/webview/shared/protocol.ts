@@ -1,7 +1,7 @@
 // Typed messages between the extension host and the webviews (discriminated unions).
 // Webviews never touch files: every change is a message that the host turns into a WorkspaceEdit.
 import { type TaskFilter } from "../../core/filter";
-import { type Priority, type Status } from "../../core/model";
+import { type Priority, type Status, STATUSES } from "../../core/model";
 import { type GanttGrouping, type GanttModel, type GanttOrder } from "../../core/views/gantt";
 import { type DashboardModel } from "../../core/views/dashboard";
 import { type ResourcesModel } from "../../core/views/resources";
@@ -18,11 +18,15 @@ import {
 
 export type CommonHostMessage =
   | { type: "history"; canUndo: boolean; canRedo: boolean }
-  /** `undo`: the notice reports an edit and offers to undo it. */
-  | { type: "notice"; level: "info" | "error"; message: string; undo?: boolean };
+  /** `undo`: the notice reports this edit of the history and offers to undo it. */
+  | { type: "notice"; level: "info" | "error"; message: string; undo?: number };
 
 export type CommonWebviewMessage =
-  { type: "ready" } | { type: "reveal"; key: string } | { type: "undo" } | { type: "redo" };
+  | { type: "ready" }
+  | { type: "reveal"; key: string }
+  /** With `entry` (the Undo button of a notice): only that edit, while it is the last one. */
+  | { type: "undo"; entry?: number }
+  | { type: "redo" };
 
 // ---------------------------------------------------------------------------------------------
 // Gantt
@@ -72,7 +76,19 @@ export type GanttToHost =
   | { type: "resize"; key: string; finish: string }
   | { type: "link"; from: string; to: string }
   | { type: "unlink"; from: string; to: string }
-  | { type: "edit"; key: string; title?: string; owner?: string | null; estimate?: string }
+  /**
+   * The inline edit dialog: only the fields changed in it. `original` is the title the task had
+   * when the dialog opened: a task without id is known by its line, which may hold another task by
+   * now, and a new title must not undo a change made meanwhile.
+   */
+  | {
+      type: "edit";
+      key: string;
+      original?: string;
+      title?: string;
+      owner?: string | null;
+      estimate?: string;
+    }
   /** Open the full edit form (all fields) for a task. */
   | { type: "editAll"; key: string };
 
@@ -173,3 +189,88 @@ export type RunnerToHost =
   | { type: "reset" }
   | { type: "openFile" }
   | { type: "export"; format: "html" | "pdf" };
+
+// ---------------------------------------------------------------------------------------------
+// Stored view state. Options and filters come from the webview and are kept in the workspace
+// state, so a board or chart opens as it was left. Each value is checked when it arrives and when
+// it is read back: one the views cannot use (from an older version, or a message that went wrong)
+// would otherwise break the view every time it opens. What is not valid gets its default.
+
+type Plain = Record<string, unknown>;
+
+const isPlain = (value: unknown): value is Plain =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+function flag(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+/** Gantt options as stored or sent: every field checked, defaults for the rest. */
+export function ganttOptionsFrom(value: unknown): GanttViewOptions {
+  const v = isPlain(value) ? value : {};
+  const d = DEFAULT_GANTT_OPTIONS;
+  const options: GanttViewOptions = {
+    grouping: oneOf<GanttGrouping>(
+      v.grouping,
+      ["milestone", "section", "owner", "tag"],
+      d.grouping
+    ),
+    order: oneOf<GanttOrder>(v.order, ["schedule", "file"], d.order),
+    color: oneOf<GanttColorMode>(v.color, ["owner", "status", "milestone"], d.color),
+    zoom: oneOf<GanttZoom>(v.zoom, ["day", "week", "month", "quarter"], d.zoom),
+    showCritical: flag(v.showCritical, d.showCritical),
+    showBaseline: flag(v.showBaseline, d.showBaseline),
+    hideDone: flag(v.hideDone, d.hideDone),
+  };
+  if (typeof v.pxPerDay === "number" && Number.isFinite(v.pxPerDay) && v.pxPerDay > 0)
+    options.pxPerDay = v.pxPerDay;
+  if (typeof v.baseline === "string") options.baseline = v.baseline;
+  return options;
+}
+
+/** Kanban options as stored or sent: every field checked, defaults for the rest. */
+export function kanbanOptionsFrom(value: unknown): KanbanViewOptions {
+  const v = isPlain(value) ? value : {};
+  const d = DEFAULT_KANBAN_OPTIONS;
+  return {
+    board: oneOf<KanbanBoard>(v.board, ["tasks", "punch"], d.board),
+    swimlane: oneOf<KanbanSwimlane>(
+      v.swimlane,
+      ["none", "owner", "milestone", "severity"],
+      d.swimlane
+    ),
+    showCancelled: flag(v.showCancelled, d.showCancelled),
+    cardMode: oneOf<KanbanCardMode>(v.cardMode, ["tasks", "leaves"], d.cardMode),
+  };
+}
+
+/** A filter as stored or sent: lists of text (known statuses only) and a text, nothing else. */
+export function taskFilterFrom(value: unknown): TaskFilter {
+  const v = isPlain(value) ? value : {};
+  const list = (x: unknown) =>
+    Array.isArray(x) ? x.filter((s): s is string => typeof s === "string") : [];
+  const filter: TaskFilter = {};
+  const owner = list(v.owner);
+  const tag = list(v.tag);
+  const status = list(v.status).filter((s): s is Status => STATUSES.includes(s as Status));
+  const milestone = list(v.milestone);
+  if (owner.length) filter.owner = owner;
+  if (tag.length) filter.tag = tag;
+  if (status.length) filter.status = status;
+  if (milestone.length) filter.milestone = milestone;
+  if (typeof v.text === "string" && v.text !== "") filter.text = v.text;
+  return filter;
+}
+
+/** The Kanban filter of each board, as stored. */
+export function boardFiltersFrom(value: unknown): Partial<Record<KanbanBoard, TaskFilter>> {
+  const v = isPlain(value) ? value : {};
+  const out: Partial<Record<KanbanBoard, TaskFilter>> = {};
+  for (const board of ["tasks", "punch"] as const)
+    if (v[board] !== undefined) out[board] = taskFilterFrom(v[board]);
+  return out;
+}

@@ -42,8 +42,10 @@ const TRAILERS = /\s*(\*\/|-->|\*\)|#>|"""|''')\s*$/;
  * text. The keyword must be a whole word in upper case.
  */
 export function scanTodos(text: string, keywords: string[] = DEFAULT_TODO_KEYWORDS): TodoItem[] {
-  if (keywords.length === 0) return [];
-  const alternation = keywords.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  // An empty keyword would make almost every line a TODO comment.
+  const words = keywords.filter((k) => typeof k === "string" && k.trim() !== "");
+  if (words.length === 0) return [];
+  const alternation = words.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
   const re = new RegExp(`(^|[^A-Za-z0-9_])(${alternation})(?:\\(([^)]*)\\))?(?::|\\s)\\s*(.*)$`);
   const items: TodoItem[] = [];
   const lines = text.split(/\r\n|\n|\r/);
@@ -139,8 +141,42 @@ export function parseSrc(src: string): { path: string; line?: number } {
   return { path: m?.[1] ?? src, line: m?.[2] ? Number(m[2]) - 1 : undefined };
 }
 
-/** Minimal glob matcher for `**`, `*`, `?` and `{a,b}` (enough for the include/exclude settings). */
+/**
+ * `planner.todos.keywords` as the scan uses it: the keywords that are text and not empty; the
+ * default ones when the setting is not a list.
+ */
+export function todoKeywords(value: unknown): string[] {
+  if (!Array.isArray(value)) return DEFAULT_TODO_KEYWORDS;
+  return value.filter((k): k is string => typeof k === "string" && k.trim() !== "");
+}
+
+/** `planner.todos.include`: the default when it is empty or not text. */
+export function todoInclude(value: unknown): string {
+  return typeof value === "string" && value.trim() ? value : DEFAULT_TODO_INCLUDE;
+}
+
+/** `planner.todos.exclude`: "" excludes nothing; the default when it is not text. */
+export function todoExclude(value: unknown): string {
+  return typeof value === "string" ? value : DEFAULT_TODO_EXCLUDE;
+}
+
+/** The last globs compiled (the TODO scanner matches every changed file against two of them). */
+const compiled = new Map<string, RegExp>();
+
+/**
+ * Minimal glob matcher for `**`, `*`, `?` and `{a,b}` (enough for the include/exclude settings).
+ * A `{` without its `}` is an ordinary character.
+ */
 export function globMatch(glob: string, path: string): boolean {
+  let re = compiled.get(glob);
+  if (!re) {
+    if (compiled.size >= 16) compiled.clear();
+    compiled.set(glob, (re = globRegExp(glob)));
+  }
+  return re.test(path);
+}
+
+function globRegExp(glob: string): RegExp {
   let re = "";
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i];
@@ -153,7 +189,7 @@ export function globMatch(glob: string, path: string): boolean {
         } else re += ".*";
       } else re += "[^/]*";
     } else if (c === "?") re += "[^/]";
-    else if (c === "{") {
+    else if (c === "{" && glob.indexOf("}", i) > i) {
       const end = glob.indexOf("}", i);
       re += `(?:${glob
         .slice(i + 1, end)
@@ -161,7 +197,7 @@ export function globMatch(glob: string, path: string): boolean {
         .map((p) => p.replace(/[.+^$()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*"))
         .join("|")})`;
       i = end;
-    } else re += c.replace(/[.+^$()|[\]\\]/g, "\\$&");
+    } else re += c.replace(/[.+^$(){}|[\]\\]/g, "\\$&");
   }
-  return new RegExp(`^${re}$`).test(path);
+  return new RegExp(`^${re}$`);
 }

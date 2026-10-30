@@ -124,7 +124,10 @@ function incompleteForecasts(plan: Plan, schedule: Schedule): Issue[] {
   for (const ts of schedule.tasks.values()) {
     if (ts.done || !ts.unscheduled || !ts.task.milestoneId) continue;
     const id = ts.task.milestoneId;
-    missing.set(id, [...(missing.get(id) ?? []), ts.task.id ?? `"${ts.task.title}"`]);
+    const name = ts.task.id ?? `"${ts.task.title}"`;
+    const list = missing.get(id);
+    if (list) list.push(name);
+    else missing.set(id, [name]);
   }
   const issues: Issue[] = [];
   for (const m of plan.milestones) {

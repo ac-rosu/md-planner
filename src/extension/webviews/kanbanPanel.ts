@@ -7,16 +7,19 @@ import { findTaskByKey } from "../../core/scheduler";
 import {
   buildKanbanModel,
   KANBAN_COLUMNS,
+  type KanbanBoard,
   kanbanCardKey,
   ownerLane,
   priorityForDrop,
 } from "../../core/views/kanban";
 import { applyStatus, editTaskLine, statusSideEdits } from "../../core/writer";
 import {
-  DEFAULT_KANBAN_OPTIONS,
+  boardFiltersFrom,
   type HostToKanban,
+  kanbanOptionsFrom,
   type KanbanToHost,
   type KanbanViewOptions,
+  taskFilterFrom,
 } from "../../webview/shared/protocol";
 import { currentTask } from "../commands/args";
 import { type AddTaskTarget } from "../commands/edit";
@@ -32,7 +35,7 @@ const FILTER_KEY = "kanban.filter";
 export class KanbanPanel extends WebviewPanelHost<HostToKanban, KanbanToHost> {
   static current: KanbanPanel | undefined;
   private options: KanbanViewOptions;
-  private filters: Record<string, TaskFilter>;
+  private filters: Partial<Record<KanbanBoard, TaskFilter>>;
 
   static show(
     ctx: PanelContext,
@@ -63,11 +66,9 @@ export class KanbanPanel extends WebviewPanelHost<HostToKanban, KanbanToHost> {
 
   private constructor(ctx: PanelContext) {
     super(ctx, "planner.kanban", "Kanban", "kanban");
-    this.options = {
-      ...DEFAULT_KANBAN_OPTIONS,
-      ...ctx.memento.get<Partial<KanbanViewOptions>>(OPTIONS_KEY),
-    };
-    this.filters = ctx.memento.get<Record<string, TaskFilter>>(FILTER_KEY) ?? {};
+    // Checked when read back: a stored value the board cannot use would break it on every open.
+    this.options = kanbanOptionsFrom(ctx.memento.get(OPTIONS_KEY));
+    this.filters = boardFiltersFrom(ctx.memento.get(FILTER_KEY));
     this.disposables.push(
       ctx.state.onDidUpdate(() => this.sendModel()),
       vscode.workspace.onDidChangeConfiguration((e) => {
@@ -103,12 +104,12 @@ export class KanbanPanel extends WebviewPanelHost<HostToKanban, KanbanToHost> {
         this.sendModel();
         return;
       case "options":
-        this.options = m.options;
-        await this.ctx.memento.update(OPTIONS_KEY, m.options);
+        this.options = kanbanOptionsFrom(m.options);
+        await this.ctx.memento.update(OPTIONS_KEY, this.options);
         this.sendModel();
         return;
       case "filter":
-        this.filters = { ...this.filters, [this.options.board]: m.filter };
+        this.filters = { ...this.filters, [this.options.board]: taskFilterFrom(m.filter) };
         await this.ctx.memento.update(FILTER_KEY, this.filters);
         this.sendModel();
         return;

@@ -3,6 +3,7 @@ import { formatDate, parseDate } from "../../../src/core/dates";
 import {
   describeMove,
   describeMoved,
+  describeParentEstimates,
   describeResize,
   describeScheduleChange,
   dragDay,
@@ -789,6 +790,55 @@ describe("why a moved bar starts later than where it was dropped", () => {
     expect(describeMove(p, s, s, task(p, "T3"), d("2026-10-11"), d("2026-10-12"))).toBe(
       "T3 already has the fixed start 2026-10-12 (Sun 2026-10-11 is not a working day)."
     );
+  });
+});
+
+describe("moving a bar in progress", () => {
+  // Alex started T1 on Tue 2026-10-20 and logged 24 of its 40 h; today is Thu 2026-10-29, so the
+  // remaining 16 h fill Thursday and Friday. Alex is off on Monday 2026-11-02.
+  const today = { today: "2026-10-29" };
+  const p = planFrom(
+    files(
+      [
+        "- [/] Build @est:40h @act:24h @owner:alex @started:2026-10-20 ^T1",
+        "- [ ] Test @est:8h @owner:alex @dep:T1 ^T2",
+      ],
+      {
+        "team.md": md("# Team", "", "## Alex", "", "capacity: 40h/week", "off: 2026-11-02"),
+      }
+    )
+  );
+
+  it("moves the remaining work, not the bar from @started, and says so", () => {
+    const s = schedulePlan(p, today);
+    expect(dates(s, "T1")).toEqual(["2026-10-20", "2026-10-30"]);
+    // One working day later than where the rest of the work starts (Thursday): Friday.
+    expect(moveNotice(p, today, "T1", "2026-10-30")).toBe(
+      "T1: fixed start none → 2026-10-30. It is now pinned: the rest of its work starts no earlier than that, even when its dependencies finish sooner (right-click → Remove fixed start). Ends Tue 2026-11-03. Also moves T2 (+1 d), which waits for it."
+    );
+    // Dropped on Saturday: Monday is a day off, so the rest goes on on Tuesday.
+    expect(moveNotice(p, today, "T1", "2026-10-31")).toBe(
+      "T1: fixed start none → 2026-11-02. Alex has no working hours on Mon 2026-11-02, so it continues Tue 2026-11-03. Ends Wed 2026-11-04. Also moves T2 (+2 d), which waits for it."
+    );
+  });
+});
+
+describe("parents in an estimate notice", () => {
+  const p = planFrom(
+    files([
+      "- [ ] Feature @est:40h @owner:alex ^T1",
+      "  - [ ] Part A ^T2",
+      "  - [ ] Part B ^T3",
+      "  - [ ] Part C ^T4",
+    ])
+  );
+
+  it("names the parent whose estimate changes, and the subtasks that keep their hours", () => {
+    const t2 = task(p, "T2");
+    expect(describeParentEstimates(t2, parentEstimates(t2, 16))).toBe(
+      "T1: estimate 40h → 42.67h, so T3 and T4 keep their hours."
+    );
+    expect(describeParentEstimates(t2, [])).toBe("");
   });
 });
 

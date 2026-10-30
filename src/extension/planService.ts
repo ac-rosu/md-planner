@@ -20,8 +20,13 @@ import {
   encode,
   exists,
   ignoresPathCase,
+  isInside,
   openDocument,
+  planFolderSetting,
+  planFolderUri,
   toRange,
+  uriKey,
+  workspaceFolderOf,
 } from "./util";
 
 const REFRESH_DELAY_MS = 300;
@@ -47,6 +52,29 @@ function isNotFound(error: unknown): boolean {
 /** Whether a plan-relative folder can hold plan files ("" is the plan folder). */
 function holdsPlanFiles(rel: string): boolean {
   return rel === "" || PlanIndex.isPlanPath(`${rel}/x.md`);
+}
+
+/**
+ * What a candidate plan folder holds: "plan" with a project.md (in any casing), "folder" without
+ * one (or when it cannot be read: loading it then says why), undefined when there is no folder
+ * there (also when it is a file).
+ */
+async function planFolderState(uri: vscode.Uri): Promise<"plan" | "folder" | undefined> {
+  try {
+    const entries = await vscode.workspace.fs.readDirectory(uri);
+    return entries.some(
+      ([n, t]) => n.toLowerCase() === "project.md" && !(t & vscode.FileType.Directory)
+    )
+      ? "plan"
+      : "folder";
+  } catch {
+    try {
+      const stat = await vscode.workspace.fs.stat(uri);
+      return stat.type & vscode.FileType.Directory ? "folder" : undefined;
+    } catch {
+      return undefined;
+    }
+  }
 }
 
 /** A key that is the same for every path of a folder: its real path, where there is one. */
@@ -115,7 +143,10 @@ export class PlanService implements vscode.Disposable {
         this.logs.get(e.document)?.record(e.document.version, ++this.clock, e.contentChanges);
         if (e.contentChanges.length > 0) this.syncDocument(e.document);
       }),
-      vscode.workspace.onDidOpenTextDocument((d) => this.syncDocument(d)),
+      vscode.workspace.onDidOpenTextDocument((d) => {
+        this.syncDocument(d);
+        void this.dropIfGone(d);
+      }),
       vscode.workspace.onDidCloseTextDocument((d) => void this.reloadFromDisk(d.uri)),
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration("planner.planFolder")) void this.locate();
@@ -164,34 +195,63 @@ export class PlanService implements vscode.Disposable {
     return this.locating;
   }
 
+  /** The plan folder of each workspace folder (`planner.planFolder`), each folder once. */
+  private candidates(): vscode.Uri[] {
+    const setting = planFolderSetting();
+    const all = (vscode.workspace.workspaceFolders ?? []).map((wf) =>
+      planFolderUri(wf.uri, setting)
+    );
+    return all.filter((u, i) => all.findIndex((x) => uriKey(x) === uriKey(u)) === i);
+  }
+
   private async doLocate(): Promise<void> {
-    const folderSetting = config().get<string>("planFolder", "plan") || "plan";
+    const candidates = this.candidates();
+    // The first plan folder with a project.md; else the first plan folder there is.
     let found: vscode.Uri | undefined;
-    for (const wf of vscode.workspace.workspaceFolders ?? []) {
-      const candidate =
-        folderSetting.startsWith("/") || /^[A-Za-z]:[\\/]/.test(folderSetting)
-          ? vscode.Uri.file(folderSetting)
-          : vscode.Uri.joinPath(wf.uri, ...folderSetting.split(/[\\/]/));
-      if (await exists(candidate)) {
+    for (const candidate of candidates) {
+      const state = await planFolderState(candidate);
+      if (state === "plan") {
         found = candidate;
         break;
       }
+      if (state === "folder") found ??= candidate;
     }
     const changed = found?.toString() !== this._root?.toString();
     this._root = found;
     for (const d of this.rootWatchers) d.dispose();
     this.rootWatchers = [];
     this.index.clear();
-    await vscode.commands.executeCommand("setContext", "planner.hasPlan", !!found);
     if (found) {
       this.watch(found);
       await this.loadAll();
       this.log.info(`Plan folder: ${found.fsPath} (${this.index.paths.length} files)`);
     } else {
-      this.watchForCreation(folderSetting);
+      this.watchForCreation(candidates);
     }
+    await this.updateHasPlan();
     if (changed) this.rootEmitter.fire(found);
     this.fireNow();
+  }
+
+  /**
+   * Whether the plan folder has a project.md (in any casing; also one that cannot be read): a
+   * plan, not just a folder.
+   */
+  get hasPlan(): boolean {
+    return !!this._root && this.index.pathsUnder("").some((p) => p.toLowerCase() === "project.md");
+  }
+
+  private hasPlanContext: boolean | undefined;
+
+  /**
+   * The `planner.hasPlan` context: true with a project.md. An empty plan folder (or one whose
+   * project.md is gone) keeps New project and the welcome text in the Milestones view.
+   */
+  private async updateHasPlan(): Promise<void> {
+    const has = this.hasPlan;
+    if (has === this.hasPlanContext) return;
+    this.hasPlanContext = has;
+    await vscode.commands.executeCommand("setContext", "planner.hasPlan", has);
   }
 
   /**
@@ -438,6 +498,7 @@ export class PlanService implements vscode.Disposable {
   fireNow(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
+    void this.updateHasPlan();
     this.changeEmitter.fire();
   }
 
@@ -478,9 +539,23 @@ export class PlanService implements vscode.Disposable {
   private async reloadFromDisk(uri: vscode.Uri): Promise<void> {
     const rel = this.relPath(uri);
     if (rel === undefined || !PlanIndex.isPlanPath(rel)) return;
+    // Unsaved changes at once; any other open document once its file is known to be there.
     const open = openDocument(uri);
-    if (open && !open.isClosed) this.syncDocument(open);
+    if (open && !open.isClosed && open.isDirty) this.syncDocument(open);
     if (await this.loadFile(rel, uri)) this.scheduleRefresh();
+  }
+
+  /**
+   * An open document whose file is not on disk (and that has no unsaved changes) is not part of
+   * the plan: VS Code keeps a hidden copy of a renamed file open for a while, and with it the plan
+   * would have the file twice when it is renamed back.
+   */
+  private async dropIfGone(document: vscode.TextDocument): Promise<void> {
+    const rel = this.relPath(document.uri);
+    if (rel === undefined || !PlanIndex.isPlanPath(rel) || document.isDirty) return;
+    if (await exists(document.uri)) return;
+    if (document.isDirty || openDocument(document.uri) !== document) return;
+    if (this.index.remove(rel)) this.scheduleRefresh();
   }
 
   /**
@@ -497,7 +572,9 @@ export class PlanService implements vscode.Disposable {
       error = err;
     }
     const open = openDocument(uri);
-    if (open && !open.isClosed) {
+    // A document whose file is gone counts only with unsaved changes (see dropIfGone).
+    const gone = !disk && isNotFound(error);
+    if (open && !open.isClosed && !(gone && !open.isDirty)) {
       const changed = this.index.update(rel, open.getText(), { utf8: disk?.utf8 });
       this.parsedFrom(rel, open);
       return changed;
@@ -618,15 +695,28 @@ export class PlanService implements vscode.Disposable {
     );
   }
 
-  private watchForCreation(folderSetting: string): void {
-    for (const wf of vscode.workspace.workspaceFolders ?? []) {
-      const watcher = vscode.workspace.createFileSystemWatcher(
-        new vscode.RelativePattern(wf, `${folderSetting.replace(/\\/g, "/")}/**`)
-      );
-      this.rootWatchers.push(
-        watcher,
-        watcher.onDidCreate(() => void this.locate())
-      );
+  /**
+   * Watches for a plan folder to be created (or anything in it): below its workspace folder by its
+   * path from there, else (an absolute or `../` plan folder) in the folder above it.
+   */
+  private watchForCreation(candidates: vscode.Uri[]): void {
+    for (const candidate of candidates) {
+      const wf = workspaceFolderOf(candidate);
+      const inWorkspace =
+        wf && candidate.path.length > wf.uri.path.length && isInside(candidate, wf.uri);
+      const base = inWorkspace ? wf.uri : vscode.Uri.joinPath(candidate, "..");
+      const rel = inWorkspace
+        ? candidate.path.slice(wf.uri.path.replace(/\/+$/, "").length + 1)
+        : (candidate.path.split("/").pop() ?? "plan");
+      for (const pattern of [rel, `${rel}/**`]) {
+        const watcher = vscode.workspace.createFileSystemWatcher(
+          new vscode.RelativePattern(base, pattern)
+        );
+        this.rootWatchers.push(
+          watcher,
+          watcher.onDidCreate(() => void this.locate())
+        );
+      }
     }
   }
 }

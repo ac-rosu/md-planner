@@ -12,6 +12,7 @@ import {
   type LinkFocus,
   linkId,
   linkTargetAt,
+  moveBase,
   resizeHandleWidth,
   type RoutedLink,
   routeLinks,
@@ -131,8 +132,10 @@ export function Chart(props: ChartProps) {
       return;
     }
     const days = Math.round((d.x - d.originX) / scale.px);
-    if (d.kind === "move" && d.row.editable && d.row.start !== undefined && days !== 0) {
-      props.onDrag({ kind: "move", key: d.key, start: d.row.start + days });
+    // A task in progress: by as many days from where its remaining work starts (not @started).
+    const base = moveBase(d.row);
+    if (d.kind === "move" && d.row.editable && base !== undefined && days !== 0) {
+      props.onDrag({ kind: "move", key: d.key, start: base + days });
     } else if (d.kind === "resize" && d.row.editable && d.row.finish !== undefined && days !== 0) {
       const finish = Math.max(d.row.start ?? d.row.finish, d.row.finish + days);
       props.onDrag({ kind: "resize", key: d.key, finish });
@@ -333,7 +336,7 @@ function DragOverlay({
   const days = Math.round((drag.x - drag.originX) / scale.px);
   const { start, finish } = dragPreview(
     model,
-    { start: row.start, finish: row.finish },
+    { start: row.start, finish: row.finish, workStart: row.workStart },
     drag.kind,
     days
   );

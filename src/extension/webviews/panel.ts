@@ -73,8 +73,11 @@ export abstract class WebviewPanelHost<HostMessage, WebviewMessage extends { typ
         this.postHistory();
       }
       if (message.type === "undo" || message.type === "redo") {
+        // The Undo button on a notice names its edit: undone only while it is the last one.
         const label =
-          message.type === "undo" ? await this.ctx.history.undo() : await this.ctx.history.redo();
+          message.type === "undo"
+            ? await this.ctx.history.undo((message as { entry?: number }).entry)
+            : await this.ctx.history.redo();
         if (label) this.notice("info", `${message.type === "undo" ? "Undid" : "Redid"}: ${label}`);
         return;
       }
@@ -88,11 +91,12 @@ export abstract class WebviewPanelHost<HostMessage, WebviewMessage extends { typ
 
   /**
    * Reports an edit made from the view, with an Undo button, so an accidental drag is noticed.
-   * Only after an edit was written: the button undoes the last entry of the history all panels
-   * share, which after a gesture that changed nothing is someone else's edit (say so with notice).
+   * Only after an edit was written, with its `entry` in the history all panels share: the button
+   * undoes that edit while it is the last one, and says so when another edit came after it. A
+   * gesture that changed nothing has no edit to undo (say so with notice).
    */
-  protected changed(message: string): void {
-    this.post({ type: "notice", level: "info", message, undo: true } as HostMessage);
+  protected changed(message: string, entry: number): void {
+    this.post({ type: "notice", level: "info", message, undo: entry } as HostMessage);
   }
 
   protected notice(level: "info" | "error", message: string): void {

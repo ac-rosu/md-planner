@@ -236,14 +236,14 @@ describe("files that are not UTF-8", () => {
     index.update("milestones/M1.md", text, { utf8: false });
     const v = index.version;
     // An editor buffer does not say: the mark stays.
-    expect(index.update("milestones/M1.md", text + "x\n")).toBe(true);
+    expect(index.update("milestones/M1.md", text + "\nx\n")).toBe(true);
     expect(index.notUtf8("milestones/M1.md")).toBe(true);
     expect(index.plan.issues.map((i) => i.code)).toEqual(["not-utf8"]);
     // The same text, now UTF-8 on disk: a new parse without the error.
-    expect(index.update("milestones/M1.md", text + "x\n", { utf8: true })).toBe(true);
+    expect(index.update("milestones/M1.md", text + "\nx\n", { utf8: true })).toBe(true);
     expect(index.version).toBeGreaterThan(v);
     expect(index.plan.issues).toEqual([]);
-    expect(index.update("milestones/M1.md", text + "x\n", { utf8: true })).toBe(false);
+    expect(index.update("milestones/M1.md", text + "\nx\n", { utf8: true })).toBe(false);
     index.update("milestones/M1.md", text, { utf8: false });
     index.remove("milestones/M1.md");
     expect(index.notUtf8("milestones/M1.md")).toBe(false);

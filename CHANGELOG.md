@@ -4,6 +4,41 @@
 
 Safer editing, from the pilot users' feedback.
 
+- Projects entered after the fact: done tasks with only logged hours count in progress and the
+  burn-up; a done task without `@started` spreads its hours over the days before `@done` instead
+  of one day; finished milestones are no longer listed as risks; in-progress work is not "starting
+  this week"; a parent finished or started through its subtasks takes their dates.
+- A year typo in `@started` or `@done` gets a warning with a quick fix and no longer stretches the
+  burn-up over centuries; the burn-up starts at the project start.
+- Big plans: a long dependency loop no longer runs out of memory, and the dashboard, late causes,
+  team load and diagnostics stay fast at 20,000 tasks.
+- Editor: Save All no longer gives two new tasks the same id; a line you are still typing gets its
+  id at a later save, not in the middle of your text; new hints for a note typed without its
+  indentation and a code block left open (moves that would carry the rest of the file are
+  refused); F2 refuses a duplicated id and ids that differ only in case; Cmd+Alt+X ignores
+  checkboxes in code blocks; moving a task no longer re-indents its notes.
+- Gantt: the edit dialog writes only what you changed and never onto another task; a subtask's
+  own estimate raises its parent's budget instead of taking its siblings' hours; moving a task in
+  progress moves its remaining work. Undo works after ids were added on save, a notice's Undo
+  undoes only its own change, and a renamed file no longer jams it. Kanban: reordering within
+  Blocked does not ask for a reason; a broken saved filter can no longer stop the board opening.
+- AI assistant: notes over several lines stay notes; two open proposals never share new ids;
+  dates, owners or tags written into a title stay plain text; dependencies that would make the
+  plan invalid are left out; Break down sets the parent's estimate; plan text is marked as data;
+  an invalid redaction pattern stops the request instead of sending the name.
+- Overtime stops where a person's hours end; two `capacityFrom` lines for one day are reported;
+  dates before the year 1000 are read and written correctly.
+- Setup: Configure MCP keeps unsaved edits in an open `.mcp.json` and your own settings of the
+  `md-planner` entry; a TODO file pattern with a missing `}` no longer freezes VS Code; an odd
+  `planner.time.roundingMinutes` (`"15m"`, `900`) can no longer corrupt `@act` (at most 60
+  minutes, and a question before logging more than a day); an absolute or `./` plan folder works
+  for New project, Configure MCP and plans created later; New project asks before adding to a
+  folder with plan files, copies only Markdown from custom templates and works in multi-root
+  workspaces; the MCP server uses `planner.scheduling.unassignedCapacity`; agents' `done` and
+  `started` dates are kept.
+- MCP `rename_task_id` refuses an id two tasks share and ids that differ only in case, as F2
+  does.
+
 - Safer for AI agents (MCP): a value with line breaks can no longer add lines to a plan file (fake
   tasks, changed settings); paths in tool calls stay inside the workspace; PDF printing only
   starts Edge, Chrome or Chromium, never a program from the workspace; a `ref` used twice is

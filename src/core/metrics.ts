@@ -12,6 +12,7 @@ import {
   ownerOf,
   progressOf,
   startedOn,
+  workHours,
 } from "./rollup";
 import { type Schedule } from "./scheduler";
 
@@ -97,75 +98,151 @@ export interface BurnUp {
 }
 
 /**
+ * Without a project start the burn-up starts at the earliest date found, at most this many days
+ * before today (ten years): one mistyped year must not draw a thousand of them.
+ */
+const MAX_HISTORY_DAYS = 3653;
+
+/** Hours logged on a parent that its own estimate covers, and the day they count from. */
+interface LoggedOnParent {
+  hours: number;
+  day: DayNumber;
+}
+
+/**
  * Weekly burn-up of estimated hours. `done` counts completed tasks by their `@done` date (past and
  * current weeks); `forecast` (current and future weeks) counts tasks by their scheduled finish plus
- * the work already done on open tasks; `scope` is the current total estimate.
+ * the work already done on open tasks; `scope` is the current total estimate. A done task without
+ * an estimate counts the hours logged on it (see `workHours`). The chart starts at the project
+ * start: work done before it counts there, and work marked done after today counts today.
  */
 export function burnUp(plan: Plan, schedule: Schedule, milestoneId?: string): BurnUp {
   const leaves = plan.tasks.filter(
-    (t) =>
-      isLeaf(t) &&
-      !isEffectivelyCancelled(t) &&
-      (!milestoneId || t.milestoneId === milestoneId) &&
-      schedule.tasks.has(t)
+    (t) => (!milestoneId || t.milestoneId === milestoneId) && isBurnUpLeaf(t, schedule)
   );
-  // Hours logged on a parent that its own @est covers are planned work already done: its subtasks
-  // share only what is left of the estimate (see loggedWithinEstimate).
-  const onParents = plan.tasks.flatMap((t) => {
-    if (isLeaf(t) || !isSchedulableTask(plan, t) || (milestoneId && t.milestoneId !== milestoneId))
-      return [];
-    const hours = loggedWithinEstimate(t);
-    const on = t.started ?? t.done;
-    const day = (on ? parseDate(on) : undefined) ?? schedule.today;
-    return hours > 0 ? [{ hours, day }] : [];
+  const logged = plan.tasks.flatMap((t) => {
+    if (milestoneId && t.milestoneId !== milestoneId) return [];
+    const p = loggedOnParent(plan, schedule, t);
+    return p ? [p] : [];
   });
-  const scope =
-    leaves.reduce((s, t) => s + (estimateHours(t) ?? 0), 0) +
-    onParents.reduce((s, p) => s + p.hours, 0);
-  const projectStart = plan.project.start ? parseDate(plan.project.start)! : schedule.start;
-  let first = Math.min(projectStart, ...onParents.map((p) => p.day));
-  let last = schedule.today;
-  const doneAt = new Map<Task, DayNumber>();
-  for (const t of leaves) {
-    const ts = schedule.tasks.get(t)!;
-    if (t.status === "done") {
-      const d = t.done ? parseDate(t.done)! : projectStart;
-      doneAt.set(t, d);
-      if (d < first) first = d;
-    }
-    if (ts.finish !== undefined && ts.finish > last) last = ts.finish;
+  return burnUpOf(plan, schedule, leaves, logged);
+}
+
+/** The burn-up of each of these milestones (see `burnUp`), going through the plan once. */
+export function milestoneBurnUps(
+  plan: Plan,
+  schedule: Schedule,
+  milestoneIds: string[]
+): Record<string, BurnUp> {
+  const leaves = new Map<string, Task[]>(milestoneIds.map((id) => [id, []]));
+  const logged = new Map<string, LoggedOnParent[]>(milestoneIds.map((id) => [id, []]));
+  for (const t of plan.tasks) {
+    const id = t.milestoneId;
+    if (id === undefined || !leaves.has(id)) continue;
+    if (isBurnUpLeaf(t, schedule)) leaves.get(id)!.push(t);
+    const p = loggedOnParent(plan, schedule, t);
+    if (p) logged.get(id)!.push(p);
   }
+  const out: Record<string, BurnUp> = {};
+  for (const id of milestoneIds)
+    out[id] = burnUpOf(plan, schedule, leaves.get(id)!, logged.get(id)!);
+  return out;
+}
+
+function isBurnUpLeaf(t: Task, schedule: Schedule): boolean {
+  return isLeaf(t) && !isEffectivelyCancelled(t) && schedule.tasks.has(t);
+}
+
+/**
+ * Hours logged on a parent that its own @est covers are planned work already done: its subtasks
+ * share only what is left of the estimate (see loggedWithinEstimate). They count from its
+ * `@started` (else `@done`, else today).
+ */
+function loggedOnParent(plan: Plan, schedule: Schedule, t: Task): LoggedOnParent | undefined {
+  if (isLeaf(t) || !isSchedulableTask(plan, t)) return undefined;
+  const hours = loggedWithinEstimate(t);
+  if (hours <= 0) return undefined;
+  const on = t.started ?? t.done;
+  return { hours, day: (on ? parseDate(on) : undefined) ?? schedule.today };
+}
+
+function burnUpOf(
+  plan: Plan,
+  schedule: Schedule,
+  leaves: Task[],
+  logged: LoggedOnParent[]
+): BurnUp {
+  const today = schedule.today;
+  const projectStart = plan.project.start ? parseDate(plan.project.start) : undefined;
+  // A done task without @done counts at the project start (else at the start of the schedule).
+  const doneAt = new Map<Task, DayNumber>();
+  for (const t of leaves)
+    if (t.status === "done")
+      doneAt.set(t, (t.done ? parseDate(t.done) : undefined) ?? projectStart ?? schedule.start);
+  let first = projectStart;
+  if (first === undefined) {
+    first = schedule.start;
+    for (const d of doneAt.values()) first = Math.min(first, d);
+    for (const p of logged) first = Math.min(first, p.day);
+    first = Math.max(first, today - MAX_HISTORY_DAYS);
+  }
+  const from = first;
+  // Hours by the day they count from: for `done` (up to today) and for the forecast (open tasks
+  // add what is left of them on their finish; the work done on them counts from the start).
+  const done: Array<[DayNumber, number]> = [];
+  const forecast: Array<[DayNumber, number]> = [];
+  let underWay = 0;
+  let scope = 0;
+  let last = today;
+  for (const t of leaves) {
+    const hours = workHours(t) ?? 0;
+    scope += hours;
+    const d = doneAt.get(t);
+    if (d !== undefined) {
+      const day = Math.max(from, Math.min(d, today));
+      done.push([day, hours]);
+      forecast.push([day, hours]);
+      continue;
+    }
+    const finish = schedule.tasks.get(t)!.finish;
+    if (finish === undefined) continue;
+    if (finish > last) last = finish;
+    const worked = hours - Math.max(0, remainingOf(t));
+    underWay += worked;
+    forecast.push([finish, hours - worked]);
+  }
+  for (const p of logged) {
+    scope += p.hours;
+    const day = Math.max(from, p.day);
+    done.push([day, p.hours]);
+    forecast.push([day, p.hours]);
+  }
+  done.sort((a, b) => a[0] - b[0]);
+  forecast.sort((a, b) => a[0] - b[0]);
   const end = plan.project.end ? Math.max(parseDate(plan.project.end)!, last) : last;
   const points: BurnPoint[] = [];
-  const todayWeek = weekStart(schedule.today);
-  for (let w = weekStart(first); w <= end + 6; w += 7) {
+  const todayWeek = weekStart(today);
+  // Running totals: each week adds the hours of the days up to its end.
+  let doneSum = 0;
+  let doneNext = 0;
+  let forecastSum = underWay;
+  let forecastNext = 0;
+  for (let w = weekStart(from); w <= end + 6; w += 7) {
     const weekEnd = w + 6;
     const point: BurnPoint = { week: w, scope };
     if (w <= todayWeek) {
-      let done = 0;
-      for (const t of leaves) {
-        const d = doneAt.get(t);
-        if (d !== undefined && d <= Math.min(weekEnd, schedule.today))
-          done += estimateHours(t) ?? 0;
-      }
-      for (const p of onParents) if (p.day <= Math.min(weekEnd, schedule.today)) done += p.hours;
-      point.done = done;
+      const until = Math.min(weekEnd, today);
+      while (doneNext < done.length && done[doneNext][0] <= until) doneSum += done[doneNext++][1];
+      point.done = doneSum;
     }
-    if (weekEnd >= schedule.today) {
-      let forecast = 0;
-      for (const t of leaves) {
-        const ts = schedule.tasks.get(t)!;
-        const finish = t.status === "done" ? doneAt.get(t) : ts.finish;
-        if (finish !== undefined && finish <= weekEnd) forecast += estimateHours(t) ?? 0;
-        else if (t.status !== "done" && finish !== undefined)
-          forecast += (estimateHours(t) ?? 0) - Math.max(0, remainingOf(t));
-      }
-      for (const p of onParents) if (p.day <= weekEnd) forecast += p.hours;
-      point.forecast = forecast;
+    if (weekEnd >= today) {
+      while (forecastNext < forecast.length && forecast[forecastNext][0] <= weekEnd)
+        forecastSum += forecast[forecastNext++][1];
+      point.forecast = forecastSum;
     }
     points.push(point);
   }
-  return { points, scope, today: schedule.today };
+  return { points, scope, today };
 }
 
 function remainingOf(t: Task): number {
@@ -200,8 +277,14 @@ export function attentionLists(plan: Plan, schedule: Schedule): AttentionLists {
     startingThisWeek: open
       .filter((t) => {
         const ts = schedule.tasks.get(t);
+        // Not work already under way: started, or in progress or review without @started.
         return (
-          ts?.start !== undefined && ts.start >= weekFrom && ts.start <= weekTo && !startedOn(t)
+          ts?.start !== undefined &&
+          ts.start >= weekFrom &&
+          ts.start <= weekTo &&
+          !startedOn(t) &&
+          t.status !== "doing" &&
+          t.status !== "review"
         );
       })
       .sort((a, b) => startOf(a) - startOf(b) || a.order - b.order),
@@ -283,13 +366,13 @@ export function punchStats(plan: Plan, today: string): PunchStats {
   return stats;
 }
 
-/** Hours-weighted completion of the whole project (all milestone leaves). */
+/** Hours-weighted completion of the whole project (all milestone leaves; see `workHours`). */
 export function projectProgress(plan: Plan): number {
   let total = 0;
   let done = 0;
   for (const t of plan.tasks) {
     if (!isLeaf(t) || isEffectivelyCancelled(t)) continue;
-    const est = estimateHours(t) ?? 0;
+    const est = workHours(t) ?? 0;
     total += est;
     done += est * progressOf(t);
   }

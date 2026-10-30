@@ -21,9 +21,9 @@ export function readTemplateDir(dir: string): Record<string, string> {
   const walk = (d: string) => {
     for (const name of readdirSync(d).sort()) {
       const full = join(d, name);
-      if (statSync(full).isDirectory()) {
+      if (isFolder(full)) {
         if (!name.startsWith(".")) walk(full);
-      } else if (/\.md$/i.test(name) || name === ".gitignore")
+      } else if ((/\.md$/i.test(name) || name === ".gitignore") && existsSync(full))
         out[relative(dir, full).split(sep).join("/")] = readFileSync(full, "utf8");
     }
   };
@@ -63,11 +63,21 @@ export function availableTemplates(
     description: TEMPLATE_DESCRIPTIONS[name] ?? "Built-in template",
     files,
   }));
-  if (customFolder && existsSync(customFolder))
+  // Only a folder holds templates, one sub-folder each; hidden ones (.git) are not templates.
+  if (customFolder && isFolder(customFolder))
     for (const name of readdirSync(customFolder).sort()) {
       const dir = join(customFolder, name);
-      if (statSync(dir).isDirectory())
+      if (!name.startsWith(".") && isFolder(dir))
         all.push({ name, description: `Custom template (${dir})`, files: readTemplateDir(dir) });
     }
   return all;
+}
+
+/** True for a folder (also through a link); false for a file, a broken link or nothing. */
+function isFolder(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
 }

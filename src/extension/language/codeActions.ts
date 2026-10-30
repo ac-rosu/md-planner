@@ -3,11 +3,16 @@
 import * as vscode from "vscode";
 import { isOpen, type Task } from "../../core/model";
 import { type TextEdit } from "../../core/text";
-import { impliedDeps, suggestPeriodYear, suggestYear } from "../../core/consistency";
+import {
+  impliedDeps,
+  suggestPeriodYear,
+  suggestYear,
+  suggestYearTypo,
+} from "../../core/consistency";
 import { joinDepIds, moveIdToEnd, moveLineUp, renameAttrKey } from "../../core/lineFixes";
 import { propertyBlockFor } from "../../core/parser/files";
 import { nearMissCheckbox } from "../../core/parser/taskLine";
-import { meantAttr } from "../../core/resolve";
+import { meantAttr, type Plan } from "../../core/resolve";
 import { formatHours } from "../../core/duration";
 import { budgetSplit, isEffectivelyDone, openSubtasks } from "../../core/rollup";
 import {
@@ -24,7 +29,7 @@ import {
 import { isFloatingMilestone, isOpenTask, previousMilestone } from "../../core/queries";
 import { newTaskFrom } from "../../core/writer/entities";
 import { siblingsOf } from "../../core/writer/structure";
-import { itemAtLine } from "../commands/args";
+import { findById, itemAtLine } from "../commands/args";
 import { rollUpParents } from "../commands/status";
 import { type PlanService } from "../planService";
 import { toRange } from "../util";
@@ -82,10 +87,35 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
               ? { title: "Join the ids: @dep without spaces", text: joinDepIds(text) }
               : {
                   title: "Move the id to the end of the line",
-                  text: sameLine ? moveIdToEnd(text, start.character, end.character) : undefined,
+                  // Diagnostics follow edits after a delay: only while the range still holds it.
+                  text:
+                    sameLine && isIdWord(text, start.character, end.character)
+                      ? moveIdToEnd(text, start.character, end.character)
+                      : undefined,
                 };
         const edit = fix?.text !== undefined && minimalLineEdit(lineNo, text, fix.text);
         if (fix && edit) actions.push(this.fix(fix.title, document, [edit], diagnostic, true));
+        continue;
+      }
+      if (diagnostic.code === "note-not-indented") {
+        // The file mirrors the document; its hint (if the line still has it) knows the indentation.
+        const issue = file.issues.find(
+          (i) => i.code === "note-not-indented" && i.range.start.line === lineNo
+        );
+        const indent = issue?.data?.indent;
+        const text = document.lineAt(lineNo).text;
+        const edit =
+          indent !== undefined && minimalLineEdit(lineNo, text, indent + text.trimStart());
+        if (issue && edit)
+          actions.push(
+            this.fix(
+              `Indent it as a note of ${issue.data!.task}`,
+              document,
+              [edit],
+              diagnostic,
+              true
+            )
+          );
         continue;
       }
       if (diagnostic.code === "property-not-read") {
@@ -206,7 +236,7 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
             );
           }
           actions.push(
-            this.command("Add estimate…", "planner.addEstimate", [taskArg(task)], diagnostic)
+            this.command("Add estimate…", "planner.addEstimate", [taskArg(plan, task)], diagnostic)
           );
           {
             // A task without an estimate is often a group whose tasks were not indented under it.
@@ -219,7 +249,7 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
                 this.command(
                   `Make the next task (${next.id ?? next.title}) a subtask of this one`,
                   "planner.indentTask",
-                  [taskArg(next), "editor"],
+                  [taskArg(plan, next), "editor"],
                   diagnostic
                 )
               );
@@ -303,9 +333,20 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
         }
         case "date-outside-project": {
           const key = /^@(\w+):/.exec(document.getText(diagnostic.range))?.[1];
-          const value = key === "start" ? task.start : key === "due" ? task.due : undefined;
+          // @started / @done record what happened: a year typo is corrected, never removed.
+          const history = key === "started" || key === "done";
+          const value =
+            key === "start"
+              ? task.start
+              : key === "due"
+                ? task.due
+                : key === "started"
+                  ? task.started
+                  : key === "done"
+                    ? task.done
+                    : undefined;
           if (!key || !value) break;
-          const suggestion = suggestYear(plan, value);
+          const suggestion = history ? suggestYearTypo(plan, value) : suggestYear(plan, value);
           if (suggestion)
             actions.push(
               this.fix(
@@ -316,7 +357,7 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
                 true
               )
             );
-          remove(key);
+          if (!history) remove(key);
           break;
         }
         case "start-after-started":
@@ -429,7 +470,7 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
               this.command(
                 `Move ${kids[0].id ?? kids[0].title} out of this task (outdent)`,
                 "planner.outdentTask",
-                [taskArg(kids[0])],
+                [taskArg(plan, kids[0])],
                 diagnostic
               )
             );
@@ -513,8 +554,18 @@ export class PlanCodeActionProvider implements vscode.CodeActionProvider {
   }
 }
 
-function taskArg(t: Task): string | { file: string; line: number } {
-  return t.id ?? { file: t.file, line: t.line };
+/** True when [start, end) of the line is a whole `^id` word. */
+function isIdWord(line: string, start: number, end: number): boolean {
+  return (
+    /^\^[A-Za-z0-9_-]+$/.test(line.slice(start, end)) &&
+    /^[ \t]?$/.test(line.charAt(start - 1)) &&
+    /^[ \t]?$/.test(line.charAt(end))
+  );
+}
+
+/** The id when it finds this item, else its line: a copied line keeps the id of another item. */
+function taskArg(plan: Plan, t: Task): string | { file: string; line: number } {
+  return t.id && findById(plan, t.id) === t ? t.id : { file: t.file, line: t.line };
 }
 
 /** Punch items get `P` ids; tasks and inbox items (which become tasks) `T` ids. */

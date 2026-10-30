@@ -51,7 +51,7 @@ describe("reply parsing and redaction", () => {
       "PO [redacted] and PO [redacted]"
     );
     expect(redact("a.b", ["."])).toBe("a[redacted]b");
-    expect(redact("x", ["/([/"])).toBe("x");
+    expect(() => redact("x", ["/([/"])).toThrow(AiError);
   });
 
   it("has strict schemas (all properties required, no extras)", () => {

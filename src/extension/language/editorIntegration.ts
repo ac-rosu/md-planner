@@ -1,6 +1,7 @@
 // Editor behaviour for plan files: clicking a checkbox cycles its status, ids are assigned on save,
 // and the `planner.isPlanFile` context key drives keybindings and menus.
 import * as vscode from "vscode";
+import { type Task } from "../../core/model";
 import { matchCheckbox } from "../../core/parser/taskLine";
 import { applyEdits } from "../../core/text";
 import { assignMissingIds, nextStatus, renumberCopiedIds, setStatus } from "../../core/writer";
@@ -44,8 +45,35 @@ export function registerEditorIntegration(
 }
 
 /**
+ * Ids handed out by saves whose edits may not be in their documents yet. Save All runs the save
+ * handlers of several files at once, each against the same plan: without this, a new task in each
+ * file would get the same id.
+ */
+const pendingIds = new Set<string>();
+
+/** How long ids stay reserved when their save never finishes (it was cancelled or failed). */
+const PENDING_ID_TIMEOUT_MS = 30_000;
+
+/** Keeps ids reserved until the document is saved (by then the plan has them). */
+function holdIds(doc: vscode.TextDocument, ids: string[]): void {
+  if (ids.length === 0) return;
+  for (const id of ids) pendingIds.add(id);
+  const release = () => {
+    for (const id of ids) pendingIds.delete(id);
+    saved.dispose();
+    clearTimeout(timer);
+  };
+  const saved = vscode.workspace.onDidSaveTextDocument((d) => {
+    if (d === doc) release();
+  });
+  const timer = setTimeout(release, PENDING_ID_TIMEOUT_MS);
+}
+
+/**
  * On save: fresh ids for task lines that were copied with their id (compared with the saved file),
- * then ids for tasks that have none.
+ * then ids for tasks that have none. Not for a task line with a cursor where the id would go (at
+ * its end): the id would land before what is typed next (`@est:` + save + `4h` → `@est: ^T12 4h`).
+ * It gets its id at a later save.
  */
 async function idEdits(
   service: PlanService,
@@ -59,11 +87,22 @@ async function idEdits(
   const file = service.fileFor(doc);
   // The index mirrors the document, so positions are current.
   if (!file || file.lines.text !== doc.getText()) return [];
-  const reserved = new Set<string>();
+  const cursors = vscode.window.visibleTextEditors
+    .filter((e) => e.document === doc)
+    .flatMap((e) => e.selections.flatMap((s) => [s.active, s.anchor]));
+  const typing = (t: Task) => {
+    const end = file.lines.line(t.line).trimEnd().length;
+    return cursors.some((c) => c.line === t.line && c.character >= end);
+  };
+  const reserved = new Set(pendingIds);
   const edits = [
     ...renumberCopiedIds(service.plan, file, saved, reserved),
-    ...assignMissingIds(service.plan, file, reserved),
+    ...assignMissingIds(service.plan, file, reserved, typing),
   ];
+  holdIds(
+    doc,
+    [...reserved].filter((id) => !pendingIds.has(id))
+  );
   // What the saved file should be; anything more is a formatter's doing (see FormatGuard).
   guard.expect(doc, applyEdits(doc.getText(), edits));
   return edits.map((x) => vscode.TextEdit.replace(toRange(x.range), x.newText));

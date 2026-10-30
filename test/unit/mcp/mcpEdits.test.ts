@@ -140,7 +140,7 @@ describe("refusing writes that add errors", () => {
     );
   });
 
-  it("renames ids that other errors name: an invalid dependency, a duplicate id", () => {
+  it("renames ids that other errors name, and not an id two tasks share", () => {
     const { tools, read } = planWith({
       "milestones/M1-a.md": md(
         "# M1 – A",
@@ -155,7 +155,8 @@ describe("refusing writes that add errors", () => {
       ),
     });
     renameTaskId(tools, { id: "T2", newId: "T7" });
-    renameTaskId(tools, { id: "T3", newId: "T9" });
+    // An id two tasks share is not renamed: both would keep sharing it (as F2 in the editor).
+    expect(() => renameTaskId(tools, { id: "T3", newId: "T9" })).toThrow(/T3 is the id of 2 items/);
     // T101 is also the example in the invalid dependency message: that message is unchanged.
     renameTaskId(tools, { id: "T101", newId: "T200" });
     expect(read("milestones/M1-a.md")).toBe(
@@ -166,8 +167,8 @@ describe("refusing writes that add errors", () => {
         "",
         "- [ ] Lag typo @est:1h @dep:T7+3x ^T1",
         "- [ ] Target @est:1h ^T7",
-        "- [ ] Twice @est:1h ^T9",
-        "- [ ] Twice again @est:1h ^T9",
+        "- [ ] Twice @est:1h ^T3",
+        "- [ ] Twice again @est:1h ^T3",
         "- [ ] Unrelated @est:1h ^T200"
       )
     );

@@ -1,7 +1,7 @@
 // Project templates: folders of Markdown files with placeholders, instantiated by "New project".
 //   {{name}} {{code}} {{start}} {{end}} {{today}} {{lead}} {{leadId}}
 //   {{date:0.25}}  start + 25 % of the project duration, moved back to a Friday-or-earlier weekday
-import { formatDate, isoWeekday, parseDate } from "./dates";
+import { addMonths, formatDate, isoWeekday, parseDate } from "./dates";
 import { personIdFromName } from "./resolve";
 
 export interface TemplateParams {
@@ -78,11 +78,8 @@ export function fractionDate(start: string, end: string, fraction: number): stri
   return formatDate(d);
 }
 
-/** Default project end: start + 6 months (same day of month, clamped). */
+/** Default project end: start + 6 months (same day of month, clamped to the month's last day). */
 export function defaultEndDate(start: string): string {
   const s = parseDate(start);
-  if (s === undefined) return start;
-  const d = new Date(s * 86_400_000);
-  const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 6, d.getUTCDate()));
-  return formatDate(Math.round(target.getTime() / 86_400_000));
+  return s === undefined ? start : formatDate(addMonths(s, 6));
 }

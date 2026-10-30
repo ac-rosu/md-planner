@@ -7,7 +7,6 @@ import { taskKey } from "../core/scheduler";
 import { addActual, parseLoggedTime } from "../core/time";
 import { isValidTaskId } from "../core/navigation";
 import {
-  allIds,
   applyStatus,
   assignMissingIds,
   editTaskLine,
@@ -16,6 +15,7 @@ import {
   type InsertLocation,
   type MovedTask,
   moveTaskTo,
+  renameIdProblem,
   renameTaskId as renameTaskIdEdits,
   setNotes,
   startsWork,
@@ -433,7 +433,9 @@ export function renameTaskId(tools: PlannerTools, args: { id: string; newId: str
   if (!t?.id) throw new ToolError(`Unknown task id "${args.id}".`);
   const id = args.newId.trim().replace(/^\^/, "");
   if (!isValidTaskId(id)) throw new ToolError(`"${args.newId}" is not a valid id (e.g. T142).`);
-  if (id !== t.id && allIds(plan).has(id)) throw new ToolError(`The id ${id} is already in use.`);
+  // As F2: not an id that two tasks share (it would rename both), nor a case variant of another.
+  const problem = renameIdProblem(plan, t.id, id);
+  if (problem) throw new ToolError(problem);
   st.apply(renameTaskIdEdits(plan, t.id, id));
   return { from: t.id, to: id, changed: tools.commit(st, { renamed: [[t.id, id]] }) };
 }

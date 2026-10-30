@@ -5,7 +5,7 @@
 // .mcp.json names it (so unrelated projects do not get the planner's tools).
 import * as vscode from "vscode";
 import { type PlanService } from "./planService";
-import { config, decode, encode, exists, openDocument } from "./util";
+import { decode, encode, exists, openDocument, planFolderUri, workspaceFolderOf } from "./util";
 import { hasServerEntry, MCP_SERVER_NAME, mergeMcpJson, serverEntry } from "../mcp/config";
 
 /**
@@ -32,9 +32,15 @@ export async function stableServerPath(context: vscode.ExtensionContext): Promis
 export function planRootFor(service: PlanService): vscode.Uri | undefined {
   if (service.root) return service.root;
   const folder = vscode.workspace.workspaceFolders?.[0];
-  if (!folder) return undefined;
-  const planFolder = config().get<string>("planFolder", "plan") || "plan";
-  return vscode.Uri.joinPath(folder.uri, ...planFolder.split(/[\\/]/));
+  return folder && planFolderUri(folder.uri);
+}
+
+/**
+ * The workspace folder that goes with a plan folder (where .mcp.json and the skill go): the one it
+ * is in, else (an absolute plan folder elsewhere) the first one.
+ */
+export function workspaceFolderFor(root: vscode.Uri): vscode.Uri | undefined {
+  return workspaceFolderOf(root)?.uri ?? vscode.workspace.workspaceFolders?.[0]?.uri;
 }
 
 /**
@@ -53,17 +59,15 @@ export async function configureMcpCommand(
   options: { quiet?: boolean; root?: vscode.Uri; folder?: vscode.Uri } = {}
 ): Promise<vscode.Uri | undefined> {
   const root = options.root ?? planRootFor(service);
-  const folder =
-    options.folder ?? (root ? vscode.workspace.getWorkspaceFolder(root)?.uri : undefined);
+  const folder = options.folder ?? (root ? workspaceFolderFor(root) : undefined);
   if (!root || !folder) {
     void vscode.window.showErrorMessage("Planner: open a folder first.");
     return undefined;
   }
   const server = await stableServerPath(context);
   const file = vscode.Uri.joinPath(folder, ".mcp.json");
-  const existing = (await exists(file))
-    ? decode(await vscode.workspace.fs.readFile(file))
-    : undefined;
+  // An open .mcp.json with unsaved changes: they are kept (and saved with the server entry).
+  const existing = await readText(file);
   let text: string;
   try {
     text = mergeMcpJson(
@@ -78,11 +82,16 @@ export async function configureMcpCommand(
   }
   const edit = new vscode.WorkspaceEdit();
   if (existing === undefined) edit.createFile(file, { contents: encode(text) });
-  else {
+  else if (text !== existing) {
     const doc = await vscode.workspace.openTextDocument(file);
     edit.replace(file, new vscode.Range(0, 0, doc.lineCount, 0), text);
   }
-  if (!(await vscode.workspace.applyEdit(edit))) return undefined;
+  if (!(await vscode.workspace.applyEdit(edit))) {
+    void vscode.window.showErrorMessage(
+      `Planner: could not write ${vscode.workspace.asRelativePath(file)}.`
+    );
+    return undefined;
+  }
   const doc = openDocument(file);
   if (doc?.isDirty) await doc.save();
   if (!options.quiet) {
@@ -90,7 +99,7 @@ export async function configureMcpCommand(
     const skill = "Add the agent skill";
     void vscode.window
       .showInformationMessage(
-        `Planner: ${existing === undefined ? "created" : "updated"} .mcp.json with the "${MCP_SERVER_NAME}" server. Claude Code picks it up in this folder (approve it on first use).${service.root ? "" : " There is no plan yet: ask the agent to create one."}`,
+        `Planner: ${existing === undefined ? "created" : "updated"} .mcp.json with the "${MCP_SERVER_NAME}" server. Claude Code picks it up in this folder (approve it on first use).${service.hasPlan ? "" : " There is no plan yet: ask the agent to create one."}`,
         skill
       )
       .then((pick) => pick === skill && vscode.commands.executeCommand("planner.addAgentSkill"));
@@ -131,7 +140,7 @@ export function registerMcpProvider(
     onDidChangeMcpServerDefinitions: changed.event,
     provideMcpServerDefinitions: async () => {
       const root = planRootFor(service);
-      const folder = root ? vscode.workspace.getWorkspaceFolder(root)?.uri : undefined;
+      const folder = root ? workspaceFolderFor(root) : undefined;
       if (!root || !(service.root || (folder && (await configuredIn(folder))))) return [];
       const server = vscode.Uri.joinPath(context.extensionUri, "dist", "mcp-server.js").fsPath;
       const e = serverEntry(process.execPath, server, root.fsPath, folder?.fsPath);
@@ -144,6 +153,18 @@ export function registerMcpProvider(
     e(() => changed.fire())
   );
   return vscode.Disposable.from(provider, sub, watcher, ...subs, changed);
+}
+
+/**
+ * The text of a file: the open document's (with its unsaved changes), else the file's on disk;
+ * undefined without one. A document VS Code still holds for a file that was deleted counts only
+ * with unsaved changes.
+ */
+export async function readText(file: vscode.Uri): Promise<string | undefined> {
+  const doc = openDocument(file);
+  const onDisk = await exists(file);
+  if (doc && !doc.isClosed && (doc.isDirty || onDisk)) return doc.getText();
+  return onDisk ? decode(await vscode.workspace.fs.readFile(file)) : undefined;
 }
 
 /** True when the folder's .mcp.json names the md-planner server (Configure MCP was run). */

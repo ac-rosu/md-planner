@@ -1,10 +1,13 @@
 import * as assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, renameSync } from "node:fs";
 import * as vscode from "vscode";
 import { formatDate } from "../../src/core/dates";
 import { scheduleJsonText } from "../../src/core/scheduleJson";
+import { applyEdits } from "../../src/core/text";
+import { diffEdits } from "../../src/extension/editHistory";
 import { type GanttPanel } from "../../src/extension/webviews/ganttPanel";
 import { type TeamNode } from "../../src/extension/views/teamTree";
+import { DEFAULT_GANTT_OPTIONS, type GanttViewOptions } from "../../src/webview/shared/protocol";
 import { docText, getApi, planUri, restorePlan, TODAY, waitFor } from "./helpers";
 
 const M2 = "milestones/M2-backend.md";
@@ -129,17 +132,17 @@ describe("scheduler integration and Gantt", () => {
       line(M2, "T121"),
       "- [ ] Shared API library (auth, validation, logging) @est:32h @owner:sam #backend ^T121"
     );
-    // The notice says where the bar ends now and which other tasks move with it.
-    assert.deepEqual(
-      posted.find((m) => (m as { type: string }).type === "notice"),
-      {
-        type: "notice",
-        level: "info",
-        message:
-          "T121: estimate 3d → 32h, ends Fri 2026-10-23. Also moves T122 (+1 d), T110 (+1 d), T111 (+1 d) and 3 more, which wait for it; Sam's other work: T206 (+2 d) and T104 (+1 d).",
-        undo: true,
-      }
-    );
+    // The notice says where the bar ends now and which other tasks move with it; its Undo button
+    // undoes this edit (the newest one in the history).
+    const notice = posted.find((m) => (m as { type: string }).type === "notice");
+    assert.deepEqual(notice, {
+      type: "notice",
+      level: "info",
+      message:
+        "T121: estimate 3d → 32h, ends Fri 2026-10-23. Also moves T122 (+1 d), T110 (+1 d), T111 (+1 d) and 3 more, which wait for it; Sam's other work: T206 (+2 d) and T104 (+1 d).",
+      undo: (notice as { undo?: number }).undo,
+    });
+    assert.equal(typeof (notice as { undo?: number }).undo, "number");
     await waitFor(
       () => formatDate(api.state.schedule.byKey.get("T121")?.finish ?? 0) === "2026-10-23",
       "rescheduled"
@@ -149,13 +152,7 @@ describe("scheduler integration and Gantt", () => {
   it("says when a drag changes nothing, without an Undo button for someone else's edit", async () => {
     const api = await getApi();
     const panel = await openGantt();
-    const notices: Array<{ message: string; undo?: boolean }> = [];
-    const post = panel.post.bind(panel);
-    panel.post = (m) => {
-      const n = m as { type: string; message: string; undo?: boolean };
-      if (n.type === "notice") notices.push({ message: n.message, undo: n.undo });
-      post(m);
-    };
+    const notices = noticesOf(panel);
     const [m2, m5] = [docText(M2), docText(M5)];
     // T405 (Priya) ends on a full Friday; T121 has no dependencies.
     await panel.receive({ type: "resize", key: "T405", finish: "2027-03-06" });
@@ -171,18 +168,15 @@ describe("scheduler integration and Gantt", () => {
     assert.deepEqual(
       notices.map((n) => [
         n.message.replace(/^(T104: fixed start none → 2026-11-09\.).*/, "$1"),
-        n.undo,
+        n.undo !== undefined,
       ]),
       [
-        [
-          "T405 still ends Fri 2027-03-05: Priya has no working hours on Sat 2027-03-06.",
-          undefined,
-        ],
-        ["T121 does not depend on T101.", undefined],
+        ["T405 still ends Fri 2027-03-05: Priya has no working hours on Sat 2027-03-06.", false],
+        ["T121 does not depend on T101.", false],
         ["T104: fixed start none → 2026-11-09.", true],
         [
           "T104 already has the fixed start 2026-11-09 (Sun 2026-11-08 is not a working day).",
-          undefined,
+          false,
         ],
       ]
     );
@@ -195,13 +189,7 @@ describe("scheduler integration and Gantt", () => {
   it("refuses to change a bar whose id another task has, but removes an arrow out of it", async () => {
     const api = await getApi();
     const panel = await openGantt();
-    const notices: Array<{ level: string; message: string; undo?: boolean }> = [];
-    const post = panel.post.bind(panel);
-    panel.post = (m) => {
-      const n = m as { type: string; level: string; message: string; undo?: boolean };
-      if (n.type === "notice") notices.push({ level: n.level, message: n.message, undo: n.undo });
-      post(m);
-    };
+    const notices = noticesOf(panel);
     // A copied line: T122 gets the id of T121.
     const doc = await vscode.workspace.openTextDocument(planUri(M2));
     const at = doc.getText().indexOf("^T122");
@@ -229,9 +217,10 @@ describe("scheduler integration and Gantt", () => {
       line(M2, "T110"),
       "- [ ] Account and profile services @est:4d @owner:alex @eq:accounts #accounts ^T110"
     );
-    assert.deepEqual(notices.slice(5), [
-      { level: "info", message: "T110 no longer waits for T121.", undo: true },
-    ]);
+    assert.deepEqual(
+      notices.slice(5).map((n) => ({ ...n, undo: typeof n.undo })),
+      [{ level: "info", message: "T110 no longer waits for T121.", undo: "number" }]
+    );
   });
 
   it("says why a moved bar starts later than where it was dropped", async () => {
@@ -367,4 +356,253 @@ describe("scheduler integration and Gantt", () => {
     const panel = await vscode.commands.executeCommand<GanttPanel>("planner.openGantt", "T107");
     assert.equal(panel, api.gantt());
   });
+
+  it("refuses an edit from a dialog whose task is no longer on its line, or got another title", async () => {
+    const api = await getApi();
+    const panel = await openGantt();
+    const notices = noticesOf(panel);
+    // A task without id is known by its line.
+    await insertAbove(M2, "- [ ] Payment provider integration", "- [ ] Refund policy @est:4h");
+    const refund = api.state.plan.file(M2)!.items.find((t) => t.title === "Refund policy")!;
+    const key = `${M2}#${refund.line + 1}`;
+    // While its dialog is open, a line is added above it: its line holds that one now.
+    await insertAbove(M2, "- [ ] Refund policy", "- [ ] Chargebacks @est:2h");
+    const before = docText(M2);
+    await panel.receive({ type: "edit", key, original: "Refund policy", estimate: "8h" });
+    assert.equal(docText(M2), before);
+    assert.deepEqual(notices.at(-1), {
+      level: "error",
+      message: `Line ${refund.line + 1} of ${M2} holds another task since the dialog opened ("Chargebacks", was "Refund policy"). Nothing was written; open the dialog again to edit it.`,
+      undo: undefined,
+    });
+    // A title changed meanwhile is not overwritten; the owner of the same task is still set.
+    await panel.receive({ type: "edit", key: "T105", original: "Payments", title: "Payment API" });
+    assert.equal(docText(M2), before);
+    assert.match(notices.at(-1)!.message, /^The title of T105 changed since the dialog opened/);
+    await panel.receive({ type: "edit", key: "T105", original: "Payments", owner: "alex" });
+    assert.match(line(M2, "T105"), /^- \[ \] Payment provider integration @est:2d @owner:alex /);
+  });
+
+  it("raises the parent's estimate when a subtask that shares it gets an estimate of its own", async () => {
+    const api = await getApi();
+    const panel = await openGantt();
+    const notices = noticesOf(panel);
+    // Without its own estimate, T104 gets what T103's 6 h leave of T102's 12 h.
+    await removeText(M2, " @est:6h ^T104", 8);
+    await waitFor(() => api.state.plan.taskById("T104")?.budget === 6, "budget");
+    const before = docText(M2);
+    await panel.receive({
+      type: "edit",
+      key: "T104",
+      original: "Order events schema",
+      estimate: "10h",
+    });
+    assert.equal(line(M2, "T104"), "  - [ ] Order events schema @est:10h ^T104");
+    assert.equal(
+      line(M2, "T102"),
+      "- [/] Order state machine @est:16h @owner:sam @dep:T101 #checkout ^T102"
+    );
+    assert.match(
+      notices.at(-1)!.message,
+      /^Saved T104\. T102: estimate 12h → 16h, so its subtasks still add up to it\./
+    );
+    // One Undo takes back both estimates.
+    await panel.receive({ type: "undo" });
+    assert.equal(docText(M2), before);
+  });
+
+  it("checks its options before keeping them, and when it opens again", async () => {
+    const api = await getApi();
+    const panel = await openGantt();
+    const before = panel.viewOptions;
+    await panel.receive({
+      type: "options",
+      options: { ...before, grouping: "people", zoom: 5 } as unknown as GanttViewOptions,
+    });
+    assert.deepEqual(panel.viewOptions, { ...before, grouping: "milestone", zoom: "week" });
+    // Stored by an older version, or by a message that went wrong: the chart still opens.
+    await api.panels.memento.update("gantt.options", { order: 7, hideDone: true });
+    panel.dispose();
+    const again = await openGantt();
+    assert.deepEqual(again.viewOptions, { ...DEFAULT_GANTT_OPTIONS, hideDone: true });
+    await again.receive({ type: "options", options: before });
+  });
 });
+
+describe("undo and redo from the views", () => {
+  before(async () => {
+    await getApi();
+    await restorePlan();
+  });
+  afterEach(restorePlan);
+  after(() => {
+    void vscode.commands.executeCommand("workbench.action.closeAllEditors");
+  });
+
+  it("undoes and redoes an edit after its save gave other tasks ids", async () => {
+    const panel = await openGantt();
+    const notices = noticesOf(panel);
+    // Pasted without an id and not saved: the save after the next view edit gives it one.
+    await insertAbove(M2, "- [ ] Payment provider integration", "- [ ] Refund policy @est:4h");
+    const pasted = docText(M2);
+    await panel.receive({ type: "move", key: "T104", start: "2026-11-09" });
+    const id = /^- \[ \] Refund policy @est:4h \^(T\d+)$/m.exec(docText(M2))?.[1];
+    assert.ok(id, "the save gave the pasted task an id");
+    const withId = pasted.replace("Refund policy @est:4h", `Refund policy @est:4h ^${id}`);
+    await panel.receive({ type: "undo" });
+    assert.equal(notices.at(-1)?.message, "Undid: Move T104 to 2026-11-09");
+    // The move is gone; the id is given again on save.
+    assert.equal(docText(M2), withId);
+    await panel.receive({ type: "redo" });
+    assert.equal(notices.at(-1)?.message, "Redid: Move T104 to 2026-11-09");
+    assert.equal(line(M2, "T104"), "  - [ ] Order events schema @est:6h @start:2026-11-09 ^T104");
+    assert.match(docText(M2), new RegExp(`Refund policy @est:4h \\^${id}\\n`));
+    await panel.receive({ type: "undo" });
+    assert.equal(docText(M2), withId);
+  });
+
+  it("undoes from a notice only the edit it reports, while it is the last one", async () => {
+    const api = await getApi();
+    const gantt = await openGantt();
+    const notices = noticesOf(gantt);
+    const original = docText(M2);
+    await gantt.receive({ type: "move", key: "T104", start: "2026-11-09" });
+    const entry = notices.at(-1)?.undo;
+    assert.equal(typeof entry, "number");
+    // Right after, a card moves on the board.
+    await vscode.commands.executeCommand("planner.openKanban");
+    const kanban = await waitFor(() => api.kanban(), "kanban panel");
+    await kanban.receive({ type: "move", key: "T122", status: "blocked", reason: "keys" });
+    const carded = docText(M2);
+    await gantt.receive({ type: "undo", entry });
+    assert.equal(docText(M2), carded, "the card move stays");
+    assert.deepEqual(notices.at(-1), {
+      level: "error",
+      message:
+        '"Move T104 to 2026-11-09" was not undone: "T122: blocked" came after it. Undo in the toolbar undoes the last edit first.',
+      undo: undefined,
+    });
+    // Once the card move is undone, the drag is the last edit again.
+    await gantt.receive({ type: "undo" });
+    await gantt.receive({ type: "undo", entry });
+    assert.equal(docText(M2), original);
+    await gantt.receive({ type: "undo", entry });
+    assert.equal(notices.at(-1)?.message, '"Move T104 to 2026-11-09" is undone already.');
+  });
+
+  it("clears the history when an edited file was renamed, instead of failing every time", async () => {
+    const api = await getApi();
+    const panel = await openGantt();
+    const notices = noticesOf(panel);
+    await panel.receive({ type: "move", key: "T202", start: "2026-11-09" });
+    const renamed = "milestones/M3-ui.md";
+    renameSync(planUri(M3).fsPath, planUri(renamed).fsPath);
+    try {
+      await waitFor(() => !api.service.index.has(M3), "renamed in the index");
+      await panel.receive({ type: "undo" });
+    } finally {
+      renameSync(planUri(renamed).fsPath, planUri(M3).fsPath);
+      await waitFor(
+        () => api.service.index.has(M3) && !api.service.index.has(renamed),
+        "renamed back"
+      );
+    }
+    assert.deepEqual(notices.at(-1), {
+      level: "error",
+      message: `"Move T202 to 2026-11-09" cannot be undone here: ${M3} was renamed or deleted since. Use Undo in the editor instead.`,
+      undo: undefined,
+    });
+    assert.equal(api.history.canUndo, false);
+    // Undo no longer finds anything to undo, instead of the same error every time.
+    await panel.receive({ type: "undo" });
+    assert.equal(notices.length, 2);
+  });
+
+  it("keeps the edit to undo when the undo is refused, and says so", async () => {
+    const api = await getApi();
+    const panel = await openGantt();
+    const notices = noticesOf(panel);
+    const original = docText(M2);
+    await panel.receive({ type: "move", key: "T104", start: "2026-11-09" });
+    const moved = docText(M2);
+    // As when the question about merge conflict markers is cancelled.
+    const apply = api.service.apply.bind(api.service);
+    api.service.apply = () => Promise.resolve(false);
+    try {
+      await panel.receive({ type: "undo" });
+    } finally {
+      api.service.apply = apply;
+    }
+    assert.equal(docText(M2), moved);
+    assert.deepEqual(notices.at(-1), {
+      level: "error",
+      message: '"Move T104 to 2026-11-09" was not undone: the files were not changed.',
+      undo: undefined,
+    });
+    assert.equal(api.history.canUndo, true);
+    assert.equal(api.history.canRedo, false);
+    await panel.receive({ type: "undo" });
+    assert.equal(docText(M2), original);
+  });
+
+  it("works out the edits between two texts, touching only what differs", () => {
+    const apply = (from: string, to: string) => {
+      const edits = diffEdits(from, to);
+      return { text: applyEdits(from, edits), edits: edits.length };
+    };
+    // Ids added on save: one small edit per line.
+    const from = "# M\n\n- [ ] A @est:4h\n- [ ] B\n- [ ] C\n";
+    const to = "# M\n\n- [ ] A @est:4h ^T1\n- [ ] B ^T2\n- [ ] C\n";
+    assert.deepEqual(apply(from, to), { text: to, edits: 2 });
+    assert.deepEqual(diffEdits(from, to)[0], {
+      range: { start: { line: 2, character: 15 }, end: { line: 2, character: 15 } },
+      newText: " ^T1",
+    });
+    assert.deepEqual(apply(to, from), { text: from, edits: 2 });
+    // Lines added or removed, line endings, emoji: never split.
+    for (const [a, b] of [
+      ["a\nb\nc\n", "a\nx\ny\nc\n"],
+      ["a\r\nb\r\n", "a\nb\r\n"],
+      ["x 😀 y\n", "x 😁 y\n"],
+      ["", "a\n"],
+      ["a\n", ""],
+    ])
+      assert.equal(apply(a, b).text, b);
+    assert.deepEqual(diffEdits("same\n", "same\n"), []);
+  });
+});
+
+/** The notices a panel sends from now on. */
+function noticesOf(panel: GanttPanel): Array<{ level: string; message: string; undo?: number }> {
+  const out: Array<{ level: string; message: string; undo?: number }> = [];
+  const post = panel.post.bind(panel);
+  panel.post = (m) => {
+    if (m.type === "notice") out.push({ level: m.level, message: m.message, undo: m.undo });
+    post(m);
+  };
+  return out;
+}
+
+/** Inserts a line (unsaved) above the first line that starts with `before`. */
+async function insertAbove(rel: string, before: string, text: string): Promise<void> {
+  const api = await getApi();
+  const doc = await vscode.workspace.openTextDocument(planUri(rel));
+  const at = doc.getText().indexOf(`\n${before}`) + 1;
+  const edit = new vscode.WorkspaceEdit();
+  edit.insert(doc.uri, doc.positionAt(at), `${text}\n`);
+  assert.ok(await vscode.workspace.applyEdit(edit));
+  const title = text.replace(/^- \[.\] /, "").replace(/ @.*$/, "");
+  await waitFor(
+    () => api.state.plan.file(rel)?.items.some((t) => t.title === title),
+    "inserted line indexed"
+  );
+}
+
+/** Removes `length` characters at the first occurrence of `text` (unsaved). */
+async function removeText(rel: string, text: string, length: number): Promise<void> {
+  const doc = await vscode.workspace.openTextDocument(planUri(rel));
+  const at = doc.getText().indexOf(text);
+  const edit = new vscode.WorkspaceEdit();
+  edit.delete(doc.uri, new vscode.Range(doc.positionAt(at), doc.positionAt(at + length)));
+  assert.ok(await vscode.workspace.applyEdit(edit));
+}

@@ -19,7 +19,8 @@ import { countResults } from "../core/testRun";
 import { newErrors, type PlanErrors, planErrors } from "../core/newErrors";
 import { validatePlan } from "../core/validate";
 import { readNotes } from "../core/writer";
-import { findWorkspace } from "./settings";
+import { unassignedCapacitySetting } from "../core/settingValues";
+import { findWorkspace, workspaceSettings } from "./settings";
 import { type ChangedLines, Staging, ToolError } from "./staging";
 
 export { changedLines, type ChangedLines, ToolError } from "./staging";
@@ -64,9 +65,25 @@ export class PlannerTools {
     return this.options.workspaceDir ?? findWorkspace(this.options.planDir);
   }
 
+  /**
+   * `planner.scheduling.unassignedCapacity`: given to the server, else the workspace setting (read
+   * at each schedule, like the other settings), else 40. A value that is not hours is 40, with a
+   * line in the server's log (stderr).
+   */
   get unassignedCapacity(): number {
-    return this.options.unassignedCapacity ?? 40;
+    if (this.options.unassignedCapacity !== undefined) return this.options.unassignedCapacity;
+    const setting = unassignedCapacitySetting(
+      workspaceSettings(this.workspaceDir)["scheduling.unassignedCapacity"]
+    );
+    if (setting.invalid && setting.invalid !== this.loggedSetting) {
+      this.loggedSetting = setting.invalid;
+      process.stderr.write(`md-planner MCP server: ${setting.invalid}\n`);
+    }
+    return setting.hours;
   }
+
+  /** The last setting problem written to the log (each once). */
+  private loggedSetting: string | undefined;
 
   /** The plan as of the last `load` or `commit` (call `load` first). */
   get plan(): Plan {
@@ -310,7 +327,7 @@ export class PlannerTools {
         ? schedulePlan(this.plan, {
             today: this.today,
             mode: "demand",
-            unassignedCapacity: this.options.unassignedCapacity ?? 40,
+            unassignedCapacity: this.unassignedCapacity,
           })
         : this.schedule;
     const from = args.from ? parseDate(args.from)! : weekStart(s.today);

@@ -10,9 +10,12 @@ import { config } from "../util";
 
 export const SUBTASK_CHOICES: readonly SubtaskChoice[] = ["done", "cancelled", "keep"];
 
-/** True when parents follow their subtasks (`planner.parentStatus`). */
+/**
+ * True when parents follow their subtasks (`planner.parentStatus`): unless it is "off". A value
+ * that is neither (`"on"`, `true`) is the default, "auto", as for the MCP server.
+ */
 export function rollUpParents(): boolean {
-  return config().get<string>("parentStatus", "auto") === "auto";
+  return config().get<unknown>("parentStatus", "auto") !== "off";
 }
 
 /** Answers given beforehand (command arguments, tests) instead of asking. */

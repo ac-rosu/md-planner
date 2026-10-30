@@ -45,7 +45,7 @@ import {
   captureInbox,
   type Creation,
 } from "../../core/writer/entities";
-import { newTaskLeavesSchedule } from "../../core/writer/structure";
+import { newTaskLeavesSchedule, openFenceReason } from "../../core/writer/structure";
 import { type PlannerState } from "../state";
 import { type PlanService } from "../planService";
 import { type FormField, showForm } from "../ui/form";
@@ -876,6 +876,12 @@ export async function moveTaskCommand(
   const location: InsertLocation = chosen.section
     ? { kind: "section", title: chosen.section }
     : { kind: "root" };
+  // A code block left open in its notes would carry the rest of the file along.
+  const fenced = openFenceReason(source, [current], { kind: "end" });
+  if (fenced) {
+    void vscode.window.showWarningMessage(`Planner: ${fenced}`);
+    return undefined;
+  }
   const { edits, moved } = moveTaskTo(source, current, dest, location);
   if (!(await confirmNoNewErrors(service, edits, `Moving ${t.id ?? t.title}`))) return undefined;
   const ok = await service.apply(edits, { source: "view" });

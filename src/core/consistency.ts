@@ -18,6 +18,7 @@ import {
   isLeaf,
   leavesOf,
   openSubtasks,
+  startedOn,
 } from "./rollup";
 import { range } from "./text";
 
@@ -27,7 +28,10 @@ const h = formatHours;
 
 export function consistencyIssues(plan: Plan): Issue[] {
   const issues: Issue[] = [];
-  for (const t of [...plan.tasks, ...plan.punch]) statusDates(t, issues);
+  for (const t of [...plan.tasks, ...plan.punch]) {
+    statusDates(plan, t, issues);
+    farStatusDates(plan, t, issues);
+  }
   for (const t of plan.tasks) {
     parentStatus(t, issues);
     startedEarly(plan, t, issues);
@@ -153,7 +157,7 @@ function milestonesStartedEarly(plan: Plan, issues: Issue[]): void {
 }
 
 /** `@started` / `@done` that disagree with the checkbox. */
-function statusDates(t: Task, issues: Issue[]): void {
+function statusDates(plan: Plan, t: Task, issues: Issue[]): void {
   if (t.status === "todo" && t.started && !hasLoggedWork(t)) {
     issues.push(
       attrIssue(
@@ -166,13 +170,17 @@ function statusDates(t: Task, issues: Issue[]): void {
     );
   }
   if (t.status === "done" && !t.done && isLeaf(t)) {
+    // The burn-up counts it at the project start (else today, where the schedule starts).
+    const start = plan.project.start;
     issues.push({
       file: t.file,
       range: statusRange(t),
       severity: "info",
       code: "missing-done",
       message:
-        "Done without @done: the task has no place on the timeline or in the burn-up. Add the date it was finished.",
+        t.kind === "task"
+          ? `Done without @done: the task has no place on the timeline, and the burn-up counts it as done ${start ? `from the project start ${start}` : "from today"}. Add the date it was finished.`
+          : "Done without @done: add the date it was finished.",
     });
   }
   if (t.started && t.done && t.done < t.started) {
@@ -183,6 +191,43 @@ function statusDates(t: Task, issues: Issue[]): void {
         "warning",
         "done-before-started",
         `@done ${t.done} is before @started ${t.started}.`
+      )
+    );
+  }
+}
+
+/** More than this many days outside the project period, a status date is taken for a typo. */
+const FAR_DAYS = 365;
+
+/**
+ * `@started` and `@done` more than a year before the project start or after its end: a mistyped
+ * year (`@started:1026-07-01`) that stretches the burn-up and the timeline over centuries. Not a
+ * to-do task's `@started`: it is ignored (see stale-started).
+ */
+function farStatusDates(plan: Plan, t: Task, issues: Issue[]): void {
+  const { start, end } = plan.project;
+  const startDay = start ? parseDate(start) : undefined;
+  const endDay = end ? parseDate(end) : undefined;
+  const started = startedOn(t);
+  for (const key of ["started", "done"] as const) {
+    const value = key === "started" ? started : t.done;
+    const day = value ? parseDate(value) : undefined;
+    if (day === undefined) continue;
+    const before = startDay !== undefined && day < startDay - FAR_DAYS;
+    const after = endDay !== undefined && day > endDay + FAR_DAYS;
+    if (!before && !after) continue;
+    // A suggestion that keeps @started on or before @done.
+    const suggestion = suggestYearTypo(plan, value!, (d) =>
+      key === "started" ? !t.done || d <= t.done : !started || d >= started
+    );
+    issues.push(
+      attrIssue(
+        t,
+        key,
+        "warning",
+        "date-outside-project",
+        `@${key} ${value} is more than a year ${before ? `before the project start ${start}` : `after the project end ${end}`}. Is the year right?`,
+        suggestion ? { suggestion } : undefined
       )
     );
   }
@@ -477,6 +522,43 @@ export function suggestYear(plan: Plan, iso: string): string | undefined {
   if (start !== undefined && shifted < start) return undefined;
   if (end !== undefined && shifted > end) return undefined;
   return shifted;
+}
+
+/**
+ * For a date far outside the project period: the same day in the one year that puts it in the
+ * period (and that `fits` takes) and is a typo away from its year: one digit different, or two
+ * neighbouring digits swapped (`1026` → `2026`, `2062` → `2026`). Without a project end the period
+ * is taken to run a year from its start.
+ */
+export function suggestYearTypo(
+  plan: Plan,
+  iso: string,
+  fits: (date: string) => boolean = () => true
+): string | undefined {
+  const { start, end } = plan.project;
+  if (start === undefined) return undefined;
+  const last = end !== undefined ? Number(end.slice(0, 4)) : Number(start.slice(0, 4)) + 1;
+  const year = iso.slice(0, 4);
+  const found: string[] = [];
+  for (let y = Number(start.slice(0, 4)); y <= last && found.length < 2; y++) {
+    const text = String(y).padStart(4, "0");
+    if (!isYearTypo(year, text)) continue;
+    const date = `${text}${iso.slice(4)}`;
+    if (parseDate(date) === undefined || date < start || (end !== undefined && date > end))
+      continue;
+    if (fits(date)) found.push(date);
+  }
+  return found.length === 1 ? found[0] : undefined;
+}
+
+/** One digit different, or two neighbouring digits swapped. */
+function isYearTypo(a: string, b: string): boolean {
+  if (a.length !== b.length || a === b) return false;
+  const diff: number[] = [];
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) diff.push(i);
+  if (diff.length === 1) return true;
+  const [i, j] = diff;
+  return diff.length === 2 && j === i + 1 && a[i] === b[j] && a[j] === b[i];
 }
 
 /**

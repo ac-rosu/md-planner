@@ -5,9 +5,9 @@
 // copy the user did not change is kept current when the extension brings a new version.
 import { createHash } from "node:crypto";
 import * as vscode from "vscode";
-import { planRootFor } from "./mcp";
+import { planRootFor, readText, workspaceFolderFor } from "./mcp";
 import { type PlanService } from "./planService";
-import { decode, encode, exists, openDocument } from "./util";
+import { decode, encode, openDocument } from "./util";
 
 /** Where the skill goes, relative to the workspace folder. */
 export const SKILL_PATH = ".claude/skills/md-planner/SKILL.md";
@@ -31,7 +31,7 @@ export async function addAgentSkillCommand(
   const root = planRootFor(service);
   const folder =
     options.folder ??
-    (root ? vscode.workspace.getWorkspaceFolder(root)?.uri : undefined) ??
+    (root ? workspaceFolderFor(root) : undefined) ??
     vscode.workspace.workspaceFolders?.[0]?.uri;
   if (!folder) {
     void vscode.window.showErrorMessage("Planner: open a folder first.");
@@ -63,7 +63,20 @@ export async function addAgentSkillCommand(
       )) === replace;
     if (!go) return undefined;
   }
-  if (!(await write(context, folder, file, text, existing))) return undefined;
+  const blocked = await fileInTheWay(folder);
+  if (blocked) {
+    // `.claude` (or a folder below it) is a file: the skill cannot go there.
+    const why = `Planner: cannot add ${SKILL_PATH}: ${blocked} is a file, not a folder. Rename or remove it, then add the skill again.`;
+    if (options.quiet) service.log.warn(why);
+    else void vscode.window.showErrorMessage(why);
+    return undefined;
+  }
+  if (!(await write(context, folder, file, text, existing))) {
+    const why = `Planner: could not write ${SKILL_PATH}.`;
+    if (options.quiet) service.log.warn(why);
+    else void vscode.window.showErrorMessage(why);
+    return undefined;
+  }
   if (!options.quiet)
     void vscode.window.showInformationMessage(
       `Planner: ${existing === undefined ? "added" : "updated"} ${SKILL_PATH}. Claude Code and Copilot agent mode use it when you ask them about the plan; with the MCP server (Configure MCP) they can also change it.`
@@ -100,11 +113,20 @@ async function shippedSkill(context: vscode.ExtensionContext): Promise<string> {
   return decode(await vscode.workspace.fs.readFile(source));
 }
 
-/** The text of a file: the open document's, else the file's on disk; undefined without one. */
-async function readText(file: vscode.Uri): Promise<string | undefined> {
-  const doc = openDocument(file);
-  if (doc) return doc.getText();
-  return (await exists(file)) ? decode(await vscode.workspace.fs.readFile(file)) : undefined;
+/** The first of the skill's folders (`.claude`, `.claude/skills` …) that is a file, if one is. */
+async function fileInTheWay(folder: vscode.Uri): Promise<string | undefined> {
+  const parts = SKILL_PATH.split("/").slice(0, -1);
+  for (let i = 1; i <= parts.length; i++) {
+    try {
+      const stat = await vscode.workspace.fs.stat(
+        vscode.Uri.joinPath(folder, ...parts.slice(0, i))
+      );
+      if (!(stat.type & vscode.FileType.Directory)) return parts.slice(0, i).join("/");
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
 }
 
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");

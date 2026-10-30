@@ -76,6 +76,33 @@ describe("test plans, runner and TODOs", () => {
     );
   });
 
+  it("does not say a punch item was created when the change was refused", async () => {
+    const api = await getApi();
+    const runner = await openRunner();
+    const notices: string[] = [];
+    const post = runner.post.bind(runner);
+    runner.post = (m) => {
+      if (m.type === "notice") notices.push(m.message);
+      post(m);
+    };
+    const punch = docText("punchlist.md");
+    // As when the question about merge conflict markers is cancelled.
+    const apply = api.service.apply.bind(api.service);
+    api.service.apply = () => Promise.resolve(false);
+    try {
+      await runner.receive({
+        type: "createPunch",
+        step: STEP_DECLINED,
+        title: "No error message for a declined card",
+        sev: "A",
+      });
+    } finally {
+      api.service.apply = apply;
+    }
+    assert.equal(docText("punchlist.md"), punch);
+    assert.deepEqual(notices, ["Punch item P008 was not created: no file was changed."]);
+  });
+
   it("creates a punch item from a failed step with a back-link", async () => {
     const api = await getApi();
     const runner = await openRunner();

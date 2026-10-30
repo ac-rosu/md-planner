@@ -109,15 +109,19 @@ export function statusSideEdits(
 ): TextEdit[] {
   if (task.kind === "step") return [];
   const next = new Map<Task, Status>([[task, status]]);
+  // The status dates of the tasks that change, as applyStatus leaves them.
+  const dates = new Map<Task, StatusDates>([[task, datesAfter(task, status, today)]]);
   const edits: TextEdit[] = [];
-  const change = (t: Task, to: Status) => {
+  const change = (t: Task, to: Status, date = today) => {
     next.set(t, to);
-    edits.push(...setStatus(lines, t, to, today));
+    dates.set(t, datesAfter(t, to, date));
+    edits.push(...setStatus(lines, t, to, date));
   };
   if (status === "done" && effects.subtasks && effects.subtasks !== "keep")
     for (const s of openSubtasks(task)) change(s, effects.subtasks);
   if (!effects.rollUp) return edits;
   const now = (t: Task) => next.get(t) ?? t.status;
+  const dated = (t: Task) => dates.get(t) ?? { started: t.started, done: t.done };
   for (let child = task, p = task.parent; p; child = p, p = p.parent) {
     const kids = p.children.filter((c) => now(c) !== "cancelled");
     const parent = now(p);
@@ -133,9 +137,47 @@ export function statusSideEdits(
       to = "doing";
     else if (parent === "done" && isOpen(childStatus)) to = "doing";
     if (!to) break;
-    change(p, to);
+    // The parent finished when its last subtask did, and started when its first one started, as
+    // far as their dates tell (and not done before its own @started); else today.
+    const done = kids.map((c) => dated(c).done).filter((d) => d !== undefined);
+    const started = kids.map((c) => dated(c).started).filter((d) => d !== undefined);
+    let date = today;
+    if (to === "done" && done.length === kids.length) {
+      const last = done.reduce((a, b) => (b > a ? b : a));
+      if (!p.started || p.started <= last) date = last;
+    }
+    if (to === "doing" && started.length) date = started.reduce((a, b) => (b < a ? b : a));
+    change(p, to, date);
   }
   return edits;
+}
+
+interface StatusDates {
+  started?: string;
+  done?: string;
+}
+
+/** A task's valid `@started` and `@done` dates once applyStatus changed it to `status` on `date`. */
+function datesAfter(task: Task, status: Status, date: string): StatusDates {
+  if (task.kind === "step") return {};
+  const has = (key: string) => task.attrs.some((a) => a.key === key);
+  const started =
+    status === "todo" && !hasLoggedWork(task)
+      ? undefined
+      : has("started")
+        ? task.started
+        : status === "doing" || status === "review"
+          ? date
+          : undefined;
+  const done =
+    status === "done"
+      ? has("done")
+        ? task.done
+        : date
+      : status === "cancelled"
+        ? task.done
+        : undefined;
+  return { started, done };
 }
 
 /** True when the change starts work on a task that has not been started yet (or finishes it). */
@@ -448,6 +490,9 @@ function headingLines(lines: TextLines): HeadingLine[] {
 // ---------------------------------------------------------------------------------------------
 // Moving and deleting task blocks
 
+/** A code fence: ``` or ~~~ (three or more). */
+const FENCE = /^[ \t]*(`{3,}|~{3,})/;
+
 /** The raw lines of a task block (task line, notes and nested items). */
 export function blockLines(lines: TextLines, task: Task): string[] {
   const out: string[] = [];
@@ -455,13 +500,49 @@ export function blockLines(lines: TextLines, task: Task): string[] {
   return out;
 }
 
-/** Re-indents a block so that its first line starts with `indent`. */
+/**
+ * Re-indents a block so that its first line starts with `indent`. A block that keeps its
+ * indentation is left as it is. Blank lines (also those with spaces) are kept as they are. The
+ * code inside a fence moves with the block only when all its lines are indented as deep as the
+ * block; otherwise it stays as it is, so the code keeps its own indentation.
+ */
 export function reindent(block: string[], fromIndent: string, indent: string): string[] {
-  return block.map((l) => {
-    if (l.trim() === "") return "";
+  if (fromIndent === indent) return block;
+  // The code lines of each fence: they move together or not at all.
+  const code: number[][] = [];
+  let fence: string | undefined;
+  block.forEach((l, i) => {
+    const f = FENCE.exec(l);
+    if (fence === undefined) {
+      if (f) code.push([]);
+      fence = f?.[1];
+    } else if (f && f[1][0] === fence[0] && f[1].length >= fence.length && l.trim() === f[1])
+      fence = undefined;
+    else code[code.length - 1].push(i);
+  });
+  const shallow = (i: number) => block[i].trim() !== "" && !block[i].startsWith(fromIndent);
+  const kept = new Set(code.filter((c) => c.some(shallow)).flat());
+  return block.map((l, i) => {
+    if (l.trim() === "" || kept.has(i)) return l;
     if (l.startsWith(fromIndent)) return indent + l.slice(fromIndent.length);
     return indent + l.replace(/^[ \t]+/, "");
   });
+}
+
+/**
+ * True when a code fence in the task's block (its notes or those of its subtasks) is never
+ * closed: the block then runs to the end of the file, over everything below it.
+ */
+export function endsInOpenFence(lines: TextLines, task: Task): boolean {
+  let fence: string | undefined;
+  for (let i = task.line + 1; i <= task.endLine; i++) {
+    const l = lines.line(i);
+    const f = FENCE.exec(l);
+    if (fence === undefined) fence = f?.[1];
+    else if (f && f[1][0] === fence[0] && f[1].length >= fence.length && l.trim() === f[1])
+      fence = undefined;
+  }
+  return fence !== undefined;
 }
 
 export function deleteTask(lines: TextLines, task: Task): TextEdit {
@@ -756,16 +837,19 @@ export function nextId(plan: Plan, prefix = "T"): string {
 
 /**
  * Assigns ids to every item in the file that has none. Tasks get `T…`, punch items `P…`. Ids in
- * `reserved` are avoided and the new ones are added to it (for multi-file assignment).
+ * `reserved` are avoided and the new ones are added to it (for multi-file assignment). An item
+ * without a title is still being written (`- [ ] ` would become `- [ ] ^T12`, and the title typed
+ * after it): it gets its id once it has a title. So do the items `skip` names.
  */
 export function assignMissingIds(
   plan: Plan,
   file: ParsedFile,
-  reserved: Set<string> = new Set()
+  reserved: Set<string> = new Set(),
+  skip?: (t: Task) => boolean
 ): TextEdit[] {
   if (file.kind !== "milestone" && file.kind !== "punch") return [];
   const prefix = file.kind === "punch" ? "P" : "T";
-  const missing = file.items.filter((t) => !t.id);
+  const missing = file.items.filter((t) => !t.id && t.title.trim() !== "" && !skip?.(t));
   const ids = nextIds(plan, prefix, missing.length, reserved);
   for (const id of ids) reserved.add(id);
   return missing.flatMap((t, i) => setId(file.lines, t, ids[i]));
@@ -873,6 +957,30 @@ export function renameTaskId(plan: Plan, oldId: string, newId: string): FileEdit
     );
   }
   return [...byFile].map(([path, edits]) => ({ path, edits }));
+}
+
+/** Says so when `id` is the id of several items (see renameIdProblem). */
+export function sharedIdProblem(plan: Plan, id: string): string | undefined {
+  const named = [...plan.tasks, ...plan.punch, ...plan.inbox].filter((t) => t.id === id);
+  if (named.length < 2) return undefined;
+  return `${id} is the id of ${named.length} items: a copied line keeps its id. Give the copy its own id first (the quick fix "Give this task a new id" on its ^${id}), then rename.`;
+}
+
+/**
+ * Why renameTaskId(plan, oldId, newId) would do harm, or undefined when it would not: `oldId` is
+ * the id of several items (a copied line keeps its id), and the rename would change them all and
+ * every dependency on them; or `newId` is already in use, also in another case (`t111` next to
+ * `T111`: deleting one of them would take the dependencies on both).
+ */
+export function renameIdProblem(plan: Plan, oldId: string, newId: string): string | undefined {
+  const shared = sharedIdProblem(plan, oldId);
+  if (shared) return shared;
+  const lower = newId.toLowerCase();
+  const taken = [...allIds(plan)].find((id) => id !== oldId && id.toLowerCase() === lower);
+  if (taken === undefined) return undefined;
+  return taken === newId
+    ? `The id ${newId} is already in use.`
+    : `The id ${taken} is already in use, and ids do not differ by case only.`;
 }
 
 export function renameInDepList(value: string, oldId: string, newId: string): string {

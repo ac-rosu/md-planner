@@ -3,13 +3,13 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import {
-  DEFAULT_TODO_EXCLUDE,
-  DEFAULT_TODO_INCLUDE,
-  DEFAULT_TODO_KEYWORDS,
   globMatch,
   linkedTask,
   promoteTodo as promoteTodoEdits,
   scanTodos,
+  todoExclude,
+  todoInclude,
+  todoKeywords,
 } from "../core/todos";
 import { applyEdits } from "../core/text";
 import { type InsertLocation } from "../core/writer";
@@ -29,9 +29,9 @@ interface ScanOptions {
 function options(tools: PlannerTools, args: ScanOptions) {
   const s = workspaceSettings(tools.workspaceDir);
   return {
-    include: args.include ?? ((s["todos.include"] as string) || DEFAULT_TODO_INCLUDE),
-    exclude: args.exclude ?? (s["todos.exclude"] as string) ?? DEFAULT_TODO_EXCLUDE,
-    keywords: args.keywords ?? ((s["todos.keywords"] as string[]) || DEFAULT_TODO_KEYWORDS),
+    include: todoInclude(args.include ?? s["todos.include"]),
+    exclude: todoExclude(args.exclude ?? s["todos.exclude"]),
+    keywords: todoKeywords(args.keywords ?? s["todos.keywords"]),
     maxFiles: args.maxFiles ?? Number(s["todos.maxFiles"] ?? 2000),
   };
 }

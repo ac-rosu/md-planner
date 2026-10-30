@@ -7,7 +7,7 @@ import { type ParsedFile } from "../../core/model";
 import { assignMissingIds, type FileEdit, nextStatus, setAttr, setStatus } from "../../core/writer";
 import { type PlanService } from "../planService";
 import { toRange } from "../util";
-import { findAgain, resolveTask, stringArg, type TaskArg } from "./args";
+import { cursorOnCodeCheckbox, findAgain, resolveTask, stringArg, type TaskArg } from "./args";
 import { offerUndo } from "./edit";
 import { type StatusAnswers, statusEffects, SUBTASK_CHOICES } from "./status";
 
@@ -107,9 +107,11 @@ export async function changeStatus(
 ): Promise<boolean> {
   const r = resolveTask(service, arg);
   if (!r) {
-    void vscode.window.showWarningMessage(
-      "Planner: put the cursor on a task or select one in a view."
-    );
+    // On a task line in a code block resolveTask said why.
+    if (arg !== undefined || !cursorOnCodeCheckbox(service))
+      void vscode.window.showWarningMessage(
+        "Planner: put the cursor on a task or select one in a view."
+      );
     return false;
   }
   const t = r.task;

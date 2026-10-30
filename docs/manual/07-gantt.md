@@ -138,6 +138,10 @@ task, a milestone's `depends:`, a parent's fixed start), or the owner's other wo
 A pinned task goes first in its owner's day, so it can become shorter (it no longer shares the
 person with other work).
 
+A task already in progress keeps its bar's start at `@started`; a drag (or Alt+← / Alt+→) moves
+the rest of its work, counted from the first day of that remaining work, and the notice says
+"the rest of its work starts no earlier than …".
+
 Other tasks can move too, also ones that do not depend on the dragged task. The notice after the
 drag gives the new dates and says what else moves and why, with **Undo**:
 
@@ -225,6 +229,12 @@ Double-click a bar or a task row, or select it and press **F2**:
 | 4   | Save        | All changes as one edit. Escape or **Cancel** closes without changes.                                                                                 |
 | 5   | All fields… | Closes the dialog and opens the full task form: status, dependencies, dates, priority, tags and more ([Edit a task](03-add-and-edit.md#edit-a-task)). |
 
+Save writes only the fields you changed in the dialog, so a change made meanwhile in the editor or
+by an agent is kept. When the task itself changes while the dialog is open (another title, or its
+line now holds another task), the dialog closes and writes nothing. A subtask that shares its
+parent's estimate shows its share (`10h (share of T1's estimate)`); giving it its own estimate
+raises the parent's by as much, as dragging the bar's end does, so its siblings keep their hours.
+
 ### The right-click menu
 
 Right-click a bar or a row of the task list for every task action: edit, add a subtask, status,
@@ -239,11 +249,13 @@ fixed start**. Milestone and section rows offer
 Every change on the chart is a normal edit of the milestone file: Cmd+Z in the file undoes it. The
 Gantt's own **Undo** and **Redo** buttons (and Cmd+Z / Cmd+Shift+Z while the chart has focus) undo
 and redo the chart's edits even when the file is not in front, and refuse if the file was changed
-in between.
+in between (a file renamed or deleted since counts as changed). Ids added to the file when it was
+saved do not stop an undo: it removes them, and the next save adds the same ids again.
 
 After every drag, link, unlink or dialog edit, a message at the bottom of the chart says exactly
 what changed, such as "T417: estimate 80h → 122.5h.", with an **Undo** button, so a drag you did
-not mean is noticed at once. A drag that changes nothing (a bar dropped on its own fixed start, a
+not mean is noticed at once. That button undoes only its own change: when another edit came after
+it (on the Kanban board, say), it says so and leaves both. A drag that changes nothing (a bar dropped on its own fixed start, a
 resize that cannot end any closer) says so, without an **Undo** button. **Remove fixed start**
 shows the same in a notification. The undo history does not survive closing VS Code or reloading
 the window.

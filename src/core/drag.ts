@@ -392,9 +392,12 @@ export function describeMove(
   const name = task.id ?? task.title;
   const date = formatDate(start);
   const now = after.tasks.get(task);
+  // A task in progress: its bar starts at @started, and the fixed start applies to the rest.
+  const going = startedOn(task) !== undefined;
+  const first = now && going ? firstWorkDay(after, now) : now?.start;
   const later =
-    now?.start !== undefined && now.start > start
-      ? ` ${capitalize(waitReason(plan, after, now, start, now.start))}, so it starts ${dragDay(now.start)}.`
+    now && first !== undefined && first > start
+      ? ` ${capitalize(waitReason(plan, after, now, start, first))}, so it ${going ? "continues" : "starts"} ${dragDay(first)}.`
       : "";
   if (task.start === date)
     return `${name} already has the fixed start ${date}${dropped < start ? ` (${dragDay(dropped)} is not a working day)` : ""}.${later}`;
@@ -405,7 +408,7 @@ export function describeMove(
   } else if (later) what += later;
   else if (!task.start)
     // Dragging pins the task; say so the first time, as it stays when the plan changes.
-    what += ` It is now pinned: it starts no earlier than that, even when its dependencies finish sooner (right-click → Remove fixed start).`;
+    what += ` It is now pinned: ${going ? "the rest of its work starts" : "it starts"} no earlier than that, even when its dependencies finish sooner (right-click → Remove fixed start).`;
   if (now?.finish !== undefined) what += ` Ends ${dragDay(now.finish)}.`;
   return `${what} ${describeMoved(plan, before, task, movedTasks(before, after, task))}`.trim();
 }
@@ -422,31 +425,44 @@ export function describeResize(
   r: Extract<Resize, { est: number }>
 ): string {
   const name = task.id ?? task.title;
-  const estText = (t: Task) =>
-    t.attrs.find((a) => a.key === "est")?.value ??
-    (t.budget !== undefined ? formatHours(t.budget) : "none");
   const was = before.tasks.get(task);
   const now = byLine(r.schedule).get(lineOf(task));
   // With more work, what it waits for can become more urgent, and the bar start earlier.
   const starts =
     now?.start !== undefined && now.start !== was?.start ? `, starts ${dragDay(now.start)}` : "";
   const ends = now?.finish !== undefined ? `, ends ${dragDay(now.finish)}` : "";
-  let text = `${name}: estimate ${estText(task)} → ${formatHours(r.est)}${starts}${ends}.`;
-  if (r.parents.length) {
-    const changes = list(
-      r.parents.map(
-        (p) => `${taskName(p.task)}: estimate ${estText(p.task)} → ${formatHours(p.est)}`
-      )
-    );
-    const keep = r.parents.flatMap((p) =>
-      budgetSplit(p.task).unestimated.filter((u) => u !== task && u.budget !== undefined)
-    );
-    // Without others that share it, the task had what was left of the parent's estimate.
-    text += keep.length
-      ? ` ${changes}, so ${list(keep.map(taskName))} ${keep.length === 1 ? "keeps its" : "keep their"} hours.`
-      : ` ${changes}, so its subtasks still add up to it.`;
-  }
+  let text = `${name}: estimate ${estimateText(task)} → ${formatHours(r.est)}${starts}${ends}.`;
+  const parents = describeParentEstimates(task, r.parents);
+  if (parents) text += ` ${parents}`;
   return `${text} ${describeMoved(plan, before, task, movedTasks(before, r.schedule, task))}`.trim();
+}
+
+/**
+ * The parents whose estimate changes with a subtask's (parentEstimates), for notices: "T1:
+ * estimate 40h → 46h, so T4, T5 and T6 keep their hours." Empty when there are none.
+ */
+export function describeParentEstimates(task: Task, parents: ParentEstimate[]): string {
+  if (parents.length === 0) return "";
+  const changes = list(
+    parents.map(
+      (p) => `${taskName(p.task)}: estimate ${estimateText(p.task)} → ${formatHours(p.est)}`
+    )
+  );
+  const keep = parents.flatMap((p) =>
+    budgetSplit(p.task).unestimated.filter((u) => u !== task && u.budget !== undefined)
+  );
+  // Without others that share it, the task had what was left of the parent's estimate.
+  return keep.length
+    ? `${changes}, so ${list(keep.map(taskName))} ${keep.length === 1 ? "keeps its" : "keep their"} hours.`
+    : `${changes}, so its subtasks still add up to it.`;
+}
+
+/** A task's estimate as written, its share of its parent's, or "none". */
+function estimateText(t: Task): string {
+  return (
+    t.attrs.find((a) => a.key === "est")?.value ??
+    (t.budget !== undefined ? formatHours(t.budget) : "none")
+  );
 }
 
 export interface MovedTask {

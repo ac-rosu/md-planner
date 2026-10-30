@@ -12,6 +12,7 @@ import {
   addActual,
   formatElapsed,
   parseLoggedTime,
+  roundingMinutes,
   roundMinutes,
   timerRanLong,
   unreadableActual,
@@ -150,8 +151,9 @@ export class TimerService implements vscode.Disposable {
       );
       return 0;
     }
-    const rounding = config().get<number>("time.roundingMinutes", 15);
-    const rounded = elapsed < 0 ? undefined : roundMinutes(elapsed / 60_000, rounding) / 60;
+    const rounding = roundingMinutes(config().get<unknown>("time.roundingMinutes", 15));
+    if (rounding.invalid) this.service.log.warn(rounding.invalid);
+    const rounded = elapsed < 0 ? undefined : roundMinutes(elapsed / 60_000, rounding.minutes) / 60;
     if (!(await this.target(running, rounded === undefined ? "the time" : formatHours(rounded))))
       return undefined;
     const answer = await this.confirmHours(running, now, rounded);
@@ -253,13 +255,19 @@ export class TimerService implements vscode.Disposable {
     if (rounded !== undefined && elapsed !== undefined) {
       const hoursPerDay = this.service.plan.project.hoursPerDay;
       const [from, to] = [running.startedAt, now].map((ms) => localToday(new Date(ms)));
-      if (!timerRanLong(now - running.startedAt, hoursPerDay, from, to)) return rounded;
+      const long = timerRanLong(now - running.startedAt, hoursPerDay, from, to);
+      // Rounded up to more than a working day (by a large planner.time.roundingMinutes).
+      if (!long && rounded <= hoursPerDay) return rounded;
       log = `Log ${formatHours(rounded)}`;
       pick = await vscode.window.showWarningMessage(
-        `The timer on ${name} has been running for ${elapsed}, since ${since}.`,
+        long
+          ? `The timer on ${name} has been running for ${elapsed}, since ${since}.`
+          : `The timer on ${name} ran for ${elapsed}, which rounds up to ${formatHours(rounded)}: more than a working day (${formatHours(hoursPerDay)}).`,
         {
           modal: true,
-          detail: `Was it left running? ${log} on ${name}, enter the time you worked, or discard it. ${keep}`,
+          detail: long
+            ? `Was it left running? ${log} on ${name}, enter the time you worked, or discard it. ${keep}`
+            : `Timer time is rounded up to planner.time.roundingMinutes. ${log} on ${name}, enter the time you worked, or discard it. ${keep}`,
         },
         log,
         other,

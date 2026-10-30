@@ -23,7 +23,14 @@ export class FormatGuard implements vscode.Disposable {
         if (this.service.isPlanDocument(e.document))
           this.expected.set(e.document.uri.toString(), e.document.getText());
       }),
-      vscode.workspace.onDidSaveTextDocument((doc) => void this.check(doc)),
+      vscode.workspace.onDidSaveTextDocument(
+        (doc) =>
+          void this.check(doc).catch((err) =>
+            this.service.log.warn(
+              `Format guard: ${err instanceof Error ? err.message : String(err)}`
+            )
+          )
+      ),
     ];
   }
 
@@ -59,12 +66,34 @@ export class FormatGuard implements vscode.Disposable {
       `Planner: ${rel} was reformatted when it was saved (${who}). A formatter can change task lines and how subtasks nest; the planner only changes the characters an edit needs.`,
       ...actions
     );
-    if (pick === off)
+    if (pick === off) await this.turnOffFormatOnSave();
+    else if (pick === ignore) await this.addToPrettierIgnore();
+    else if (pick === never) await this.memento.update(NEVER_KEY, true);
+  }
+
+  /**
+   * Turns off format on save for Markdown in the workspace settings (also a test hook). VS Code
+   * refuses when .vscode/settings.json has an error or unsaved changes; then the user is told why,
+   * with the file a click away. True when it was turned off.
+   */
+  async turnOffFormatOnSave(): Promise<boolean> {
+    try {
       await vscode.workspace
         .getConfiguration("editor", { languageId: "markdown" })
         .update("formatOnSave", false, vscode.ConfigurationTarget.Workspace, true);
-    else if (pick === ignore) await this.addToPrettierIgnore();
-    else if (pick === never) await this.memento.update(NEVER_KEY, true);
+      return true;
+    } catch (err) {
+      const open = "Open Workspace Settings";
+      const why = err instanceof Error ? err.message : String(err);
+      this.service.log.warn(`Could not turn off format on save: ${why}`);
+      const pick = await vscode.window.showErrorMessage(
+        `Planner: could not turn off format on save for Markdown: ${why} Fix the workspace settings (.vscode/settings.json), or set "editor.formatOnSave": false under "[markdown]" there yourself.`,
+        open
+      );
+      if (pick === open)
+        await vscode.commands.executeCommand("workbench.action.openWorkspaceSettingsFile");
+      return false;
+    }
   }
 
   /**

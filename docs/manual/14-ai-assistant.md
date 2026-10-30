@@ -58,14 +58,23 @@ diff editor: the current file on the left, the file with the proposed changes on
 | 5   | Planner AI log | The output channel with the request as sent, the raw reply and a summary of the proposal. |
 
 **Accept** applies exactly the edits shown, as one undoable edit (Cmd+Z in the file reverts all of
-it). If the file was changed after the proposal was made, nothing is applied and you are told so;
-run the command again.
+it). If the file was changed after the proposal was made, or another task took one of the new
+ids it proposes, nothing is applied and you are told so; run the command again.
 
 Before you see a proposal, the reply has already been checked: unknown owners and unknown
 dependency ids are removed (and listed as warnings in the log), invalid durations are rejected,
 answers about tasks that were not asked about are ignored, and owner suggestions without a reason
-are refused. New tasks get fresh ids from the plan, and dependencies between new tasks are wired
-up with those ids.
+are refused. New tasks get fresh ids from the plan (two open proposals never share one), and
+dependencies between new tasks are wired up with those ids. A dependency that would make the plan
+invalid (on the task's own parent, or a loop) is left out with a warning. Text in a title that a
+task line would read as a date, an owner, a tag or an id (`@due:…`, `#urgent`) is kept in brackets
+as plain text, so the AI never sets dates or owners that way. Notes over several lines are written
+as the task's notes. **Break down** also sets the parent's `@est` to the subtasks' total when every
+subtask has an estimate.
+
+Plan text sent to the AI is marked as data: instructions written in a task note ("ignore the
+rules and …") are not followed. An invalid pattern in `planner.ai.redact` stops the request before
+anything is sent, so a name you meant to hide is never sent by mistake.
 
 ## The AI commands
 

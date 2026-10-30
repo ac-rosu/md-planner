@@ -100,6 +100,9 @@ team, milestones, tasks and dependencies ([MCP server](15-mcp-and-cli.md#let-an-
 
 > [!NOTE]
 > The command refuses to run when `plan/project.md` already exists, so it never overwrites a plan.
+> When the plan folder already holds other plan files, it lists them and what it would add, and
+> asks first; existing files are never overwritten. In a workspace with several folders it uses
+> the one with the plan folder, or asks which one.
 
 ## What was created
 

@@ -7,7 +7,26 @@ export type DayNumber = number;
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const MS_PER_DAY = 86_400_000;
 
-/** Parses `YYYY-MM-DD` into a day number; returns undefined for malformed or impossible dates. */
+/**
+ * The UTC date of a year, a month (0-based; out of range rolls over into the next or previous
+ * year) and a day of the month (0 is the last day of the month before). Years 0–99 are those
+ * years: `Date.UTC` would read them as 1900–1999.
+ */
+function utcDate(year: number, month: number, day: number): Date {
+  const d = new Date(0);
+  d.setUTCFullYear(year, month, day);
+  return d;
+}
+
+/** The day number of `utcDate(year, month, day)`. */
+function dayOf(year: number, month: number, day: number): DayNumber {
+  return Math.round(utcDate(year, month, day).getTime() / MS_PER_DAY);
+}
+
+/**
+ * Parses `YYYY-MM-DD` into a day number; returns undefined for malformed or impossible dates. The
+ * year has four digits (0000–9999), as `formatDate` writes it.
+ */
 export function parseDate(text: string): DayNumber | undefined {
   const m = ISO_DATE.exec(text.trim());
   if (!m) return undefined;
@@ -15,22 +34,38 @@ export function parseDate(text: string): DayNumber | undefined {
   const month = Number(m[2]);
   const day = Number(m[3]);
   if (month < 1 || month > 12 || day < 1 || day > 31) return undefined;
-  const ms = Date.UTC(year, month - 1, day);
-  const check = new Date(ms);
+  const check = utcDate(year, month - 1, day);
   if (check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return undefined;
-  return Math.round(ms / MS_PER_DAY);
+  return Math.round(check.getTime() / MS_PER_DAY);
 }
 
 export function isValidDate(text: string): boolean {
   return parseDate(text) !== undefined;
 }
 
+/** A year as ISO dates write it: four digits (`0026`). */
+function yearText(year: number): string {
+  return year < 0 ? String(year) : String(year).padStart(4, "0");
+}
+
 export function formatDate(day: DayNumber): string {
   const d = new Date(day * MS_PER_DAY);
-  const y = d.getUTCFullYear();
+  const y = yearText(d.getUTCFullYear());
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
+}
+
+/**
+ * The same day of the month `months` months later (earlier when negative), on the last day of
+ * that month when it is shorter: 2026-08-31 + 6 months is 2027-02-28.
+ */
+export function addMonths(day: DayNumber, months: number): DayNumber {
+  const d = new Date(day * MS_PER_DAY);
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth() + months;
+  const last = utcDate(year, month + 1, 0).getUTCDate();
+  return dayOf(year, month, Math.min(d.getUTCDate(), last));
 }
 
 /** ISO weekday: 1 = Monday … 7 = Sunday. */
@@ -52,14 +87,14 @@ export interface IsoWeek {
 export function isoWeek(day: DayNumber): IsoWeek {
   const thursday = day + (4 - isoWeekday(day));
   const year = new Date(thursday * MS_PER_DAY).getUTCFullYear();
-  const jan1 = Math.round(Date.UTC(year, 0, 1) / MS_PER_DAY);
+  const jan1 = dayOf(year, 0, 1);
   return { year, week: Math.floor((thursday - jan1) / 7) + 1 };
 }
 
 /** `2026-W46` */
 export function isoWeekKey(day: DayNumber): string {
   const { year, week } = isoWeek(day);
-  return `${year}-W${String(week).padStart(2, "0")}`;
+  return `${yearText(year)}-W${String(week).padStart(2, "0")}`;
 }
 
 /** Monday of a week key such as `2026-W46`. */
@@ -68,7 +103,7 @@ export function weekKeyStart(key: string): DayNumber | undefined {
   if (!m) return undefined;
   const year = Number(m[1]);
   const week = Number(m[2]);
-  const jan4 = Math.round(Date.UTC(year, 0, 4) / MS_PER_DAY);
+  const jan4 = dayOf(year, 0, 4);
   return weekStart(jan4) + (week - 1) * 7;
 }
 
@@ -196,7 +231,7 @@ export function dateSuggestions(today: string): DateSuggestion[] {
   const nextMonday = t + (8 - wd);
   const friday = wd <= 5 ? t + (5 - wd) : t + (12 - wd);
   const d = new Date(t * MS_PER_DAY);
-  const endOfMonth = Math.round(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0) / MS_PER_DAY);
+  const endOfMonth = dayOf(d.getUTCFullYear(), d.getUTCMonth() + 1, 0);
   return [
     { label: "today", date: formatDate(t) },
     { label: "tomorrow", date: formatDate(t + 1) },

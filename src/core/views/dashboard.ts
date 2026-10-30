@@ -16,6 +16,7 @@ import {
   burnUp,
   type EstimateAccuracy,
   estimateAccuracy,
+  milestoneBurnUps,
   projectProgress,
   punchStats,
   type PunchStats,
@@ -171,8 +172,11 @@ export function buildDashboardModel(
     });
   const end = plan.project.end;
   const endDay = end ? parseDate(end) : undefined;
-  const burnMilestones: Record<string, BurnUp> = {};
-  for (const m of milestones) burnMilestones[m.id] = burnUp(plan, schedule, m.id);
+  const burnMilestones = milestoneBurnUps(
+    plan,
+    schedule,
+    milestones.map((m) => m.id)
+  );
   const personNames: Record<string, string> = { unassigned: "Unassigned" };
   for (const p of plan.people) personNames[p.id.toLowerCase()] = p.name;
   const remainingHours = milestones.reduce((s, m) => s + m.remaining, 0);

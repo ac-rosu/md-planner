@@ -71,7 +71,8 @@ export function registerAiCommands(deps: AiCommandDeps): vscode.Disposable[] {
         if (!r || r.task.kind !== "task")
           throw new Error("Put the cursor on a task or select one in a view.");
         const { reply } = await ai.run(breakDownRequest(state.plan, state.schedule, r.task));
-        return proposals.show(breakDownProposal(state.plan, r.task, reply));
+        // The ids of open proposals are taken: two proposals must not add the same ids.
+        return proposals.show(breakDownProposal(state.plan, r.task, reply, proposals.reservedIds));
       })
     ),
 
@@ -169,7 +170,7 @@ export function registerAiCommands(deps: AiCommandDeps): vscode.Disposable[] {
         const milestone = plan.milestoneById(milestoneId);
         if (!milestone) throw new Error(`Unknown milestone ${milestoneId}.`);
         const { reply } = await ai.run(planFromTextRequest(plan, milestone, text));
-        return proposals.show(planFromTextProposal(plan, milestone, reply));
+        return proposals.show(planFromTextProposal(plan, milestone, reply, proposals.reservedIds));
       })
     ),
 

@@ -5,7 +5,7 @@ import * as vscode from "vscode";
 import { applyEdits } from "../core/text";
 import { type EditHistory } from "../extension/editHistory";
 import { type PlanService } from "../extension/planService";
-import { type Proposal } from "./commands";
+import { type Proposal, takenIds } from "./commands";
 
 export const PROPOSAL_SCHEME = "planner-proposal";
 
@@ -38,6 +38,11 @@ export class ProposalManager implements vscode.TextDocumentContentProvider, vsco
   /** Ids of proposals waiting for a decision (newest last). */
   get open(): number[] {
     return [...this.pending.keys()];
+  }
+
+  /** The task ids that open proposals add: a new proposal must not give them out again. */
+  get reservedIds(): Set<string> {
+    return new Set([...this.pending.values()].flatMap((p) => p.proposal.ids ?? []));
   }
 
   proposalText(id: number, path: string): string | undefined {
@@ -111,7 +116,10 @@ export class ProposalManager implements vscode.TextDocumentContentProvider, vsco
     return result;
   }
 
-  /** Applies a proposal if the files did not change since it was made. */
+  /**
+   * Applies a proposal if the files did not change since it was made and the ids of its new tasks
+   * are still free (another file may have given them out meanwhile).
+   */
   async accept(id = this.latest()): Promise<boolean> {
     const p = id === undefined ? undefined : this.pending.get(id);
     if (!p) return false;
@@ -123,6 +131,14 @@ export class ProposalManager implements vscode.TextDocumentContentProvider, vsco
         );
         return false;
       }
+    }
+    const taken = takenIds(this.service.plan, p.proposal.ids ?? []);
+    if (taken.length) {
+      this.finish(p, false);
+      void vscode.window.showWarningMessage(
+        `Planner AI: the proposal's new ${taken.length === 1 ? "id" : "ids"} ${taken.join(", ")} ${taken.length === 1 ? "is" : "are"} now used by other tasks in the plan; nothing was applied. Run the command again.`
+      );
+      return false;
     }
     const ok = await this.history.apply(p.proposal.edits, `AI: ${p.proposal.title}`);
     this.finish(p, ok);

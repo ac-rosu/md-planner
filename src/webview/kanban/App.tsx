@@ -14,6 +14,7 @@ import {
 } from "../shared/protocol";
 import { Notice, UndoRedo, useReturnFocus } from "../shared/ui";
 import { onMessage, post } from "../shared/vscode";
+import { asksBlockedReason } from "./moves";
 
 const send = (m: KanbanToHost) => post(m);
 const PRIOS: Priority[] = ["high", "med", "low"];
@@ -70,17 +71,18 @@ export function App() {
     send({ type: "filter", filter: { ...model.filter, ...patch } });
   };
 
-  const requestMove = (move: Extract<KanbanToHost, { type: "move" }>, title: string) => {
-    if (move.status === "blocked" && options.board === "tasks") setBlocking({ move, title });
-    else send(move);
-  };
-
   const cardsByKey = useMemo(() => {
     const map = new Map<string, KanbanCard>();
     for (const l of model?.lanes ?? [])
       for (const list of Object.values(l.cards)) for (const c of list ?? []) map.set(c.key, c);
     return map;
   }, [model]);
+
+  const requestMove = (move: Extract<KanbanToHost, { type: "move" }>, title: string) => {
+    if (asksBlockedReason(options.board, cardsByKey.get(move.key)?.status, move.status))
+      setBlocking({ move, title });
+    else send(move);
+  };
 
   if (!model) return <div class="empty">Loading the board…</div>;
   const f = model.filter;

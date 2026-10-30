@@ -177,12 +177,24 @@ export class TestRunnerPanel extends WebviewPanelHost<HostToRunner, RunnerToHost
       });
       if (!(await vscode.workspace.applyEdit(edit)))
         throw new Error("Could not create punchlist.md");
-      await this.ctx.history.apply([link], `Link ${step.title} to ${creation.id}`);
+      // The item is in the new file now, whether or not the step can be linked to it.
+      if (!(await this.ctx.history.apply([link], `Link ${step.title} to ${creation.id}`))) {
+        this.notice(
+          "error",
+          `Punch item ${creation.id} created in punchlist.md, but "${step.title}" was not linked to it: ${file.path} was not changed.`
+        );
+        return creation.id;
+      }
     } else if (creation.edits) {
-      await this.ctx.history.apply(
+      // Refused (a file in another encoding, a merge conflict the user chose not to touch).
+      const ok = await this.ctx.history.apply(
         [creation.edits, link],
         `Punch item ${creation.id} from ${tp.id}`
       );
+      if (!ok) {
+        this.notice("info", `Punch item ${creation.id} was not created: no file was changed.`);
+        return undefined;
+      }
     }
     this.notice("info", `Punch item ${creation.id} created in punchlist.md.`);
     return creation.id;

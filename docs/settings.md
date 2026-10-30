@@ -117,9 +117,9 @@ Type: object · default: `{}`
 
 ### `planner.time.roundingMinutes`
 
-Timer time is rounded up to this many minutes before it is added to `@act`.
+Timer time is rounded up to this many minutes before it is added to `@act` (at most 60). When the rounded time is more than a working day, stopping the timer asks first.
 
-Type: number · default: `15` · minimum: 1
+Type: number · default: `15` · minimum: 1 · maximum: 60
 
 ## TODOs in code
 

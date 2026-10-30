@@ -419,9 +419,10 @@ describe("subtasks and reorganizing", () => {
       `- [x] Order state machine @est:12h @owner:sam @dep:T101 @done:${TODAY} #checkout ^T102`
     );
     await vscode.commands.executeCommand("planner.setStatus", "T104", "todo");
+    // Reopened, it has been in progress since its first subtask (T103) started.
     assert.equal(
       line("T102"),
-      `- [/] Order state machine @est:12h @owner:sam @dep:T101 @started:${TODAY} #checkout ^T102`
+      "- [/] Order state machine @est:12h @owner:sam @dep:T101 @started:2026-10-12 #checkout ^T102"
     );
     assert.equal(line("T104"), "  - [ ] Order events schema @est:6h ^T104");
     // Finishing the parent with an open subtask: the choice comes as an argument here.

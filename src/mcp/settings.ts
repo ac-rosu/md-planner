@@ -2,6 +2,7 @@
 // MCP server uses the same defaults as the extension (export branding, author, TODO globs …).
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { isAbsolutePath, pathSegments, planFolderSetting } from "../core/settingValues";
 
 /**
  * The workspace folder of a plan folder, when the server was not told: the nearest folder above it
@@ -10,12 +11,18 @@ import { dirname, join, resolve } from "node:path";
 export function findWorkspace(planDir: string): string {
   const plan = resolve(planDir);
   for (let dir = dirname(plan); ; dir = dirname(dir)) {
-    if (existsSync(settingsFile(dir))) {
-      const folder = String(workspaceSettings(dir).planFolder || "plan");
-      if (resolve(dir, ...folder.split(/[\\/]/)) === plan) return dir;
-    }
+    if (existsSync(settingsFile(dir)) && planFolderPath(dir) === plan) return dir;
     if (dirname(dir) === dir) return dirname(plan);
   }
+}
+
+/**
+ * The plan folder of a workspace folder, as the extension resolves `planner.planFolder`: an
+ * absolute one as it is, a relative one below the folder (`./plan` and `plan/` are `plan`).
+ */
+export function planFolderPath(workspace: string): string {
+  const folder = planFolderSetting(workspaceSettings(workspace).planFolder);
+  return isAbsolutePath(folder) ? resolve(folder) : resolve(workspace, ...pathSegments(folder));
 }
 
 function settingsFile(workspace: string): string {

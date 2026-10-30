@@ -11,8 +11,9 @@ import { formatDate, parseDate, weekStart } from "../../core/dates";
 import { formatHours } from "../../core/duration";
 import { attentionLists, punchStats, testStats } from "../../core/metrics";
 import { isOpen, type Task } from "../../core/model";
+import { isOpenTask } from "../../core/queries";
 import { type Plan } from "../../core/resolve";
-import { estimateHours, isLeaf, ownerOf } from "../../core/rollup";
+import { estimateHours, isLeaf, leavesOf, ownerOf } from "../../core/rollup";
 import { type Schedule } from "../../core/scheduler";
 import { burnUpGeometry } from "../../core/views/charts";
 import { buildDashboardModel } from "../../core/views/dashboard";
@@ -439,6 +440,8 @@ export function computeRisks(plan: Plan, schedule: Schedule, demand?: Schedule):
   for (const m of plan.milestones) {
     const ms = schedule.milestones.get(m.id);
     if (!ms || m.status === "cancelled" || m.status === "done") continue;
+    // Its work is all done (status not set yet): a late finish is history, not a risk.
+    if (!m.tasks.some((t) => leavesOf(t).some(isOpenTask))) continue;
     if (ms.late)
       risks.push(
         `<b>${esc(m.title)}</b> is forecast ${esc(formatDate(ms.forecast!))}, <span class="late">${ms.variance} working day(s) after its target ${esc(m.target)}</span>.`

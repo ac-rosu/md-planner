@@ -2,11 +2,11 @@
 // the result up to date as files change.
 import * as vscode from "vscode";
 import {
-  DEFAULT_TODO_EXCLUDE,
-  DEFAULT_TODO_INCLUDE,
-  DEFAULT_TODO_KEYWORDS,
   globMatch,
   scanTodos,
+  todoExclude,
+  todoInclude,
+  todoKeywords,
   type TodoItem,
 } from "../core/todos";
 import { type PlanService } from "./planService";
@@ -65,12 +65,17 @@ export class TodoScanner implements vscode.Disposable {
       try {
         const c = config();
         const uris = await vscode.workspace.findFiles(
-          c.get<string>("todos.include", DEFAULT_TODO_INCLUDE) || DEFAULT_TODO_INCLUDE,
-          c.get<string>("todos.exclude", DEFAULT_TODO_EXCLUDE) || null,
+          todoInclude(c.get("todos.include")),
+          todoExclude(c.get("todos.exclude")) || null,
           c.get<number>("todos.maxFiles", 2000)
         );
         this.files.clear();
         await Promise.all(uris.map((u) => this.scanFile(u, false)));
+      } catch (err) {
+        // A glob VS Code cannot search with: the list stays as it was.
+        this.service.log.warn(
+          `TODO scan failed (planner.todos.include / planner.todos.exclude): ${err instanceof Error ? err.message : String(err)}`
+        );
       } finally {
         this.scanning = undefined;
         this.emitter.fire();
@@ -96,8 +101,8 @@ export class TodoScanner implements vscode.Disposable {
   private matches(uri: vscode.Uri): boolean {
     if (uri.scheme !== "file" || this.service.relPath(uri) !== undefined) return false;
     const c = config();
-    const include = c.get<string>("todos.include", DEFAULT_TODO_INCLUDE) || DEFAULT_TODO_INCLUDE;
-    const exclude = c.get<string>("todos.exclude", DEFAULT_TODO_EXCLUDE) || "";
+    const include = todoInclude(c.get("todos.include"));
+    const exclude = todoExclude(c.get("todos.exclude"));
     const rel = vscode.workspace.asRelativePath(uri, false);
     return globMatch(include, rel) && !(exclude && globMatch(exclude, rel));
   }
@@ -114,8 +119,7 @@ export class TodoScanner implements vscode.Disposable {
       if (notify) this.emitter.fire();
       return;
     }
-    const keywords = config().get<string[]>("todos.keywords", DEFAULT_TODO_KEYWORDS);
-    const items = scanTodos(text, keywords);
+    const items = scanTodos(text, todoKeywords(config().get("todos.keywords")));
     this.files.set(uriKey(uri), {
       uri,
       path: vscode.workspace.asRelativePath(uri, false),

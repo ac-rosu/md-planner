@@ -55,6 +55,9 @@ export class TaskRefs {
 
 const LAG = /^(.*?)(\+\d+(?:\.\d+)?[hdw])$/i;
 
+/** The dates a status writes (`@started`, `@done`); one given in `attributes` is kept. */
+const STATUS_DATES = ["started", "done"] as const;
+
 /** Assigns ids to the specs (and their subtasks) and records refs and titles. */
 export function allocateIds(
   plan: Plan,
@@ -177,7 +180,13 @@ export function buildTasks(
     }
     const status = s.status ?? "todo";
     if (!STATUSES.includes(status)) errors.push(`${name}: invalid status "${s.status}".`);
-    for (const [k, v] of statusDateAttrs(status, today)) attrs[k] = v;
+    // A start or finish date given (a task done last week) is kept; only a missing one is today.
+    for (const key of STATUS_DATES) {
+      const value = attrs[key];
+      if (value !== undefined && !isValidDate(value))
+        errors.push(`${name}: invalid ${key} date "${value}" (attributes.${key}: YYYY-MM-DD).`);
+    }
+    for (const [k, v] of statusDateAttrs(status, today)) attrs[k] ??= v;
     if (status === "blocked" && s.blocked) attrs.blocked = s.blocked;
     const task = newTaskFrom(
       {
